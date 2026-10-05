@@ -1,17 +1,21 @@
 <!DOCTYPE html>
-<html lang="ja"><head><meta charset="utf-8"><title>まなびノート</title>
+<html lang="ja"><head><meta charset="utf-8"><title>るんです。</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap">
 <style>
-:root{--bg:#eef1f4;--pn:#fbfcfd;--ink:#1c2740;--mute:#6b7690;--line:#d3d9e2;--acc:#2e6f9e;--l0:#c4cad4;--l1:#f0a83a;--l2:#7db7c9;--l3:#2f7d6d;--warn:#fff4dc;
+:root{--font:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Yu Gothic",system-ui,sans-serif;--bg:#f3efe6;--pn:#fffdf8;--ink:#2a2740;--mute:#7a7690;--line:#e1dacb;--acc:#cf3f5b;--onacc:#fff;--l0:#c4cad4;--l1:#f0a83a;--l2:#7db7c9;--l3:#2f7d6d;--warn:#fff4dc;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a26;--pn:#1c2434;--ink:#e6ebf5;--mute:#93a0ba;--line:#33405a;--acc:#6db0e0;--l0:#4a5468;--warn:#3a3020}}
-:root[data-theme="dark"]{--bg:#141a26;--pn:#1c2434;--ink:#e6ebf5;--mute:#93a0ba;--line:#33405a;--acc:#6db0e0;--l0:#4a5468;--warn:#3a3020}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1a26;--pn:#25233a;--ink:#ece9f7;--mute:#a09cb8;--line:#3a3752;--acc:#ff8ba0;--onacc:#25233a;--l0:#4a5468;--warn:#3a3020}}
+:root[data-theme="dark"]{--bg:#1b1a26;--pn:#25233a;--ink:#ece9f7;--mute:#a09cb8;--line:#3a3752;--acc:#ff8ba0;--onacc:#25233a;--l0:#4a5468;--warn:#3a3020}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 "Zen Kaku Gothic New",system-ui,sans-serif}
-#app{display:grid;grid-template-columns:250px minmax(0,1fr) 340px;gap:12px;padding:12px;min-height:100vh}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.75 var(--font)}
+#app{display:grid;grid-template-columns:270px minmax(0,1fr) 380px;gap:0;padding:0;min-height:100vh;align-items:start}
 @media(max-width:980px){#app{grid-template-columns:1fr}}
-section{background:var(--pn);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+section{min-width:0;padding:22px 20px}
+#side,#gsec{position:sticky;top:0;height:100vh;overflow:auto}
+#main{position:relative;background:var(--pn);min-height:100vh;padding:34px 40px 40px 60px;box-shadow:0 0 0 1px var(--line)}
+#main::before{content:"";position:absolute;left:16px;top:0;bottom:0;width:18px;background:radial-gradient(circle,var(--bg) 5px,var(--line) 5.6px,transparent 6.6px) center top/18px 46px repeat-y}
+#gsec{background-image:radial-gradient(var(--line) 1.3px,transparent 1.4px);background-size:22px 22px}
 #side h2{font-size:12px;color:var(--mute);margin:18px 0 6px;font-weight:700}#side h2:first-child{margin-top:0}
 ul{list-style:none;margin:0;padding:0}button{font:inherit;color:inherit;cursor:pointer}
 .sname{border:0;background:none;font-weight:700;padding:4px 0;text-align:left}
@@ -31,7 +35,7 @@ header{display:flex;flex-wrap:wrap;align-items:center;gap:8px}header h1{flex-bas
 .tabs button{border:0;background:none;padding:6px 14px;border-bottom:3px solid transparent}.tabs .on{border-color:var(--acc);font-weight:700}
 textarea{width:100%;min-height:200px;padding:12px;font:inherit;line-height:1.8;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:inherit;resize:vertical}
 .ops{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}.ops button,.rate button{border:1px solid var(--line);background:var(--pn);border-radius:8px;padding:5px 14px}
-.ops .pri{background:var(--acc);color:#fff;border-color:var(--acc)}button:disabled{opacity:.45;cursor:not-allowed}
+.ops .pri{background:var(--acc);color:var(--onacc);border-color:var(--acc)}button:disabled{opacity:.45;cursor:not-allowed}
 .rate{display:flex;gap:4px;align-items:center;font-size:13px}.rate button{padding:2px 10px}.rate .sel{background:var(--l3);color:#fff;border-color:var(--l3)}
 .q{font-weight:700;margin:4px 0}.hint{margin-top:8px;padding:10px 12px;border-left:3px solid var(--l2);background:var(--bg);white-space:pre-wrap}
 h3{font-size:13px;color:var(--mute);margin:22px 0 4px}.hist li{display:flex;gap:12px;padding:3px 0;border-bottom:1px solid var(--line);font-size:14px}.hist time{color:var(--mute);min-width:84px}
@@ -44,10 +48,10 @@ h3{font-size:13px;color:var(--mute);margin:22px 0 4px}.hist li{display:flex;gap:
 .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.thumbs figure{position:relative;margin:0}.thumbs img{height:110px;border-radius:6px;border:1px solid var(--line);display:block}
 .thumbs figure button{position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:var(--pn);line-height:1}
 .lbl{display:block;font-size:13px;color:var(--mute);margin:8px 0 4px}#stext{min-height:120px}.notice{color:#b3541e;font-size:13px;margin:6px 0}
-.qs{display:flex;gap:4px;margin-bottom:6px}.qs button{border:1px solid var(--line);background:var(--pn);border-radius:99px;padding:0 12px}.qs .on{background:var(--acc);color:#fff;border-color:var(--acc)}.hint.ans{border-color:var(--l3)}
+.qs{display:flex;gap:4px;margin-bottom:6px}.qs button{border:1px solid var(--line);background:var(--pn);border-radius:99px;padding:0 12px}.qs .on{background:var(--acc);color:var(--onacc);border-color:var(--acc)}.hint.ans{border-color:var(--l3)}
 .editor{border:1px solid var(--line);border-radius:8px;background:var(--bg);display:flex;flex-direction:column}
 .tbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 8px;background:var(--pn);border-bottom:1px solid var(--line);border-radius:8px 8px 0 0}
-.tbar button{border:1px solid var(--line);background:var(--pn);border-radius:6px;padding:2px 10px;min-width:32px}.tbar .pri{background:var(--acc);color:#fff;border-color:var(--acc)}.tbar .sp{flex:1}
+.tbar button{border:1px solid var(--line);background:var(--pn);border-radius:6px;padding:2px 10px;min-width:32px}.tbar .pri{background:var(--acc);color:var(--onacc);border-color:var(--acc)}.tbar .sp{flex:1}
 .sheetwrap{padding:12px;overflow:auto}.sheet{max-width:820px;margin:0 auto;min-height:280px;padding:28px 34px;background:var(--pn);border:1px solid var(--line);border-radius:4px;line-height:1.9;outline:none}
 .sheet:empty::before{content:attr(data-ph);color:var(--mute)}.sheet h2{font-size:22px;margin:.8em 0 .3em;line-height:1.4}.sheet ul,.sheet ol{padding-left:1.6em;margin:.4em 0}.sheet ul{list-style:disc}
 .editor.full{position:fixed;inset:0;z-index:50;border:0;border-radius:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}.editor.full .tbar{border-radius:0}
@@ -72,10 +76,32 @@ body.p-side .bn [data-p=side],body.p-main .bn [data-p=main],body.p-graph .bn [da
 .node .ring{fill:none;stroke:var(--l1);stroke-width:2;transform-box:fill-box;transform-origin:center;animation:ring 2s ease-out infinite}
 @keyframes ring{from{transform:scale(1);opacity:.9}to{transform:scale(1.8);opacity:0}}@media(prefers-reduced-motion:reduce){.node .ring{animation:none}}
 .grad{display:inline-block;width:90px;height:8px;border-radius:4px;background:linear-gradient(90deg,hsl(28 62% 48%),hsl(95 62% 43%),hsl(163 62% 42%))}
+.brand{display:flex;align-items:center;gap:8px;margin-bottom:14px}.burger{border:0;background:none;font-size:18px;padding:2px 6px;border-radius:6px;color:var(--mute)}
+.logo{border:0;background:none;font-size:25px;font-weight:700;letter-spacing:.02em;padding:0}.logo span{color:var(--acc)}
+.rv{margin-bottom:14px;padding:4px 0 8px;border-bottom:1px dashed var(--line)}.rvh{display:flex;justify-content:space-between;width:100%;border:0;background:none;font-weight:700;padding:4px 0}
+.rvh b{display:inline-block;min-width:20px;text-align:center;background:var(--acc);color:var(--onacc);border-radius:99px;font-size:12px;padding:0 6px;margin-left:4px}
+.rv ul button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:3px 6px;border-radius:6px;text-align:left;font-size:14px}.rv ul button:hover{background:var(--bg)}
+#sideOpen{display:none;position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:10px;z-index:30;border:1px solid var(--line);background:var(--pn);border-radius:99px;width:38px;height:38px;font-size:17px}
+body.noside #sideOpen{display:block}body.noside #side{display:none}body.noside #app{grid-template-columns:minmax(0,1fr) 380px}
+.card{border:0;background:var(--bg);border-radius:16px}
+@media(max-width:980px){#side,#gsec{position:static;height:auto}#main{padding:20px 16px;min-height:0}#main::before{display:none}#sideOpen,body.noside #sideOpen{display:none}body.noside #side{display:block}body.noside #app{grid-template-columns:1fr}.burger{display:none}}
+mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%,transparent) 60%);color:inherit;padding:0 4px;margin:0 -4px}
+.tabs{gap:6px;margin:20px 0 14px}.tabs button{border:1px solid var(--line);border-bottom:0;background:var(--bg);border-radius:12px 12px 0 0;padding:6px 16px 5px;margin-bottom:-1px;color:var(--mute)}
+.tabs .on{background:var(--pn);color:var(--ink);font-weight:700;box-shadow:inset 0 3px var(--acc)}
+.chip{transform:rotate(-2deg);box-shadow:0 1px 0 rgba(0,0,0,.18)}.badge{border-style:dashed}
+.ops>button,.ops .btn{border-radius:99px}.ops .pri,.tbar .pri{box-shadow:0 2px 0 rgba(0,0,0,.2)}.ops button:not(:disabled):active,.tbar button:active{transform:translateY(1px)}
+.sheet{font-size:16px;line-height:32px;padding:32px 34px;background-image:repeating-linear-gradient(transparent 0 31px,var(--line) 31px 32px);background-attachment:local}
+.sheet h2{font-size:22px;line-height:32px;margin:32px 0 0}.sheet ul,.sheet ol{margin:0}
+.todo li button{transition:transform .15s,background .15s}.todo li button:hover{transform:translateY(-2px) rotate(-.4deg)}
+.gh{margin:0 0 6px;font-weight:700;color:var(--mute);font-size:13px}
+.face path{fill:none;stroke:#2a2740;stroke-width:1.8;stroke-linecap:round}.face circle{fill:#2a2740;stroke:none}
+.node{animation:bob 5s ease-in-out infinite}.node:nth-of-type(3n+2){animation-delay:-1.7s}.node:nth-of-type(3n){animation-delay:-3.3s}
+@keyframes bob{50%{transform:translateY(-3px)}}.node:hover>circle:not(.ring){transform:scale(1.07);transform-box:fill-box;transform-origin:center}
+@media(prefers-reduced-motion:reduce){.node{animation:none}.todo li button:hover{transform:none}}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style></head>
 <body><div id="app"><section id="side" aria-label="教材"></section><section id="main" aria-label="学習画面"></section><section id="gsec" aria-label="関連図"><div id="graph"></div></section></div>
-<nav class="bn" aria-label="画面切り替え"><button data-act="pane" data-p="side">教材</button><button data-act="pane" data-p="main">学習</button><button data-act="pane" data-p="graph">関連図</button></nav><div id="toast" role="status"></div>
+<nav class="bn" aria-label="画面切り替え"><button data-act="pane" data-p="side">教材</button><button data-act="pane" data-p="main">学習</button><button data-act="pane" data-p="graph">関連図</button></nav><button id="sideOpen" data-act="side" aria-label="サイドバーを開く">☰</button><div id="toast" role="status"></div>
 <script>
 const DAY = 864e5;
 const mk = (id, title, prereqs = []) => ({ id, title, prereqs, note: "", history: [], srcText: "", sources: [], questions: [] });
@@ -95,7 +121,7 @@ function seed() {
     db.items[2].history.push({ at: now - 2 * DAY, kind: "test", score: 5 });
     db.items[3].history.push({ at: now - 9 * DAY, kind: "test", score: 3 });
     db.items[0].history.push({ at: now - 1 * DAY, kind: "note" });
-    return { subjects: [la, db], sel: { s: "u-db", i: "join" }, tab: "src", hint: false, rate: 0, busy: "", qi: 0, reveal: false, full: false, pane: "main" };
+    return { subjects: [la, db], sel: { s: "u-db", i: "join" }, tab: "src", hint: false, rate: 0, busy: "", qi: 0, reveal: false, full: false, pane: "main", reviewOpen: true, sideOpen: true };
 }
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
 // ===== 状態 =====
@@ -110,6 +136,8 @@ catch {
 st.subjects.forEach(s => s.items.forEach(i => { i.sources ??= []; i.questions ??= []; i.srcText ??= ""; }));
 st.full = false;
 st.pane ??= "main";
+st.reviewOpen ??= true;
+st.sideOpen ??= true;
 let draft = "", notice = "";
 const toHtml = (t) => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/\n/g, "<br>");
 function syncNote(it) { const ed = document.getElementById("note"); if (!ed)
@@ -141,6 +169,14 @@ function ret(it) {
     return (t.score / 5) * Math.exp(-((Date.now() - t.at) / DAY) / (2 + t.score * 3));
 }
 const hue = (it) => { const r = ret(it); return r < 0 ? "var(--l0)" : `hsl(${Math.round(28 + r * 135)} 62% ${Math.round(48 - r * 6)}%)`; };
+// ノードの顔：記憶の残り具合で表情が変わる（笑顔→ふつう→困り顔／未学習はおやすみ顔）
+function face(i, x, y, r) {
+    const q = ret(i), m = q < 0 ? 0 : q > .55 ? 2 : q > .25 ? 1 : -1;
+    const mouth = { 0: "M-3 7h6", 1: "M-5 6Q0 9 5 6", 2: "M-6 4Q0 12 6 4", [-1]: "M-6 9Q0 3 6 9" };
+    const eyes = m === 0 ? `<path d="M-9 -3h5M4 -3h5"/>` : `<circle cx="-6" cy="-3" r="2"/><circle cx="6" cy="-3" r="2"/>`;
+    return `<g class="face" transform="translate(${x} ${y}) scale(${r / 24})">${eyes}<path d="${mouth[m]}"/></g>`;
+}
+const greet = () => { const h = new Date().getHours(); return h < 5 ? "夜ふかしだね" : h < 11 ? "おはよう" : h < 18 ? "こんにちは" : "おつかれさま"; };
 const LV = ["未学習", "要復習", "定着中", "定着"];
 const esc = (s) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const subj = () => st.subjects.find(s => s.id === st.sel?.s);
@@ -189,7 +225,7 @@ async function runAI(kind, it) {
             notice = "";
         }
         else
-            notice = "要約する文字がありません。「資料の文字」に写真の内容を入力してください。";
+            notice = "まとめる文字がまだないよ。「資料の文字」に写真の内容を入れてね。";
     }
     else {
         const qs = await ai.questions(inp);
@@ -201,7 +237,7 @@ async function runAI(kind, it) {
             notice = "";
         }
         else
-            notice = "問題を作る文字がありません。「資料の文字」に写真の内容を入力してください。";
+            notice = "問題にする文字がまだないよ。「資料の文字」に写真の内容を入れてね。";
     }
     st.busy = "";
     render();
@@ -210,6 +246,7 @@ const prog = (s) => s.items.length ? s.items.reduce((a, i) => a + level(i), 0) /
 function homeHtml() {
     const order = [1, 0, 2, 3];
     const all = st.subjects.flatMap(x => x.items), cnt = [0, 1, 2, 3].map(l => all.filter(i => level(i) === l).length), tot = all.length || 1;
+    const n = all.filter(i => level(i) < 3).length;
     const C = 2 * Math.PI * 40;
     let off = 0;
     const donut = `<svg viewBox="0 0 110 110" class="donut" role="img" aria-label="復習度の内訳">` + cnt.map((n, l) => {
@@ -228,33 +265,40 @@ function homeHtml() {
         const h = Math.max(2, n / mx * 44);
         return `<rect x="${k * 11}" y="${50 - h}" width="8" height="${h}" rx="2" class="${n ? "on" : ""}"/>`;
     }).join("") + `<line x1="0" y1="52" x2="154" y2="52"/></svg>`;
-    const dash = `<div class="dash"><div class="card">${donut}<div class="lg">${LV.map((n, l) => `<span><i class="dot l${l}"></i>${n} ${cnt[l]}</span>`).join("")}</div></div><div class="card"><b>直近14日の学習</b>${bars}<p class="mute">${streak ? `🔥 ${streak}日連続で学習中` : "今日から始めましょう"}</p></div></div>`;
+    const dash = `<div class="dash"><div class="card">${donut}<div class="lg">${LV.map((n, l) => `<span><i class="dot l${l}"></i>${n} ${cnt[l]}</span>`).join("")}</div></div><div class="card"><b>直近14日の学習</b>${bars}<p class="mute">${streak ? `🔥 ${streak}日連続でやってるよ` : "今日から始めよう"}</p></div></div>`;
     const todo = st.subjects.flatMap(s => s.items.map(i => ({ s, i, l: level(i) }))).filter(x => x.l < 3).sort((a, b) => order.indexOf(a.l) - order.indexOf(b.l)).slice(0, 8);
     const why = (i) => {
         const t = [...i.history].reverse().find(h => h.kind === "test");
-        return t ? `最後のテストは${Math.floor((Date.now() - t.at) / DAY)}日前` : i.history.length ? "まだ説明テストをしていません" : "まだ学習していません";
+        return t ? `最後のテストは${Math.floor((Date.now() - t.at) / DAY)}日前` : i.history.length ? "説明テストはまだ" : "まだ手つかず";
     };
-    return `<h1>今日の復習</h1><p class="mute">復習が必要な項目から順に並べています。押すとそのまま始められます。</p>${dash}` + (todo.length
+    return `<h1><mark>${n ? `${greet()}！今日は${n}個、復習しよっか` : `${greet()}！今日はゆっくりでOK`}</mark></h1><p class="mute">忘れかけのものから順に並べたよ。押すとそのまま始められる。</p>${dash}` + (todo.length
         ? `<ul class="todo">${todo.map(x => `<li><button data-act="open" data-tab="${x.l === 0 ? "src" : "test"}" data-s="${x.s.id}" data-i="${x.i.id}"><i class="dot l${x.l}"></i><span><b>${esc(x.i.title)}</b><small>${esc(x.s.title)}・${why(x.i)}</small></span><em>${x.l === 0 ? "資料を入れる" : "説明テスト"}</em></button></li>`).join("")}</ul>`
-        : `<p class="empty">復習が必要な項目はありません。左から科目を追加しましょう。</p>`);
+        : `<p class="empty">復習するものはなし！科目を足して始めよう。</p>`);
 }
 let timer = 0, tt = 0;
 function toast(m) { const el = document.getElementById("toast"); if (!el)
     return; el.textContent = m; el.classList.add("show"); clearTimeout(tt); tt = window.setTimeout(() => el.classList.remove("show"), 1500); }
 function autosave() { clearTimeout(timer); timer = window.setTimeout(() => { const it = item(); if (!it)
-    return; syncNote(it); save(); toast("自動保存しました"); }, 900); }
+    return; syncNote(it); save(); toast("自動保存したよ"); }, 900); }
+// 左サイドバーの「今日の復習」（開閉できる）
+function reviewPanel() {
+    const order = [1, 0, 2, 3];
+    const todo = st.subjects.flatMap(s => s.items.map(i => ({ s, i, l: level(i) }))).filter(x => x.l < 3).sort((a, b) => order.indexOf(a.l) - order.indexOf(b.l));
+    return `<div class="rv"><button class="rvh" data-act="rv" aria-expanded="${st.reviewOpen}"><span>今日の復習 <b>${todo.length}</b></span><span>${st.reviewOpen ? "▾" : "▸"}</span></button>` +
+        (st.reviewOpen ? (todo.length ? `<ul>${todo.slice(0, 6).map(x => `<li><button data-act="open" data-tab="${x.l === 0 ? "src" : "test"}" data-s="${x.s.id}" data-i="${x.i.id}"><i class="dot l${x.l}"></i>${esc(x.i.title)}</button></li>`).join("")}</ul>` : `<p class="mute">ぜんぶばっちり🎉</p>`) : "") + `</div>`;
+}
 // ===== 描画：左（教材）=====
 function renderSide() {
     const group = (src, label) => {
         const list = st.subjects.filter(s => s.src === src);
         return `<h2>${label}</h2>` + (list.map(s => `<div class="subj"><button class="sname" data-act="subj" data-s="${s.id}">${esc(s.title)}</button><progress max="3" value="${prog(s)}" aria-label="習熟度"></progress><ul>` +
             s.items.map(i => `<li><button class="it ${st.sel?.s === s.id && st.sel.i === i.id ? "on" : ""}" data-act="open" data-s="${s.id}" data-i="${i.id}"><i class="dot l${level(i)}"></i>${esc(i.title)}</button></li>`).join("") +
-            `</ul>${src === "user" ? `<form class="add" data-form="item" data-s="${s.id}"><input name="t" placeholder="学習項目を追加" required><select name="p"><option value="">前提なし</option>${s.items.map(i => `<option value="${i.id}">${esc(i.title)}の後</option>`).join("")}</select><button>追加</button></form>` : ""}</div>`).join("") || `<p class="mute">まだありません</p>`);
+            `</ul>${src === "user" ? `<form class="add" data-form="item" data-s="${s.id}"><input name="t" placeholder="学習項目を追加" required><select name="p"><option value="">前提なし</option>${s.items.map(i => `<option value="${i.id}">${esc(i.title)}の後</option>`).join("")}</select><button>追加</button></form>` : ""}</div>`).join("") || `<p class="mute">まだないよ</p>`);
     };
     const installable = CLOUD.filter(c => !st.subjects.some(s => s.id === c.id));
-    $("side").innerHTML = `<button class="home" data-act="home">🏠 今日の復習</button>` + group("official", "運営の教材") + group("user", "自分の教材") +
+    $("side").innerHTML = `<div class="brand"><button class="burger" data-act="side" aria-label="サイドバーを閉じる">☰</button><button class="logo" data-act="home">るんです<span>。</span></button></div>` + reviewPanel() + group("official", "運営の教材") + group("user", "自分の教材") +
         `<form class="add" data-form="subject"><input name="t" placeholder="履修科目・資格を追加" required><button>作成</button></form>` +
-        `<h2>教材ストア</h2>` + (installable.map(c => `<div class="store"><span>${esc(c.title)}</span><button data-act="install" data-s="${c.id}">入れる</button></div>`).join("") || `<p class="mute">すべて導入済み</p>`);
+        `<h2>教材をさがす</h2>` + (installable.map(c => `<div class="store"><span>${esc(c.title)}</span><button data-act="install" data-s="${c.id}">追加</button></div>`).join("") || `<p class="mute">ぜんぶ追加ずみ</p>`);
 }
 // ===== 描画：中央（学習画面）=====
 function renderMain() {
@@ -265,32 +309,32 @@ function renderMain() {
     }
     const pre = it.prereqs.map(id => s.items.find(x => x.id === id)).filter(Boolean);
     const weak = pre.filter(p => level(p) < 2);
-    const hist = [...it.history].reverse().map(h => `<li><time>${new Date(h.at).toLocaleDateString("ja-JP")}</time>${h.kind === "note" ? "ノートを更新" : `説明テスト（自己評価 ${h.score}/5）`}</li>`).join("") || `<li class="mute">履歴はまだありません</li>`;
+    const hist = [...it.history].reverse().map(h => `<li><time>${new Date(h.at).toLocaleDateString("ja-JP")}</time>${h.kind === "note" ? "ノートを更新" : `説明テスト（自己評価 ${h.score}/5）`}</li>`).join("") || `<li class="mute">履歴はまだないよ</li>`;
     const dis = st.busy ? "disabled" : "";
     const srcTab = `<div class="ops"><label class="btn">📷 撮影<input type="file" accept="image/*" capture="environment" data-file hidden></label><label class="btn">🖼 アップロード<input type="file" accept="image/*" multiple data-file hidden></label></div>` +
-        `<div class="thumbs">${it.sources.map((x, k) => `<figure><img src="${x.url}" alt="資料${k + 1}"><button data-act="delimg" data-k="${k}" aria-label="資料${k + 1}を削除">×</button></figure>`).join("") || `<p class="mute">教科書・板書・配布資料を撮影するか、画像を選んでください。</p>`}</div>` +
-        `<label class="lbl" for="stext">資料の文字（写真の内容を入力・貼り付け。自動読み取りは今後追加）</label><textarea id="stext">${esc(it.srcText)}</textarea>` +
+        `<div class="thumbs">${it.sources.map((x, k) => `<figure><img src="${x.url}" alt="資料${k + 1}"><button data-act="delimg" data-k="${k}" aria-label="資料${k + 1}を削除">×</button></figure>`).join("") || `<p class="mute">教科書・板書・配布プリントを撮るか、画像を選んでね。</p>`}</div>` +
+        `<label class="lbl" for="stext">資料の文字（写真の内容を入れてね。自動で読み取るのは今後！）</label><textarea id="stext">${esc(it.srcText)}</textarea>` +
         (notice ? `<p class="notice">${esc(notice)}</p>` : "") +
-        `<div class="ops"><button data-act="savetext">資料を保存</button><button class="pri" data-act="ai-sum" ${dis}>${st.busy === "ai-sum" ? "要約中…" : "AIで要約してノートへ"}</button><button class="pri" data-act="ai-q" ${dis}>${st.busy === "ai-q" ? "作成中…" : "AIで問題を作る"}</button></div>`;
+        `<div class="ops"><button data-act="savetext">資料を保存</button><button class="pri" data-act="ai-sum" ${dis}>${st.busy === "ai-sum" ? "要約中…" : "AIにまとめてもらう"}</button><button class="pri" data-act="ai-q" ${dis}>${st.busy === "ai-q" ? "作成中…" : "AIに問題を作ってもらう"}</button></div>`;
     const noteTab = `<div class="editor ${st.full ? "full" : ""}"><div class="tbar">` +
         `<button data-cmd="bold" title="太字"><b>B</b></button><button data-cmd="italic" title="斜体"><i>I</i></button><button data-cmd="underline" title="下線"><u>U</u></button>` +
         `<button data-cmd="formatBlock" data-v="h2" title="見出し">見出し</button><button data-cmd="formatBlock" data-v="p" title="本文">本文</button>` +
         `<button data-cmd="insertUnorderedList" title="箇条書き">・リスト</button><button data-cmd="insertOrderedList" title="番号リスト">1.リスト</button>` +
         `<button data-cmd="undo" title="元に戻す">↶</button><button data-cmd="redo" title="やり直す">↷</button><span class="sp"></span><span class="mute" id="cnt"></span>` +
-        `<button data-act="savenote">保存</button><button data-act="ai-sum" ${dis}>${st.busy === "ai-sum" ? "要約中…" : "AIで要約を追加"}</button>` +
+        `<button data-act="savenote">保存</button><button data-act="ai-sum" ${dis}>${st.busy === "ai-sum" ? "要約中…" : "AIにまとめてもらう"}</button>` +
         `<button class="pri" data-act="full">${st.full ? "全画面を閉じる（Esc）" : "全画面"}</button></div>` +
-        `<div class="sheetwrap"><div id="note" class="sheet" contenteditable="true" role="textbox" aria-multiline="true" aria-label="まとめノート" data-ph="講義で聞いたことを、自分の言葉でまとめる">${it.noteHtml ?? toHtml(it.note)}</div></div></div>`;
+        `<div class="sheetwrap"><div id="note" class="sheet" contenteditable="true" role="textbox" aria-multiline="true" aria-label="まとめノート" data-ph="講義で聞いたこと、自分の言葉でまとめよう">${it.noteHtml ?? toHtml(it.note)}</div></div></div>`;
     const qs = it.questions, cq = qs[st.qi];
     const testTab = (qs.length ? `<div class="qs">${qs.map((_, k) => `<button class="${k === st.qi ? "on" : ""}" data-act="qi" data-k="${k}">問${k + 1}</button>`).join("")}</div>` : "") +
-        `<p class="q">${cq ? esc(cq.q) : `「${esc(it.title)}」を、何も見ずに説明してみましょう。`}</p><textarea id="ans" placeholder="試験で答えるつもりで、ここに説明を書く">${esc(draft)}</textarea>` +
-        (st.hint ? `<div class="hint">${esc(it.note) || "まとめノートはまだありません"}</div>` : "") +
+        `<p class="q">${cq ? esc(cq.q) : `「${esc(it.title)}」を、何も見ずに説明してみよう。`}</p><textarea id="ans" placeholder="試験で答えるつもりで書いてみよう">${esc(draft)}</textarea>` +
+        (st.hint ? `<div class="hint">${esc(it.note) || "まとめノートはまだないよ"}</div>` : "") +
         (st.reveal && cq ? `<div class="hint ans">模範解答：${esc(cq.a)}</div>` : "") +
         `<div class="ops"><button data-act="hint">${st.hint ? "ノートを隠す" : "ノートを見る"}</button>${cq ? `<button data-act="reveal">${st.reveal ? "答えを隠す" : "答えを見る"}</button>` : ""}<span class="rate">自己評価` +
         [1, 2, 3, 4, 5].map(n => `<button class="${st.rate === n ? "sel" : ""}" data-act="rate" data-n="${n}">${n}</button>`).join("") +
-        `</span><button class="pri" data-act="savetest" ${st.rate ? "" : "disabled"}>履歴に保存</button><button data-act="ai-q" ${dis}>${st.busy === "ai-q" ? "作成中…" : "AIで問題を作る"}</button></div>`;
+        `</span><button class="pri" data-act="savetest" ${st.rate ? "" : "disabled"}>履歴に保存</button><button data-act="ai-q" ${dis}>${st.busy === "ai-q" ? "作成中…" : "AIに問題を作ってもらう"}</button></div>`;
     const k = s.items.indexOf(it), nb = (o, l) => s.items[k + o] ? `<button data-act="open" data-s="${s.id}" data-i="${s.items[k + o].id}">${l}</button>` : "<span></span>";
-    $("main").innerHTML = `<header><span class="badge">${s.src === "official" ? "運営教材" : "自分の教材"}</span><span class="mute">${esc(s.title)}</span><h1>${esc(it.title)}</h1><span class="chip l${level(it)}">${LV[level(it)]}</span></header>` +
-        (pre.length ? `<div class="pre ${weak.length ? "warn" : ""}"><b>${weak.length ? "この項目の前に、復習するとよい項目があります" : "前提項目"}</b>` +
+    $("main").innerHTML = `<header><span class="badge">${s.src === "official" ? "運営教材" : "自分の教材"}</span><span class="mute">${esc(s.title)}</span><h1><mark>${esc(it.title)}</mark></h1><span class="chip l${level(it)}">${LV[level(it)]}</span></header>` +
+        (pre.length ? `<div class="pre ${weak.length ? "warn" : ""}"><b>${weak.length ? "先にこっちを復習すると、すっと入るかも" : "前提項目"}</b>` +
             pre.map(p => `<button data-act="open" data-s="${s.id}" data-i="${p.id}"><i class="dot l${level(p)}"></i>${esc(p.title)}</button>`).join("") + `</div>` : "") +
         `<div class="tabs">${["src", "note", "test"].map(t => `<button class="${st.tab === t ? "on" : ""}" data-act="tab" data-t="${t}">${{ src: "資料（写真）", note: "まとめノート", test: "説明テスト" }[t]}</button>`).join("")}</div>` +
         (st.tab === "src" ? srcTab : st.tab === "note" ? noteTab : testTab) + `<h3>学習履歴</h3><ul class="hist">${hist}</ul>` + `<div class="pn">${nb(-1, "← 前の項目")}${nb(1, "次の項目 →")}</div>`;
@@ -315,13 +359,14 @@ function renderGraph() {
     const edges = s.items.flatMap(i => i.prereqs.map(p => `<line class="${i.id === sel || p === sel ? "hi" : ""}" x1="${pos[p][0]}" y1="${pos[p][1]}" x2="${pos[i.id][0]}" y2="${pos[i.id][1]}"/>`)).join("");
     const nodes = s.items.map(i => {
         const [x, y] = pos[i.id], r = 20 + Math.min(10, i.history.length * 2);
-        return `<g class="node ${sel === i.id ? "on" : ""} ${cur && !rel.has(i.id) ? "dim" : ""}" data-act="open" data-s="${s.id}" data-i="${i.id}" tabindex="0">${level(i) === 1 ? `<circle class="ring" cx="${x}" cy="${y}" r="${r}"/>` : ""}<circle cx="${x}" cy="${y}" r="${r}" fill="${hue(i)}"/><text x="${x}" y="${y + r + 16}">${esc(i.title)}</text></g>`;
+        return `<g class="node ${sel === i.id ? "on" : ""} ${cur && !rel.has(i.id) ? "dim" : ""}" data-act="open" data-s="${s.id}" data-i="${i.id}" tabindex="0">${level(i) === 1 ? `<circle class="ring" cx="${x}" cy="${y}" r="${r}"/>` : ""}<circle cx="${x}" cy="${y}" r="${r}" fill="${hue(i)}"/>${face(i, x, y, r)}<text x="${x}" y="${y + r + 16}">${esc(i.title)}</text></g>`;
     }).join("");
-    $("graph").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="学習項目の関連図">${edges}${nodes}</svg>` +
+    $("graph").innerHTML = `<p class="gh">${esc(s.title)}のつながり</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="学習項目の関連図">${edges}${nodes}</svg>` +
         `<div class="legend"><span>忘れかけ</span><i class="grad"></i><span>定着</span><span><i class="dot l0"></i>未学習</span><span>円が大きいほど学習回数が多い</span></div>`;
 }
 const render = () => {
     document.body.classList.toggle("nofs", st.full);
+    document.body.classList.toggle("noside", !st.sideOpen);
     ["side", "main", "graph"].forEach(p => document.body.classList.toggle("p-" + p, st.pane === p));
     renderSide();
     renderMain();
@@ -373,6 +418,10 @@ document.addEventListener("click", e => {
     }
     else if (a === "reveal")
         st.reveal = !st.reveal;
+    else if (a === "rv")
+        st.reviewOpen = !st.reviewOpen;
+    else if (a === "side")
+        st.sideOpen = !st.sideOpen;
     else if (a === "home") {
         st.sel = null;
         st.pane = "main";
@@ -389,7 +438,7 @@ document.addEventListener("click", e => {
     else if (a === "savenote" && it) {
         syncNote(it);
         it.history.push({ at: Date.now(), kind: "note" });
-        toast("保存しました");
+        toast("保存したよ");
     }
     else if (a === "savetest" && it) {
         it.history.push({ at: Date.now(), kind: "test", score: st.rate, text: $("ans").value });
@@ -438,7 +487,7 @@ document.addEventListener("keydown", e => {
             syncNote(it);
             it.history.push({ at: Date.now(), kind: "note" });
             save();
-            toast("保存しました");
+            toast("保存したよ");
         }
         return;
     }
