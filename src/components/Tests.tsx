@@ -1,4 +1,4 @@
-// G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧 /
+// G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧 
 import { useMemo, useState } from "react";
 import { useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
