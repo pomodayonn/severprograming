@@ -1,4 +1,4 @@
-// データの型。ER図(外部設計書 3章)と対応。資料中身(MATERIAL)は端末のIndexedDBだけに置き、サーバーには送らない想定。
+// データの型。ER図(外部設計書 3章)と対応中。資料中身(MATERIAL)は端末のIndexedDBだけに置き、サーバーには送らない想定。
 export interface Account { id: string; loginId: string; pass: string }
 export type FrameType = "word" | "problem" | "formula" | "answer" | "method" | "summary";
 export interface Word { term: string; meaning: string }
