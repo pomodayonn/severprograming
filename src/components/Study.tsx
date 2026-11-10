@@ -1,6 +1,6 @@
 // G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
 import { useState } from "react";
-import { useApp } from "../state/app";
+import { Redirect, useApp } from "../state/app";
 import type { FrameType, Item, MaterialMeta } from "../types";
 import { FT, MAX_FILE, bottomY, newEl, txtName, uid, wouldCycle } from "../lib/logic";
 import { delBlob, putBlob } from "../services/db";
@@ -21,7 +21,7 @@ export function Study() {
   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
-  if (!subject || !account) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
+  if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
   const item: Item | undefined = subject.items.find(i => i.id === route.itemId) ?? subject.items[0];
   const note = item ? (drafts[item.id] ?? item.note) : null;
   const mats = item ? data.materials.filter(m => m.itemId === item.id) : [];
