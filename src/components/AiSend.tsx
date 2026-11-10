@@ -31,7 +31,7 @@ export function AiSend() {
   const [types, setTypes] = useState<FrameType[]>(Object.keys(FT) as FrameType[]), [tab, setTab] = useState<"src" | "send" | "prop">("src");
   const [props, setProps] = useState<Proposal[]>([]), [pick, setPick] = useState<string[]>([]), [msg, setMsg] = useState(""), [set, setSet] = useState(false);
   const [ins, setIns] = useState(""), [ref, setRef] = useState<string | null>(null), [busy, setBusy] = useState(false);
-  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames =
+  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames = useMemo(() => (item?.note.els ?? []).filter(e => e.kind === "frame"), [item]);
   useEffect(() => { // 元にできる内容：文字起こし済みの資料（ページごと）とノートの枠
     if (!item || !account) return; let live = true;
     (async () => {
@@ -46,12 +46,12 @@ export function AiSend() {
   if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
   const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
-    const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
+  const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
   const confirmCalls = async (): Promise<number | null> => {
     if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
     const n = calls(text.length);
-        if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
+    if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
     if (n > 1 && await ask(`1万文字を超えているため、分けて送ると利用回数を余分に消費します（この内容では${n}回分）`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
     return n;
   };
@@ -59,8 +59,8 @@ export function AiSend() {
     if (!types.length) return setMsg("枠の種類を選んでください");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
     try { const ps = await organize(text, types, frames.map(e => ({ id: e.id, ft: e.ft }))); consume(n); setProps(ps); setPick(ps.map(p => p.id)); setTab("prop"); if (!ps.length) setMsg("提案が作れませんでした。送る内容を見直してください"); }
-        catch (e) { setMsg(errorText(e)); void refresh(); } setBusy(false);
-
+    catch (e) { setMsg(errorText(e)); void refresh(); } setBusy(false);
+  };
   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.id, itemId: item.id }); };
   const approve = () => {
     const ps = props.filter(p => pick.includes(p.id));
