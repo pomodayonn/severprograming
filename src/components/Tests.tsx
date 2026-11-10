@@ -1,8 +1,9 @@
 // G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧 
 import { useMemo, useState } from "react";
 import { useApp } from "../state/app";
-import type { Test, TestKind } from "../types";
-import { AI_LIMIT, dayKey, fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
+import { fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
+import { addLocalUsage, explain, makeEssay, useAiRemaining } from "../services/ai";
+import { errorText } from "../services/api";
 import { explain, makeEssay } from "../services/ai";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
@@ -13,9 +14,9 @@ const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${
 export function TestCreate() {
   const { data, setData, route, nav, go, tmp, setTmp } = useApp();
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
-  const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+    const { remaining, limit, refresh } = useAiRemaining(data.usage);
   if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
-  const frames = item.note.els.filter(e => e.kind === "frame"), used = data.usage[dayKey()] ?? 0, send = (tmp.send as string | undefined) ?? "";
+    const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
   const make = async () => {
     setMsg(""); const n = Math.min(20, Math.max(5, Math.round(count) || 10)); let qs;
@@ -24,10 +25,10 @@ export function TestCreate() {
       qs = wordTest(ws, kind, n); if (ws.length < n) toast(`単語が少ないので、ある分（${ws.length}問）だけ出題します`);
     } else {
       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
-      const c = (tmp.sendCalls as number | undefined) ?? 1; if (used + c > AI_LIMIT) return setMsg("今日はこれ以上使えません");
-      setBusy(true); try { qs = await makeEssay(send, n); } catch { setBusy(false); return setMsg("AIサービスが使えません。時間をおいて試してください"); } setBusy(false);
+           const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
+      setBusy(true); try { qs = await makeEssay(send, n); } catch (e) { setBusy(false); void refresh(); return setMsg(errorText(e)); } setBusy(false);
       if (!qs.length) return setMsg("問題を作れませんでした。送る内容を見直してください");
-      setData(d => ({ ...d, usage: { ...d.usage, [dayKey()]: (d.usage[dayKey()] ?? 0) + c } })); setTmp({ send: "", sendCalls: 1 });
+            setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); void refresh(); setTmp({ send: "", sendCalls: 1 });
     }
     const t: Test = { id: uid(), itemId: item.id, kind, created: Date.now(), qs }; setData(d => ({ ...d, tests: [...d.tests, t] }));
     nav({ s: "G009", subjectId: subject.id, itemId: item.id, testId: t.id, mode: "new" }); // 問題だけを表示（模範解答・解説は出さない）
@@ -38,7 +39,7 @@ export function TestCreate() {
         {scope === "pick" && <div className="pop">{frames.map(e => <label key={e.id} className="ck"><input type="checkbox" checked={picks.includes(e.id)} onChange={x => setPicks(x.target.checked ? [...picks, e.id] : picks.filter(p => p !== e.id))} />{e.ft === "word" ? `単語枠　${e.words?.[0]?.term ?? ""}` : `${e.text.slice(0, 14)}`}</label>)}{!frames.length && <span className="mute">枠がありません</span>}</div>}</div>
         <div><b>テストの種類</b>{(Object.keys(KIND) as TestKind[]).map(k => <label key={k} className="ck"><input type="radio" checked={kind === k} onChange={() => setKind(k)} />{KIND[k]}</label>)}
           <b>問題数（5〜20問）</b><input className="inp" type="number" min={5} max={20} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 100 }} />
-          {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{AI_LIMIT} 回中 {Math.max(0, AI_LIMIT - used)} 回</div>}</div></div>
+          {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
       {msg && <div className="err">{msg}</div>}</div>
     <div className="bar2"><span className="row"><button className="btn" disabled={busy} onClick={make}>{busy ? "作成中…" : "作成"}</button>
       <button className="btn line" disabled={!essay} onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "essay" })}>内容編集</button></span>
@@ -76,13 +77,14 @@ export function TestAnswer() {
 export function TestResult() {
   const { data, setData, route, nav, go } = useApp();
   const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
+    const { remaining, refresh } = useAiRemaining(data.usage);
   if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
-  const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx], used = data.usage[dayKey()] ?? 0;
+  const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx];
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const expl = async () => {
-    if (q.expl) return; if (used >= AI_LIMIT) return setMsg("今日はこれ以上使えません");
-    try { const e = await explain(q); setData(d => ({ ...d, usage: { ...d.usage, [dayKey()]: (d.usage[dayKey()] ?? 0) + 1 }, tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg(""); }
-    catch { setMsg("AIサービスが使えません。時間をおいて試してください"); }
+       if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
+    try { const e = await explain(q); void refresh(); setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg(""); }
+    catch (e) { setMsg(errorText(e)); void refresh(); }
   };
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{ans || list ? q.a : "（解答するとここに表示されます）"}</div></div>
       <button className="btn" style={{ alignSelf: "flex-end" }} onClick={expl}>解説</button>{q.expl && <div className="pop">{q.expl}</div>}{msg && <div className="err">{msg}</div>}</>}

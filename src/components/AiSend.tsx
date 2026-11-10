@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../state/app";
 import type { El, FrameType } from "../types";
-import { AI_LIMIT, FT, bottomY, calls, chunkText, dayKey, newEl } from "../lib/logic";
-import { organize, type Proposal } from "../services/ai";
+import { FT, bottomY, calls, chunkText, newEl } from "../lib/logic";
+import { addLocalUsage, organize, useAiRemaining, type Proposal } from "../services/ai";
+import { errorText } from "../services/api";
 import { getBlob } from "../services/db";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
@@ -30,7 +31,7 @@ export function AiSend() {
   const [types, setTypes] = useState<FrameType[]>(Object.keys(FT) as FrameType[]), [tab, setTab] = useState<"src" | "send" | "prop">("src");
   const [props, setProps] = useState<Proposal[]>([]), [pick, setPick] = useState<string[]>([]), [msg, setMsg] = useState(""), [set, setSet] = useState(false);
   const [ins, setIns] = useState(""), [ref, setRef] = useState<string | null>(null), [busy, setBusy] = useState(false);
-  const used = data.usage[dayKey()] ?? 0, frames = useMemo(() => (item?.note.els ?? []).filter(e => e.kind === "frame"), [item]);
+  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames =
   useEffect(() => { // 元にできる内容：文字起こし済みの資料（ページごと）とノートの枠
     if (!item || !account) return; let live = true;
     (async () => {
@@ -45,12 +46,12 @@ export function AiSend() {
   if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
   const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
-  const consume = (n: number) => setData(d => ({ ...d, usage: { ...d.usage, [dayKey()]: (d.usage[dayKey()] ?? 0) + n } }));
+    const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
   const confirmCalls = async (): Promise<number | null> => {
     if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
     const n = calls(text.length);
-    if (used + n > AI_LIMIT) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
+        if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
     if (n > 1 && await ask(`1万文字を超えているため、分けて送ると利用回数を余分に消費します（この内容では${n}回分）`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
     return n;
   };
@@ -58,8 +59,8 @@ export function AiSend() {
     if (!types.length) return setMsg("枠の種類を選んでください");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
     try { const ps = await organize(text, types, frames.map(e => ({ id: e.id, ft: e.ft }))); consume(n); setProps(ps); setPick(ps.map(p => p.id)); setTab("prop"); if (!ps.length) setMsg("提案が作れませんでした。送る内容を見直してください"); }
-    catch { setMsg("AIサービスが使えません。時間をおいて試してください"); } setBusy(false);
-  };
+        catch (e) { setMsg(errorText(e)); void refresh(); } setBusy(false);
+
   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.id, itemId: item.id }); };
   const approve = () => {
     const ps = props.filter(p => pick.includes(p.id));
@@ -90,7 +91,7 @@ export function AiSend() {
             onChange={e => setProps(props.map(x => x.id !== p.id ? x : p.ft === "word" ? { ...x, words: e.target.value.split("\n").filter(Boolean).map(l => { const [a, ...b] = l.split(/：|:/); return { term: a.trim(), meaning: b.join("：").trim() }; }) } : { ...x, text: e.target.value }))} /></div></div></div>); })}</div>}
     {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
     {set && essay && <div className="pop">記述テストに使う内容を決めます。AIの利用はテストを作るときです。</div>}
-    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{AI_LIMIT} 回中 {Math.max(0, AI_LIMIT - used)} 回</div>{msg && <div className="err">{msg}</div>}
+    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>{msg && <div className="err">{msg}</div>}
     <div className="bar2 stick"><span className="row">{!essay && <button className="btn" disabled={busy || tab === "prop"} onClick={send}>{busy ? "送信中…" : "送信"}</button>}<button className="btn line" onClick={() => setSet(!set)}>設定</button>
       {!essay && <button className="btn" disabled={tab !== "prop"} onClick={approve}>承認</button>}</span>
       <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("提案をすべて捨てたよ"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id }); }}>キャンセル</button></div></>}
