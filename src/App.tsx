@@ -8,7 +8,8 @@ import { TestAnswer, TestCreate, TestList, TestResult } from "./components/Tests
 import { Toast } from "./components/toast";
 
 export default function App() {
-  const { route, account } = useApp();
+    const { route, account, ready } = useApp();
+  if (!ready) return <div className="app"><div className="authwrap"><p className="mute">読み込み中…</p></div></div>; // ログイン状態の確認中
   const S = !account ? (route.s === "G002" ? <Register /> : <Login />) : ({
     G001: <SubjectList />, G002: <SubjectList />, G003: <SubjectList />, G004: <Study key={route.subjectId + (route.itemId ?? "")} />, G005: <MaterialView />, G006: <TranscriptEdit />,
     G007: <AiSend key={route.purpose} />, G008: <TestCreate />, G009: <TestAnswer key={`${route.testId}-${route.mode}`} />, G010: <TestResult key={`${route.testId}-${route.mode}`} />, G011: <TestList />,

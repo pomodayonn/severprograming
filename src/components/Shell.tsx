@@ -7,7 +7,7 @@ import { RelationGraph } from "./RelationGraph";
 export function Header({ plain = false }: { plain?: boolean }) {
   const { account, logout } = useApp();
   return (<header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
-    {!plain && account && <><span className="who">{account.loginId}</span><button className="pill" onClick={logout}>ログアウト</button></>}</header>);
+    {!plain && account && <><span className="who">{account.email}</span><button className="pill" onClick={logout}>ログアウト</button></>}</header>);
 }
 /** 左サイドバーの階層：科目（▼▶）の下に学習項目（●）。extra で選択中の項目の下に足せる */
 export function Tree({ heading, extra }: { heading: string; extra?: (itemId: string) => ReactNode }) {
