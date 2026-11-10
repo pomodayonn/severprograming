@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Data, Note, Route, Student } from "../types";
 import { emptyData, loadData, saveData } from "../services/db";
-import { auth } from "../services/auth";
+import { controller } from "../controller/Controller";
 import { toast } from "../components/toast";
 
 export interface Btn { label: string; value: string; primary?: boolean }
@@ -39,8 +39,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pop, setPop] = useState<{ title: string; val: string; err: string; res: (v: string | null) => void } | null>(null);
   const dRef = useRef(drafts); dRef.current = drafts;
   const aRef = useRef(account); aRef.current = account;
+  const rRef = useRef(route); rRef.current = route; // ログアウトのとき、いまの画面IDを Controller に渡す
 
-  // ---- 保存（まとめて書く）----
+  // ---- 保存（まとめて書く） ----
   const pending = useRef<{ id: string; data: Data } | null>(null), timer = useRef(0);
   const flush = useCallback(() => {
     clearTimeout(timer.current);
@@ -64,10 +65,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const open = useCallback((a: Student) => { flush(); setAccount(a); setD(loadData(a.id)); setDrafts({}); setRoute({ s: "G003" }); }, [flush]);
   const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
-
   useEffect(() => { // 前回ログインしたまま（Google から戻ってきたときも）なら、その学生のデータを開く
     let live = true;
-    auth.getSession().then(a => { if (!live) return; if (a) open(a); setReady(true); });
+    controller.accountManager.getCurrentStudent().then(a => { if (!live) return; if (a) open(a); setReady(true); });
     return () => { live = false; };
   }, [open]);
 
@@ -92,9 +92,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const c = { ...p }; if (n) c[id] = n; else delete c[id]; return c;
   }), []);
   const setTmp = useCallback((p: Record<string, unknown>) => setT(t => ({ ...t, ...p })), []);
-  const leave = useCallback(() => { void auth.signOut(); close(); }, [close]);
+  // ログアウトは Controller → AccountManager → NeonAuthClient の順に呼ぶ
+  const leave = useCallback(() => { void controller.handleRequest(rRef.current.s, "logoutButton"); close(); }, [close]);
   const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
-  const logout = useCallback(async () => { if (await guard()) { await auth.signOut(); close(); } }, [guard, close]);
+  const logout = useCallback(async () => { if (await guard()) { await controller.handleRequest(rRef.current.s, "logoutButton"); close(); } }, [guard, close]);
 
   // 関数はすべて同じものを使い回すので、memo した部品は data などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({

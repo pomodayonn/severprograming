@@ -1,0 +1,46 @@
+// Controller（Controller／フロントエンド）：画面のボタン操作を受け取り、担当の Manager に仕事を渡す。
+// イベントIDは外部設計書のイベント一覧表のとおり。W2 から SubjectManager などを足していく。
+import type { Screen, Student } from "../types";
+import { neonAuthClient } from "../boundary/NeonAuthClient";
+import { AccountError, AccountManager } from "../managers/AccountManager";
+
+/** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
+export interface ControllerResult { next?: Screen; student?: Student | null; error?: string }
+
+export class Controller {
+  readonly accountManager = new AccountManager(neonAuthClient);
+  // W2 で足す：subjectManager・itemManager・noteManager・materialManager・sendContentManager・aiSummaryManager・testManager
+
+  /**
+   * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。
+   * 例：G001 の login → AccountManager.login()
+   */
+  async handleRequest(screenId: Screen, eventId: string, params: Record<string, string> = {}): Promise<ControllerResult> {
+    try {
+      switch (`${screenId}:${eventId}`) {
+        // ---- G001 ログイン画面 ----
+        case "G001:login":
+          return { next: "G003", student: await this.accountManager.login(params.mail ?? "", params.pass ?? "") };
+        case "G001:frastLoginButton": // 新規登録画面へ
+          return { next: "G002" };
+        case "G001:googleLogin": // 外部設計書に追加が必要（Google でログイン）
+        case "G002:googleLogin":
+          await this.accountManager.loginWithGoogle(); // ページが Google に移動する
+          return {};
+        // ---- G002 アカウント登録画面 ----
+        case "G002:frastloginbutton":
+          return { next: "G003", student: await this.accountManager.register(params.mail ?? "", params.pass ?? "", params.passConfirm ?? "") };
+        case "G002:back": // 外部設計書に追加が必要（ログインへ戻る）
+          return { next: "G001" };
+      }
+      // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
+      if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
+      return { error: `まだ作っていない操作です（${screenId}:${eventId}）` };
+    } catch (e) {
+      return { error: e instanceof AccountError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
+    }
+  }
+}
+
+/** アプリ全体で1つだけ使う Controller */
+export const controller = new Controller();
