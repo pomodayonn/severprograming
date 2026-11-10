@@ -1,5 +1,5 @@
 // Question（問題）（Entity Bean／フロントエンド）：テストの1問
-// 担当：野中（作成：東 11/10）。持つデータはクラス一覧（11/10版）のとおり
+// 担当：）。持つデータはクラス一覧（11/10版）のとおり
 import type { DateTime } from "./DateTime";
 
 export class Question {

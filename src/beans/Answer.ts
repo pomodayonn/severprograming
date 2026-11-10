@@ -1,5 +1,5 @@
 // Answer（解答）（Entity Bean／フロントエンド）：1回の受験の中で、1問につき1つ
-// 担当：野中（作成：東 11/10）。持つデータはクラス一覧（11/10版）のとおり
+// 担当：（作成：11/10）。持つデータはクラス一覧（11/10版）のとおり
 import type { DateTime } from "./DateTime";
 
 export class Answer {

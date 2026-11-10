@@ -1,5 +1,5 @@
 // Attempt（受験）（Entity Bean／フロントエンド）：1回解いた分の記録。初回も解き直しも、解くたびに1つ増える
-// 担当：野中（作成：東 11/10）。持つデータはクラス一覧（11/10版）のとおり
+// 担当）。持つデータはクラス一覧（11/10版）のとおり
 import type { DateTime } from "./DateTime";
 import type { Answer } from "./Answer";
 
