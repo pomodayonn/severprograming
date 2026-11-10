@@ -1,6 +1,6 @@
 // サーバー（Render の ApiController）を呼ぶ窓口。やり取りの形は docs/API.md を参照。
 // .env に VITE_API_URL があればサーバーに送り、なければ services/ai.ts の仮のAIで動く。
-import { auth } from "./auth";
+import { neonAuthClient } from "../boundary/NeonAuthClient";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
 export const SERVER = !!API_URL;
@@ -26,7 +26,7 @@ const byStatus = (s: number): ApiErrorCode => s === 401 ? "UNAUTHORIZED" : s ===
 
 export async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   if (!API_URL) throw new ApiError("SERVER");
-  const token = await auth.getAccessToken();
+  const token = await neonAuthClient.getAccessToken();
   let res: Response;
   try {
     res = await fetch(API_URL + path, {

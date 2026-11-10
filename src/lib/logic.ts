@@ -11,9 +11,6 @@ export const fmt = (t?: number) => t ? new Date(t).toLocaleString("ja-JP", { mon
 /** 単語テストの採点：全角半角・大文字小文字・前後の空白は区別せず、全体一致だけ正解 */
 export const norm = (s: string) => s.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
 export const isCorrect = (user: string, model: string) => !!user.trim() && norm(user) === norm(model);
-export const passwordOk = (p: string) => p.length >= 8 && p.length <= 16 && /[A-Za-z]/.test(p) && /\d/.test(p);
-/** メールアドレスの形か（細かい確認は Neon Auth がする） */
-export const emailOk = (v: string) => v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 export const wordsOf = (els: El[]): Word[] => els.filter(e => e.kind === "frame" && e.ft === "word").flatMap(e => e.words ?? []).filter(w => w.term.trim() && w.meaning.trim());
 export function shuffle<T>(a: T[]): T[] { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
 export function wordTest(words: Word[], kind: TestKind, count: number): Question[] {
