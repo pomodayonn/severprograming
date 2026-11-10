@@ -75,7 +75,7 @@ export function Study() {
   return (<div className="app"><Header />
     <div className="cols">
       <aside className="lf">
-        <div className="tabs"><button className={"chip" + (ltab === "tree" ? " on" : "")} onClick={() => setL("tree")}>階層</button><button className={"chip" + (ltab === "parts" ? " on" : "")} onClick={() => setL("parts")}>部品</button></div>
+        <div className="tabs"><button className={"chip" + (ltab === "tree" ? " on" : "")} onClick={() => setL("tree")}>階層</button><button className={"chip" + (ltab === "parts" ? " on" : "")} onClick={() => setL("parts")}>ノートの部品</button></div>
         {ltab === "tree" ? (<>
           <Tree heading="科目一覧" extra={extra} />
           {prog !== null && <div className="mute" style={{ margin: "6px 0" }}>文字起こし中… {prog}%</div>}{msg && <div className="err">{msg}</div>}
