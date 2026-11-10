@@ -1,6 +1,6 @@
 // G007 送信内容・提案確認画面：AIに送る内容の編集（送信前）と、AIの提案の確認（返ってきた後）を同じ画面で行う
 import { useEffect, useMemo, useState } from "react";
-import { useApp } from "../state/app";
+import { Redirect, useApp } from "../state/app";
 import type { El, FrameType } from "../types";
 import { FT, bottomY, calls, chunkText, newEl } from "../lib/logic";
 import { addLocalUsage, organize, useAiRemaining, type Proposal } from "../services/ai";
@@ -43,7 +43,7 @@ export function AiSend() {
       if (live) setParts(ps);
     })(); return () => { live = false; };
   }, [item?.id]); // eslint-disable-line
-  if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
+  if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
   const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
