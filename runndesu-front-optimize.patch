@@ -1,0 +1,554 @@
+diff --git a/index.html b/index.html
+index 984f762..46ea3ae 100644
+--- a/index.html
++++ b/index.html
+@@ -2,5 +2,6 @@
+ <html lang="ja"><head><meta charset="utf-8"><title>るんです。</title>
+ <link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"><link rel="apple-touch-icon" href="/icon-192.png">
+ <meta name="theme-color" content="#f3efe6"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
++<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap">
+ </head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+diff --git a/public/manifest.webmanifest b/public/manifest.webmanifest
+index 49ba6d2..aa01612 100644
+--- a/public/manifest.webmanifest
++++ b/public/manifest.webmanifest
+@@ -1 +1 @@
+-{"name":"るんです。","short_name":"るんです。","start_url":"./runndesu.html","display":"standalone","background_color":"#f3efe6","theme_color":"#cf3f5b","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
+\ No newline at end of file
++{"name":"るんです。","short_name":"るんです。","start_url":"/","scope":"/","display":"standalone","background_color":"#f3efe6","theme_color":"#cf3f5b","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}
+\ No newline at end of file
+diff --git a/public/sw.js b/public/sw.js
+index 8c58039..e0ef556 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,6 +1,27 @@
+-const C = "runndesu-v1", FILES = ["./", "./runndesu.html", "./icon-192.png", "./manifest.webmanifest"];
+-self.addEventListener("install", e => e.waitUntil(caches.open(C).then(c => c.addAll(FILES))));
+-self.addEventListener("activate", e => e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C).map(x => caches.delete(x))))));
+-// ネットワーク優先、だめならキャッシュ（オフラインでも開ける）
+-self.addEventListener("fetch", e => { if (e.request.method !== "GET") return;
+-  e.respondWith(fetch(e.request).then(r => { const cp = r.clone(); caches.open(C).then(c => c.put(e.request, cp)); return r; }).catch(() => caches.match(e.request))); });
++// るんです。のサービスワーカー（オフラインでも開けるようにする）
++// ・画面（HTML）：ネットワーク優先。つながらなければ保存しておいた画面を出す
++// ・/assets/（Vite が作る、名前に指紋つきのファイル）：中身が変わらないのでキャッシュ優先
++// ・Google Fonts：キャッシュ優先
++// ・AIサーバーや Neon Auth など、ほかのサイトへの通信には手を出さない
++const C = "runndesu-v2";
++const CORE = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
++const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
++
++self.addEventListener("install", e => e.waitUntil(caches.open(C).then(c => c.addAll(CORE)).then(() => self.skipWaiting())));
++self.addEventListener("activate", e => e.waitUntil(
++  caches.keys().then(k => Promise.all(k.filter(x => x !== C).map(x => caches.delete(x)))).then(() => self.clients.claim())));
++
++const put = (req, res) => { if (res.ok) { const cp = res.clone(); caches.open(C).then(c => c.put(req, cp)); } return res; };
++const cacheFirst = req => caches.match(req).then(hit => hit ?? fetch(req).then(r => put(req, r)));
++
++self.addEventListener("fetch", e => {
++  const req = e.request; if (req.method !== "GET") return;
++  const url = new URL(req.url);
++  if (url.origin === self.location.origin) {
++    if (req.mode === "navigate") return e.respondWith(fetch(req).then(r => put("/", r)).catch(() => caches.match("/")));
++    if (url.pathname.startsWith("/assets/")) return e.respondWith(cacheFirst(req));
++    return e.respondWith(fetch(req).then(r => put(req, r)).catch(() => caches.match(req)));
++  }
++  if (FONT_HOSTS.includes(url.hostname)) return e.respondWith(cacheFirst(req));
++  // それ以外（API・ログインなど）は素通し
++});
+diff --git a/src/App.tsx b/src/App.tsx
+index 2eaad2c..7ed5d59 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,18 +1,42 @@
++import { lazy, Suspense, useEffect } from "react";
+ import { useApp } from "./state/app";
+ import { Login, Register } from "./components/Auth";
+ import { SubjectList } from "./components/SubjectList";
+-import { Study } from "./components/Study";
+-import { MaterialView, TranscriptEdit } from "./components/Material";
+-import { AiSend } from "./components/AiSend";
+-import { TestAnswer, TestCreate, TestList, TestResult } from "./components/Tests";
+ import { Toast } from "./components/toast";
+ 
++// ログイン後の画面は、開いたときに読み込む（最初に読むファイルを小さくする）
++const Study = lazy(() => import("./components/Study").then(m => ({ default: m.Study })));
++const material = () => import("./components/Material");
++const MaterialView = lazy(() => material().then(m => ({ default: m.MaterialView })));
++const TranscriptEdit = lazy(() => material().then(m => ({ default: m.TranscriptEdit })));
++const AiSend = lazy(() => import("./components/AiSend").then(m => ({ default: m.AiSend })));
++const tests = () => import("./components/Tests");
++const TestCreate = lazy(() => tests().then(m => ({ default: m.TestCreate })));
++const TestAnswer = lazy(() => tests().then(m => ({ default: m.TestAnswer })));
++const TestResult = lazy(() => tests().then(m => ({ default: m.TestResult })));
++const TestList = lazy(() => tests().then(m => ({ default: m.TestList })));
++
++const Loading = () => <div className="app"><div className="authwrap"><p className="mute">読み込み中…</p></div></div>;
++
++function Screen() {
++  const { route, account } = useApp();
++  if (!account) return route.s === "G002" ? <Register /> : <Login />;
++  switch (route.s) {
++    case "G004": return <Study key={route.subjectId + (route.itemId ?? "")} />;
++    case "G005": return <MaterialView />;
++    case "G006": return <TranscriptEdit />;
++    case "G007": return <AiSend key={route.purpose} />;
++    case "G008": return <TestCreate />;
++    case "G009": return <TestAnswer key={`${route.testId}-${route.mode}`} />;
++    case "G010": return <TestResult key={`${route.testId}-${route.mode}`} />;
++    case "G011": return <TestList />;
++    default: return <SubjectList />; // G001〜G003
++  }
++}
++
+ export default function App() {
+-    const { route, account, ready } = useApp();
+-  if (!ready) return <div className="app"><div className="authwrap"><p className="mute">読み込み中…</p></div></div>; // ログイン状態の確認中
+-  const S = !account ? (route.s === "G002" ? <Register /> : <Login />) : ({
+-    G001: <SubjectList />, G002: <SubjectList />, G003: <SubjectList />, G004: <Study key={route.subjectId + (route.itemId ?? "")} />, G005: <MaterialView />, G006: <TranscriptEdit />,
+-    G007: <AiSend key={route.purpose} />, G008: <TestCreate />, G009: <TestAnswer key={`${route.testId}-${route.mode}`} />, G010: <TestResult key={`${route.testId}-${route.mode}`} />, G011: <TestList />,
+-  } as const)[route.s];
+-  return <>{S}<Toast /></>;
++  const { ready, account } = useApp();
++  useEffect(() => { if (account) void import("./components/Study"); }, [account]); // ログインしたら、次に開く学習画面を先に読んでおく
++  if (!ready) return <Loading />; // ログイン状態の確認中
++  return <><Suspense fallback={<Loading />}><Screen /></Suspense><Toast /></>;
+ }
+diff --git a/src/components/AiSend.tsx b/src/components/AiSend.tsx
+index 2768327..68d48cb 100644
+--- a/src/components/AiSend.tsx
++++ b/src/components/AiSend.tsx
+@@ -1,6 +1,6 @@
+ // G007 送信内容・提案確認画面：AIに送る内容の編集（送信前）と、AIの提案の確認（返ってきた後）を同じ画面で行う
+ import { useEffect, useMemo, useState } from "react";
+-import { useApp } from "../state/app";
++import { Redirect, useApp } from "../state/app";
+ import type { El, FrameType } from "../types";
+ import { FT, bottomY, calls, chunkText, newEl } from "../lib/logic";
+ import { addLocalUsage, organize, useAiRemaining, type Proposal } from "../services/ai";
+@@ -43,7 +43,7 @@ export function AiSend() {
+       if (live) setParts(ps);
+     })(); return () => { live = false; };
+   }, [item?.id]); // eslint-disable-line
+-  if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
++  if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
+   const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
+   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
+   const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
+diff --git a/src/components/NoteCanvas.tsx b/src/components/NoteCanvas.tsx
+index 7077ad6..682c4bf 100644
+--- a/src/components/NoteCanvas.tsx
++++ b/src/components/NoteCanvas.tsx
+@@ -1,45 +1,74 @@
+ // ノートのキャンバス：枠・文字・図形・矢印を置いて、動かす・大きさを変える・色を変える
+-import { useRef } from "react";
++// 1つの部品を動かしても、ほかの部品は描き直さない（ElView を memo）。ドラッグは1フレームに1回だけ反映する。
++import { memo, useCallback, useEffect, useRef } from "react";
+ import type { El } from "../types";
+ import { FT } from "../lib/logic";
+ 
++type Mode = "move" | "size";
++interface Handlers {
++  upd: (id: string, p: Partial<El>) => void;
++  remove: (id: string) => void;
++  start: (e: React.PointerEvent, el: El, mode: Mode) => void;
++}
++
++const ElView = memo(function ElView({ el, h }: { el: El; h: Handlers }) {
++  const label = el.kind === "frame" ? FT[el.ft!].n : el.kind === "text" ? "文字" : el.kind === "shape" ? "図形" : "矢印";
++  const stop = (e: React.PointerEvent) => e.stopPropagation();
++  const words = el.words ?? [];
++  return (
++    <div data-id={el.id} className={`el ${el.kind}`} style={{ left: el.x, top: el.y, width: el.w, height: el.h, borderColor: el.color, background: el.kind === "frame" ? el.color + "14" : undefined, borderRadius: el.kind === "shape" && el.shape === "ellipse" ? "50%" : undefined }}>
++      <div className="eh" style={{ color: el.color }} onPointerDown={e => h.start(e, el, "move")}>
++        <span>{label}</span>
++        {el.kind === "text" && <select value={el.head ?? 0} onPointerDown={stop} onChange={e => h.upd(el.id, { head: Number(e.target.value) as El["head"] })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
++        {el.kind === "shape" && <select value={el.shape} onPointerDown={stop} onChange={e => h.upd(el.id, { shape: e.target.value as El["shape"] })}><option value="rect">四角</option><option value="ellipse">丸</option></select>}
++        <input type="color" value={el.color} onPointerDown={stop} onChange={e => h.upd(el.id, { color: e.target.value })} aria-label="色" />
++        <button onPointerDown={stop} onClick={() => h.remove(el.id)} aria-label="削除">×</button>
++      </div>
++      {el.kind === "frame" && el.ft === "word" && (
++        <div className="wl">{words.map((w, i) => (
++          <div className="wr" key={i}><input placeholder="用語" value={w.term} onChange={e => h.upd(el.id, { words: words.map((x, j) => j === i ? { ...x, term: e.target.value } : x) })} />
++            <input placeholder="意味" value={w.meaning} onChange={e => h.upd(el.id, { words: words.map((x, j) => j === i ? { ...x, meaning: e.target.value } : x) })} />
++            <button onClick={() => h.upd(el.id, { words: words.filter((_, j) => j !== i) })} aria-label="この単語を消す">×</button></div>))}
++          <button className="btn sm" onClick={() => h.upd(el.id, { words: [...words, { term: "", meaning: "" }], h: el.h + 28 })}>＋ 単語</button></div>)}
++      {(el.kind === "text" || (el.kind === "frame" && el.ft !== "word")) && <textarea className={`h${el.head ?? 0}`} value={el.text} placeholder={el.kind === "text" ? "文字を入力" : "ここに書く"} onChange={e => h.upd(el.id, { text: e.target.value })} />}
++      {el.kind === "arrow" && <svg width="100%" height={el.h - 24} viewBox={`0 0 ${el.w} ${el.h - 24}`} preserveAspectRatio="none"><line x1="4" y1="50%" x2={el.w - 14} y2="50%" stroke={el.color} strokeWidth="3" /><polygon points={`${el.w - 14},${(el.h - 24) / 2 - 7} ${el.w - 2},${(el.h - 24) / 2} ${el.w - 14},${(el.h - 24) / 2 + 7}`} fill={el.color} /></svg>}
++      <span className="rs" onPointerDown={e => h.start(e, el, "size")} />
++    </div>);
++});
++
+ export function NoteCanvas({ els, onChange }: { els: El[]; onChange: (e: El[]) => void }) {
+   const ref = useRef({ els, onChange }); ref.current = { els, onChange };
+-  const drag = useRef<{ id: string; mode: "move" | "size"; sx: number; sy: number; x: number; y: number; w: number; h: number } | null>(null);
+-  const upd = (id: string, p: Partial<El>) => onChange(els.map(e => e.id === id ? { ...e, ...p, at: Date.now() } : e));
+-  const mv = (e: PointerEvent) => {
+-    const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy, r = ref.current;
++  const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number } | null>(null);
++
++  // 部品に渡す関数は最初に1回だけ作る（いつも最新の els / onChange を ref から読む）
++  const h = useRef<Handlers | null>(null);
++  const apply = useCallback(() => {
++    const d = drag.current; if (!d) return; d.raf = 0;
++    const dx = d.cx - d.sx, dy = d.cy - d.sy, r = ref.current;
+     r.onChange(r.els.map(x => x.id !== d.id ? x : d.mode === "move" ? { ...x, x: Math.max(0, d.x + dx), y: Math.max(0, d.y + dy), at: Date.now() } : { ...x, w: Math.max(60, d.w + dx), h: Math.max(30, d.h + dy), at: Date.now() }));
++  }, []);
++  const mv = useCallback((e: PointerEvent) => {
++    const d = drag.current; if (!d) return; d.cx = e.clientX; d.cy = e.clientY;
++    if (!d.raf) d.raf = requestAnimationFrame(apply);
++  }, [apply]);
++  const up = useCallback(() => {
++    const d = drag.current; if (d?.raf) { cancelAnimationFrame(d.raf); apply(); } // 最後の位置は必ず反映
++    drag.current = null; window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up);
++  }, [apply, mv]);
++  if (!h.current) h.current = {
++    upd: (id, p) => { const r = ref.current; r.onChange(r.els.map(e => e.id === id ? { ...e, ...p, at: Date.now() } : e)); },
++    remove: id => { const r = ref.current; r.onChange(r.els.filter(x => x.id !== id)); },
++    start: (e, el, mode) => {
++      e.preventDefault(); e.stopPropagation();
++      drag.current = { id: el.id, mode, sx: e.clientX, sy: e.clientY, x: el.x, y: el.y, w: el.w, h: el.h, cx: e.clientX, cy: e.clientY, raf: 0 };
++      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
++    },
+   };
+-  const up = () => { drag.current = null; window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+-  const start = (e: React.PointerEvent, el: El, mode: "move" | "size") => {
+-    e.preventDefault(); e.stopPropagation(); drag.current = { id: el.id, mode, sx: e.clientX, sy: e.clientY, x: el.x, y: el.y, w: el.w, h: el.h };
+-    window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+-  };
+-  const H = Math.max(520, ...els.map(e => e.y + e.h + 160));
++  useEffect(() => () => up(), [up]); // ドラッグ中に画面を離れても、イベントを残さない
++
++  let H = 520; for (const e of els) H = Math.max(H, e.y + e.h + 160);
+   return (
+     <div className="canvas" id="note-canvas" style={{ height: H }}>
+-      {els.map(el => {
+-        const label = el.kind === "frame" ? FT[el.ft!].n : el.kind === "text" ? "文字" : el.kind === "shape" ? "図形" : "矢印";
+-        return (
+-          <div key={el.id} data-id={el.id} className={`el ${el.kind}`} style={{ left: el.x, top: el.y, width: el.w, height: el.h, borderColor: el.color, background: el.kind === "frame" ? el.color + "14" : undefined, borderRadius: el.kind === "shape" && el.shape === "ellipse" ? "50%" : undefined }}>
+-            <div className="eh" style={{ color: el.color }} onPointerDown={e => start(e, el, "move")}>
+-              <span>{label}</span>
+-              {el.kind === "text" && <select value={el.head ?? 0} onPointerDown={e => e.stopPropagation()} onChange={e => upd(el.id, { head: Number(e.target.value) as El["head"] })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
+-              {el.kind === "shape" && <select value={el.shape} onPointerDown={e => e.stopPropagation()} onChange={e => upd(el.id, { shape: e.target.value as El["shape"] })}><option value="rect">四角</option><option value="ellipse">丸</option></select>}
+-              <input type="color" value={el.color} onPointerDown={e => e.stopPropagation()} onChange={e => upd(el.id, { color: e.target.value })} aria-label="色" />
+-              <button onPointerDown={e => e.stopPropagation()} onClick={() => onChange(els.filter(x => x.id !== el.id))} aria-label="削除">×</button>
+-            </div>
+-            {el.kind === "frame" && el.ft === "word" && (
+-              <div className="wl">{(el.words ?? []).map((w, i) => (
+-                <div className="wr" key={i}><input placeholder="用語" value={w.term} onChange={e => upd(el.id, { words: el.words!.map((x, j) => j === i ? { ...x, term: e.target.value } : x) })} />
+-                  <input placeholder="意味" value={w.meaning} onChange={e => upd(el.id, { words: el.words!.map((x, j) => j === i ? { ...x, meaning: e.target.value } : x) })} />
+-                  <button onClick={() => upd(el.id, { words: el.words!.filter((_, j) => j !== i) })} aria-label="この単語を消す">×</button></div>))}
+-                <button className="btn sm" onClick={() => upd(el.id, { words: [...(el.words ?? []), { term: "", meaning: "" }], h: el.h + 28 })}>＋ 単語</button></div>)}
+-            {(el.kind === "text" || (el.kind === "frame" && el.ft !== "word")) && <textarea className={`h${el.head ?? 0}`} value={el.text} placeholder={el.kind === "text" ? "文字を入力" : "ここに書く"} onChange={e => upd(el.id, { text: e.target.value })} />}
+-            {el.kind === "arrow" && <svg width="100%" height={el.h - 24} viewBox={`0 0 ${el.w} ${el.h - 24}`} preserveAspectRatio="none"><line x1="4" y1="50%" x2={el.w - 14} y2="50%" stroke={el.color} strokeWidth="3" /><polygon points={`${el.w - 14},${(el.h - 24) / 2 - 7} ${el.w - 2},${(el.h - 24) / 2} ${el.w - 14},${(el.h - 24) / 2 + 7}`} fill={el.color} /></svg>}
+-            <span className="rs" onPointerDown={e => start(e, el, "size")} />
+-          </div>);
+-      })}
++      {els.map(el => <ElView key={el.id} el={el} h={h.current!} />)}
+     </div>);
+ }
+diff --git a/src/components/RelationGraph.tsx b/src/components/RelationGraph.tsx
+index 12d8c2a..6e89e8f 100644
+--- a/src/components/RelationGraph.tsx
++++ b/src/components/RelationGraph.tsx
+@@ -1,22 +1,38 @@
+ // 関連図：学習項目を丸、前提のつながりを線で表す。丸を押すとその項目のノートに切り替える
+-import type { Subject } from "../types";
++// ノートを書いている間（items が同じ間）は配置を計算し直さず、描き直しもしない。
++import { memo, useMemo } from "react";
++import type { Item, Subject } from "../types";
+ 
+-export function RelationGraph({ s, selId, onOpen }: { s: Subject; selId?: string; onOpen: (id: string) => void }) {
++function layout(items: Item[]) {
++  const byId = new Map(items.map(i => [i.id, i])), depth = new Map<string, number>();
++  const d = (id: string, seen: Set<string>): number => { // 前提の段数（輪になっていても止まる）
++    const cached = depth.get(id); if (cached !== undefined) return cached;
++    if (seen.has(id)) return 0; seen.add(id);
++    const pre = (byId.get(id)?.prereqs ?? []).filter(p => byId.has(p));
++    const v = pre.length ? 1 + Math.max(...pre.map(p => d(p, seen))) : 0;
++    seen.delete(id); depth.set(id, v); return v;
++  };
++  const cols = new Map<number, string[]>();
++  for (const i of items) { const c = d(i.id, new Set()); (cols.get(c) ?? cols.set(c, []).get(c)!).push(i.id); }
++  const pos = new Map<string, [number, number]>();
++  let rows = 0;
++  cols.forEach((ids, c) => { rows = Math.max(rows, ids.length); ids.forEach((id, r) => pos.set(id, [48 + c * 100, 44 + r * 76])); });
++  return { pos, W: 100 + cols.size * 100, H: 90 + rows * 76 };
++}
++
++function Graph({ s, selId, onOpen }: { s: Subject; selId?: string; onOpen: (id: string) => void }) {
++  const g = useMemo(() => layout(s.items), [s.items]);
+   if (!s.items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
+-  const depth: Record<string, number> = {};
+-  const d = (id: string, seen: string[] = []): number => depth[id] ??= seen.includes(id) ? 0 : (s.items.find(i => i.id === id)?.prereqs.length ? 1 + Math.max(...s.items.find(i => i.id === id)!.prereqs.map(p => d(p, [...seen, id]))) : 0);
+-  s.items.forEach(i => d(i.id));
+-  const cols: Record<number, string[]> = {}; s.items.forEach(i => (cols[depth[i.id]] ??= []).push(i.id));
+-  const pos: Record<string, [number, number]> = {};
+-  Object.entries(cols).forEach(([c, ids]) => ids.forEach((id, r) => (pos[id] = [48 + +c * 100, 44 + r * 76])));
+-  const W = 100 + Object.keys(cols).length * 100, Hh = 90 + Math.max(...Object.values(cols).map(a => a.length)) * 76;
++  const at = (id: string) => g.pos.get(id)!;
+   return (
+-    <svg viewBox={`0 0 ${W} ${Hh}`} className="graph" role="img" aria-label="関連図">
+-      {s.items.flatMap(i => i.prereqs.filter(p => pos[p]).map(p => <line key={p + i.id} x1={pos[p][0]} y1={pos[p][1]} x2={pos[i.id][0]} y2={pos[i.id][1]} stroke="#cdbfa8" strokeWidth="2" />))}
+-      {s.items.map(i => (
++    <svg viewBox={`0 0 ${g.W} ${g.H}`} className="graph" role="img" aria-label="関連図">
++      {s.items.flatMap(i => i.prereqs.filter(p => g.pos.has(p)).map(p => <line key={p + i.id} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.id)[0]} y2={at(i.id)[1]} stroke="#cdbfa8" strokeWidth="2" />))}
++      {s.items.map(i => { const [x, y] = at(i.id), on = i.id === selId; return (
+         <g key={i.id} className="node" tabIndex={0} onClick={() => onOpen(i.id)} onKeyDown={e => e.key === "Enter" && onOpen(i.id)}>
+-          <circle cx={pos[i.id][0]} cy={pos[i.id][1]} r="24" fill={i.id === selId ? "#f6dde2" : "#fffdf8"} stroke={i.id === selId ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
+-          <text x={pos[i.id][0]} y={pos[i.id][1] + 4} textAnchor="middle" fontSize="10">{i.name.length > 5 ? i.name.slice(0, 5) + "…" : i.name}</text>
+-        </g>))}
++          <circle cx={x} cy={y} r="24" fill={on ? "#f6dde2" : "#fffdf8"} stroke={on ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
++          <text x={x} y={y + 4} textAnchor="middle" fontSize="10">{i.name.length > 5 ? i.name.slice(0, 5) + "…" : i.name}</text>
++        </g>); })}
+     </svg>);
+ }
++/** onOpen は画面遷移だけを行う関数を渡す前提で、比べない（毎回新しい関数でも描き直さない） */
++export const RelationGraph = memo(Graph, (a, b) => a.s.items === b.s.items && a.selId === b.selId);
+diff --git a/src/components/Study.tsx b/src/components/Study.tsx
+index b6afe4f..35a6b38 100644
+--- a/src/components/Study.tsx
++++ b/src/components/Study.tsx
+@@ -1,6 +1,6 @@
+ // G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
+ import { useState } from "react";
+-import { useApp } from "../state/app";
++import { Redirect, useApp } from "../state/app";
+ import type { FrameType, Item, MaterialMeta } from "../types";
+ import { FT, MAX_FILE, bottomY, newEl, txtName, uid, wouldCycle } from "../lib/logic";
+ import { delBlob, putBlob } from "../services/db";
+@@ -21,7 +21,7 @@ export function Study() {
+   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
+   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
+   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
+-  if (!subject || !account) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
++  if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
+   const item: Item | undefined = subject.items.find(i => i.id === route.itemId) ?? subject.items[0];
+   const note = item ? (drafts[item.id] ?? item.note) : null;
+   const mats = item ? data.materials.filter(m => m.itemId === item.id) : [];
+diff --git a/src/components/SubjectList.tsx b/src/components/SubjectList.tsx
+index 0115323..c2c8e51 100644
+--- a/src/components/SubjectList.tsx
++++ b/src/components/SubjectList.tsx
+@@ -1,17 +1,20 @@
+ // G003 科目一覧画面：左に科目の階層、中央で科目の作成・名前の編集・削除
+ import { useApp } from "../state/app";
+ import { uid } from "../lib/logic";
++import { delBlob } from "../services/db";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
+ 
+ export function SubjectList() {
+-  const { data, setData, route, nav, go, ask, askName } = useApp();
++  const { data, setData, route, nav, go, ask, askName, account } = useApp();
+   const cur = data.subjects.find(s => s.id === route.subjectId);
+   const add = async () => { const n = await askName("科目の追加"); if (n) { const id = uid(); setData(d => ({ ...d, subjects: [...d.subjects, { id, name: n, items: [] }] })); nav({ s: "G003", subjectId: id }); } };
+   const edit = async () => { if (!cur) return; const n = await askName("科目名の編集", cur.name); if (n) setData(d => ({ ...d, subjects: d.subjects.map(s => s.id === cur.id ? { ...s, name: n } : s) })); };
+   const del = async () => {
+     if (!cur || await ask("科目の中の学習項目・ノート・資料・テストもすべて削除されます", [{ label: "削除する", value: "ok", primary: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+-    setData(d => { const ids = cur.items.map(i => i.id); return { ...d, subjects: d.subjects.filter(s => s.id !== cur.id), materials: d.materials.filter(m => !ids.includes(m.itemId)), tests: d.tests.filter(t => !ids.includes(t.itemId)) }; });
++    const ids = new Set(cur.items.map(i => i.id)), uid0 = account?.id;
++    if (uid0) data.materials.filter(m => ids.has(m.itemId)).forEach(m => void delBlob(`${uid0}:${m.id}`).catch(() => {})); // 端末に残る資料の中身も消す
++    setData(d => { return { ...d, subjects: d.subjects.filter(s => s.id !== cur.id), materials: d.materials.filter(m => !ids.has(m.itemId)), tests: d.tests.filter(t => !ids.has(t.itemId)) }; });
+     nav({ s: "G003" }); toast("科目を削除したよ");
+   };
+   return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
+diff --git a/src/components/Tests.tsx b/src/components/Tests.tsx
+index 53a2686..52a82ab 100644
+--- a/src/components/Tests.tsx
++++ b/src/components/Tests.tsx
+@@ -1,6 +1,6 @@
+ // G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧
+ import { useMemo, useState } from "react";
+-import { useApp } from "../state/app";
++import { Redirect, useApp } from "../state/app";
+ import type { Test, TestKind } from "../types";
+ import { fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
+ import { addLocalUsage, explain, makeEssay, useAiRemaining } from "../services/ai";
+@@ -16,7 +16,7 @@ export function TestCreate() {
+   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
+   const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+   const { remaining, limit, refresh } = useAiRemaining(data.usage);
+-  if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
++  if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
+   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
+   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
+   const make = async () => {
+@@ -53,7 +53,7 @@ export function TestAnswer() {
+   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => test?.qs.map(() => "") ?? []), [kb, setKb] = useState(test?.kind === "essay");
+   const pool = useMemo(() => test ? test.qs.map(q => q.a) : [], [test]);
+   const choices = useMemo(() => !test || test.kind === "essay" ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [test, idx, pool]); // eslint-disable-line
+-  if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
++  if (!test) return <Redirect to={{ s: "G003" }} />;
+   const base = { subjectId: route.subjectId, itemId: route.itemId };
+   const leave = () => nav({ s: retry ? "G011" : "G004", ...base });
+   const done = async () => {
+@@ -79,7 +79,7 @@ export function TestResult() {
+   const { data, setData, route, nav, go } = useApp();
+   const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
+   const { remaining, refresh } = useAiRemaining(data.usage);
+-  if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
++  if (!test) return <Redirect to={{ s: "G003" }} />;
+   const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx];
+   const base = { subjectId: route.subjectId, itemId: route.itemId };
+   const expl = async () => {
+diff --git a/src/services/db.ts b/src/services/db.ts
+index eff48bf..0cf480a 100644
+--- a/src/services/db.ts
++++ b/src/services/db.ts
+@@ -21,7 +21,14 @@ export const emptyData = (): Data => ({ subjects: [], materials: [], tests: [],
+ export const loadData = (id: string): Data => ({ ...emptyData(), ...read<Partial<Data>>(D(id), {}) });
+ export const saveData = (id: string, d: Data) => ls.set(D(id), JSON.stringify(d));
+ // ---- 資料の中身（IndexedDB）----
+-const open = () => new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open("runndesu", 1); r.onupgradeneeded = () => r.result.createObjectStore("blobs"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
++// 接続は1回だけ開いて使い回す（毎回開くと遅い）。失敗したときは次にもう一度開き直す
++let dbp: Promise<IDBDatabase> | null = null;
++const open = () => dbp ??= new Promise<IDBDatabase>((res, rej) => {
++  const r = indexedDB.open("runndesu", 1);
++  r.onupgradeneeded = () => r.result.createObjectStore("blobs");
++  r.onsuccess = () => { const db = r.result; db.onclose = () => { dbp = null; }; db.onversionchange = () => { db.close(); dbp = null; }; res(db); };
++  r.onerror = () => { dbp = null; rej(r.error); };
++});
+ const tx = async <T,>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => { const db = await open(); return new Promise((res, rej) => { const r = f(db.transaction("blobs", mode).objectStore("blobs")); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); };
+ export const putBlob = (key: string, v: Blob | string) => tx("readwrite", s => s.put(v, key));
+ export const getBlob = (key: string) => tx<Blob | string | undefined>("readonly", s => s.get(key));
+diff --git a/src/state/app.tsx b/src/state/app.tsx
+index 8703759..4b4e58b 100644
+--- a/src/state/app.tsx
++++ b/src/state/app.tsx
+@@ -1,5 +1,5 @@
+ // アプリ全体の状態：ログイン中の学生・その学生のデータ・いまの画面・保存前のノート・確認ダイアログ
+-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
++import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+ import type { Data, Note, Route, Student } from "../types";
+ import { emptyData, loadData, saveData } from "../services/db";
+ import { auth } from "../services/auth";
+@@ -19,6 +19,15 @@ interface Ctx {
+ }
+ const C = createContext<Ctx | null>(null);
+ export const useApp = () => { const c = useContext(C); if (!c) throw new Error("AppProvider がありません"); return c; };
++/** 表示に必要なデータがないとき、描画が終わってから別の画面へ移す（描画中に画面を変えない） */
++export function Redirect({ to }: { to: Route }) {
++  const { nav } = useApp();
++  useEffect(() => { nav(to); }, []); // eslint-disable-line react-hooks/exhaustive-deps
++  return null;
++}
++
++/** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
++const SAVE_DELAY = 400;
+ 
+ export function AppProvider({ children }: { children: ReactNode }) {
+   const [account, setAccount] = useState<Student | null>(null), [ready, setReady] = useState(false);
+@@ -31,37 +40,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
+   const dRef = useRef(drafts); dRef.current = drafts;
+   const aRef = useRef(account); aRef.current = account;
+ 
++  // ---- 保存（まとめて書く）----
++  const pending = useRef<{ id: string; data: Data } | null>(null), timer = useRef(0);
++  const flush = useCallback(() => {
++    clearTimeout(timer.current);
++    const p = pending.current; pending.current = null;
++    if (p) saveData(p.id, p.data);
++  }, []);
++  useEffect(() => { // タブを閉じる・裏に回るときは、待たずに書き込む
++    const onHide = () => flush();
++    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
++    window.addEventListener("pagehide", onHide); document.addEventListener("visibilitychange", onVis);
++    return () => { window.removeEventListener("pagehide", onHide); document.removeEventListener("visibilitychange", onVis); flush(); };
++  }, [flush]);
++  const setData = useCallback((f: (d: Data) => Data) => setD(prev => {
++    const n = f(prev), a = aRef.current;
++    if (a) { // ここでは予約だけ（StrictMode で2回呼ばれても書き込みは1回）
++      pending.current = { id: a.id, data: n };
++      clearTimeout(timer.current); timer.current = window.setTimeout(flush, SAVE_DELAY);
++    }
++    return n;
++  }), [flush]);
++
++  const open = useCallback((a: Student) => { flush(); setAccount(a); setD(loadData(a.id)); setDrafts({}); setRoute({ s: "G003" }); }, [flush]);
++  const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
++
+   useEffect(() => { // 前回ログインしたまま（Google から戻ってきたときも）なら、その学生のデータを開く
+     let live = true;
+-    auth.getSession().then(a => { if (!live) return; if (a) { setAccount(a); setD(loadData(a.id)); setRoute({ s: "G003" }); } setReady(true); });
++    auth.getSession().then(a => { if (!live) return; if (a) open(a); setReady(true); });
+     return () => { live = false; };
+-  }, []);
+-  const setData = useCallback((f: (d: Data) => Data) => setD(prev => { const n = f(prev); if (aRef.current) saveData(aRef.current.id, n); return n; }), []);
+-  const ask = (msg: string, buttons: Btn[]) => new Promise<string>(res => setDlg({ msg, buttons, res }));
+-  const askName = (title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res }));
+-  const save = (itemId: string) => {
++  }, [open]);
++
++  const ask = useCallback((msg: string, buttons: Btn[]) => new Promise<string>(res => setDlg({ msg, buttons, res })), []);
++  const askName = useCallback((title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res })), []);
++  const save = useCallback((itemId: string) => {
+     const dr = dRef.current[itemId]; if (!dr) return;
+     setData(d => ({ ...d, subjects: d.subjects.map(s => ({ ...s, items: s.items.map(i => i.id === itemId ? { ...i, note: { ...dr, savedAt: Date.now() } } : i) })) }));
+     setDrafts(p => { const n = { ...p }; delete n[itemId]; return n; });
+-  };
++  }, [setData]);
+   /** 保存していないノートがあれば確認する（D04）。移ってよければ true */
+-  const guard = async () => {
++  const guard = useCallback(async () => {
+     const ids = Object.keys(dRef.current); if (!ids.length) return true;
+     const v = await ask("保存していない変更があります", [{ label: "保存して移る", value: "save", primary: true }, { label: "保存せずに移る", value: "drop" }, { label: "キャンセル", value: "cancel" }]);
+     if (v === "cancel") return false;
+     if (v === "save") { ids.forEach(save); toast("保存したよ"); } else setDrafts({});
+     return true;
+-  };
+-  const value: Ctx = {
+-    account, ready, data, setData, route, nav: r => setRoute(r), drafts,
+-    setDraft: (id, n) => setDrafts(p => { const c = { ...p }; if (n) c[id] = n; else delete c[id]; return c; }),
+-    tmp, setTmp: p => setT(t => ({ ...t, ...p })),
+-    enter: a => { setAccount(a); setD(loadData(a.id)); setRoute({ s: "G003" }); },
+-    leave: () => { void auth.signOut(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); },
+-    ask, askName, guard, save,
+-    go: async r => { if (await guard()) setRoute(r); },
+-    logout: async () => { if (await guard()) { await auth.signOut(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); } }, // 端末のデータは消さない
+-  };
++  }, [ask, save]);
++  const nav = useCallback((r: Route) => setRoute(r), []);
++  const setDraft = useCallback((id: string, n: Note | null) => setDrafts(p => {
++    if (!n && !(id in p)) return p; // 変化なしなら作り直さない
++    const c = { ...p }; if (n) c[id] = n; else delete c[id]; return c;
++  }), []);
++  const setTmp = useCallback((p: Record<string, unknown>) => setT(t => ({ ...t, ...p })), []);
++  const leave = useCallback(() => { void auth.signOut(); close(); }, [close]);
++  const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
++  const logout = useCallback(async () => { if (await guard()) { await auth.signOut(); close(); } }, [guard, close]);
++
++  // 関数はすべて同じものを使い回すので、memo した部品は data などが変わったときだけ描き直る
++  const value = useMemo<Ctx>(() => ({
++    account, ready, data, setData, route, nav, drafts, setDraft, tmp, setTmp,
++    enter: open, leave, ask, askName, guard, save, go, logout,
++  }), [account, ready, data, setData, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
++
+   const submitPop = () => {
+     if (!pop) return; const v = pop.val.trim();
+     if (!v) return setPop({ ...pop, err: "名前が入力されていません" });
+@@ -78,4 +118,4 @@ export function AppProvider({ children }: { children: ReactNode }) {
+         <div className="row"><button className="btn" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
+     </C.Provider>
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index 1826ab6..b3e02a5 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,3 +1,12 @@
+ import { defineConfig } from "vite";
+ import react from "@vitejs/plugin-react";
+-export default defineConfig({ plugins: [react()] });
++export default defineConfig({
++  plugins: [react()],
++  build: {
++    target: "es2021",
++    rollupOptions: {
++      // React は画面の変更があってもほぼ変わらないので別ファイルにし、ブラウザのキャッシュを効かせる
++      output: { manualChunks: { react: ["react", "react-dom"] } },
++    },
++  },
++});
