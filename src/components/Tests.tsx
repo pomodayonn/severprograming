@@ -1,10 +1,10 @@
-// G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧 
+// G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧
 import { useMemo, useState } from "react";
 import { useApp } from "../state/app";
+import type { Test, TestKind } from "../types";
 import { fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
 import { addLocalUsage, explain, makeEssay, useAiRemaining } from "../services/ai";
 import { errorText } from "../services/api";
-import { explain, makeEssay } from "../services/ai";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
@@ -14,9 +14,10 @@ const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${
 export function TestCreate() {
   const { data, setData, route, nav, go, tmp, setTmp } = useApp();
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
-    const { remaining, limit, refresh } = useAiRemaining(data.usage);
+  const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+  const { remaining, limit, refresh } = useAiRemaining(data.usage);
   if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
-    const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
+  const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
   const make = async () => {
     setMsg(""); const n = Math.min(20, Math.max(5, Math.round(count) || 10)); let qs;
@@ -25,10 +26,10 @@ export function TestCreate() {
       qs = wordTest(ws, kind, n); if (ws.length < n) toast(`単語が少ないので、ある分（${ws.length}問）だけ出題します`);
     } else {
       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
-           const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
+      const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
       setBusy(true); try { qs = await makeEssay(send, n); } catch (e) { setBusy(false); void refresh(); return setMsg(errorText(e)); } setBusy(false);
       if (!qs.length) return setMsg("問題を作れませんでした。送る内容を見直してください");
-            setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); void refresh(); setTmp({ send: "", sendCalls: 1 });
+      setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); void refresh(); setTmp({ send: "", sendCalls: 1 });
     }
     const t: Test = { id: uid(), itemId: item.id, kind, created: Date.now(), qs }; setData(d => ({ ...d, tests: [...d.tests, t] }));
     nav({ s: "G009", subjectId: subject.id, itemId: item.id, testId: t.id, mode: "new" }); // 問題だけを表示（模範解答・解説は出さない）
@@ -77,12 +78,12 @@ export function TestAnswer() {
 export function TestResult() {
   const { data, setData, route, nav, go } = useApp();
   const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
-    const { remaining, refresh } = useAiRemaining(data.usage);
+  const { remaining, refresh } = useAiRemaining(data.usage);
   if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
   const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx];
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const expl = async () => {
-       if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
+    if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
     try { const e = await explain(q); void refresh(); setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg(""); }
     catch (e) { setMsg(errorText(e)); void refresh(); }
   };
