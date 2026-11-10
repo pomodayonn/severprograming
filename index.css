@@ -1,4 +1,4 @@
-/* 「おしゃれ」な元のデザイン：あたたかい紙の色・ピンクの差し色・丸いボタン・ノートのリング */
+/* 「おしゃれ」のデザイン：あたたかい紙の色・ピンクの差し色・丸いボタン・ノートのリング */
 :root{--bg:#f3efe6;--pn:#fffdf8;--ink:#2a2740;--mute:#7a7690;--line:#e1dacb;--line2:#cdbfa8;--acc:#cf3f5b;--soft:#f6dde2;--ok:#2e7d6d;--err:#cf3f5b;box-sizing:border-box}
 *{box-sizing:border-box}html,body,#root{height:100%;margin:0}
 body{font:15px/1.65 "Zen Maru Gothic","Hiragino Maru Gothic ProN","Yu Gothic",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
