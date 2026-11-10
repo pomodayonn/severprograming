@@ -1,6 +1,6 @@
 // G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧
 import { useMemo, useState } from "react";
-import { useApp } from "../state/app";
+import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
 import { fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
 import { addLocalUsage, explain, makeEssay, useAiRemaining } from "../services/ai";
@@ -16,7 +16,7 @@ export function TestCreate() {
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
   const { remaining, limit, refresh } = useAiRemaining(data.usage);
-  if (!subject || !item) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
+  if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
   const make = async () => {
@@ -53,7 +53,7 @@ export function TestAnswer() {
   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => test?.qs.map(() => "") ?? []), [kb, setKb] = useState(test?.kind === "essay");
   const pool = useMemo(() => test ? test.qs.map(q => q.a) : [], [test]);
   const choices = useMemo(() => !test || test.kind === "essay" ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [test, idx, pool]); // eslint-disable-line
-  if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
+  if (!test) return <Redirect to={{ s: "G003" }} />;
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const leave = () => nav({ s: retry ? "G011" : "G004", ...base });
   const done = async () => {
@@ -79,7 +79,7 @@ export function TestResult() {
   const { data, setData, route, nav, go } = useApp();
   const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
   const { remaining, refresh } = useAiRemaining(data.usage);
-  if (!test) { setTimeout(() => nav({ s: "G003" }), 0); return null; }
+  if (!test) return <Redirect to={{ s: "G003" }} />;
   const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx];
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const expl = async () => {

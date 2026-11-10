@@ -21,7 +21,14 @@ export const emptyData = (): Data => ({ subjects: [], materials: [], tests: [], 
 export const loadData = (id: string): Data => ({ ...emptyData(), ...read<Partial<Data>>(D(id), {}) });
 export const saveData = (id: string, d: Data) => ls.set(D(id), JSON.stringify(d));
 // ---- 資料の中身（IndexedDB）----
-const open = () => new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open("runndesu", 1); r.onupgradeneeded = () => r.result.createObjectStore("blobs"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+// 接続は1回だけ開いて使い回す（毎回開くと遅い）。失敗したときは次にもう一度開き直す
+let dbp: Promise<IDBDatabase> | null = null;
+const open = () => dbp ??= new Promise<IDBDatabase>((res, rej) => {
+  const r = indexedDB.open("runndesu", 1);
+  r.onupgradeneeded = () => r.result.createObjectStore("blobs");
+  r.onsuccess = () => { const db = r.result; db.onclose = () => { dbp = null; }; db.onversionchange = () => { db.close(); dbp = null; }; res(db); };
+  r.onerror = () => { dbp = null; rej(r.error); };
+});
 const tx = async <T,>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => { const db = await open(); return new Promise((res, rej) => { const r = f(db.transaction("blobs", mode).objectStore("blobs")); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); };
 export const putBlob = (key: string, v: Blob | string) => tx("readwrite", s => s.put(v, key));
 export const getBlob = (key: string) => tx<Blob | string | undefined>("readonly", s => s.get(key));
