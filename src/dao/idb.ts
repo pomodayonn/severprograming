@@ -1,5 +1,5 @@
 // IndexedDB（ブラウザの中のデータベース）を使うための共通部分。dao/ の各クラスがここを使う
-// 担当：）
+// 担当s
 //
 // 入れ物（オブジェクトストア）
 //   subjects・learningItems・prerequisites・notes（部品と単語ごと）・tests（問題・受験・解答ごと）：Neon と同期する
@@ -7,8 +7,9 @@
 //   deletions：Neon にまだ伝えていない削除（SyncManager.pushChanges で送る）
 //   meta：前回同期した日時など
 
-export const DB_NAME = "runndesu";
-const DB_VERSION = 1;
+// 名前を "runndesu" にすると、資料の中身用（services/db.ts）の古いデータベースとぶつかるので分ける
+export const DB_NAME = "runndesu-data";
+const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
 
 export type StoreName = "subjects" | "learningItems" | "prerequisites" | "notes" | "tests" | "materials" | "materialContents" | "deletions" | "meta";
 
@@ -21,15 +22,21 @@ export function openDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      const s = db.createObjectStore("subjects", { keyPath: "subjectId" }); s.createIndex("studentId", "studentId");
-      const i = db.createObjectStore("learningItems", { keyPath: "itemId" }); i.createIndex("subjectId", "subjectId"); i.createIndex("studentId", "studentId");
-      const p = db.createObjectStore("prerequisites", { keyPath: ["itemId", "prereqItemId"] }); p.createIndex("itemId", "itemId"); p.createIndex("studentId", "studentId");
-      const n = db.createObjectStore("notes", { keyPath: "noteId" }); n.createIndex("itemId", "itemId", { unique: true }); n.createIndex("studentId", "studentId");
-      const t = db.createObjectStore("tests", { keyPath: "testId" }); t.createIndex("itemId", "itemId"); t.createIndex("studentId", "studentId");
-      const m = db.createObjectStore("materials", { keyPath: "materialId" }); m.createIndex("itemId", "itemId");
-      db.createObjectStore("materialContents"); // キーは資料ID、値は文字列か Blob
-      const d = db.createObjectStore("deletions", { keyPath: ["table", "key"] }); d.createIndex("studentId", "studentId");
-      db.createObjectStore("meta"); // キーは "lastSyncedAt:学生ID" など
+      // まだない入れ物だけ作る（途中まで作られたデータベースでも直せるように）
+      const make = (name: StoreName, opts?: IDBObjectStoreParameters, idx: [string, boolean?][] = []) => {
+        if (db.objectStoreNames.contains(name)) return;
+        const os = db.createObjectStore(name, opts);
+        idx.forEach(([k, unique]) => os.createIndex(k, k, { unique: !!unique }));
+      };
+      make("subjects", { keyPath: "subjectId" }, [["studentId"]]);
+      make("learningItems", { keyPath: "itemId" }, [["subjectId"], ["studentId"]]);
+      make("prerequisites", { keyPath: ["itemId", "prereqItemId"] }, [["itemId"], ["studentId"]]);
+      make("notes", { keyPath: "noteId" }, [["itemId", true], ["studentId"]]);
+      make("tests", { keyPath: "testId" }, [["itemId"], ["studentId"]]);
+      make("materials", { keyPath: "materialId" }, [["itemId"]]);
+      make("materialContents"); // キーは資料ID、値は文字列か Blob
+      make("deletions", { keyPath: ["table", "key"] }, [["studentId"]]);
+      make("meta"); // キーは "lastSyncedAt:学生ID" など
     };
     req.onsuccess = () => {
       const db = req.result;

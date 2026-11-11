@@ -48,5 +48,17 @@ export class SubjectManager {
     await this.sync();
   }
 
+  /**
+   * 移行用：画面の古い保存場所（localStorage）にある科目のうち、まだ端末のデータベースにないものを、同じIDで入れる。
+   * 画面を全部 Manager 経由に置き換えたら使わなくなる
+   */
+  async importSubjects(studentId: string, subjects: { id: string; name: string }[]): Promise<number> {
+    const have = new Set((await this.getSubjects(studentId)).map(s => s.subjectId));
+    const add = subjects.filter(s => !have.has(s.id));
+    for (const s of add) await this.subjectDAO.insert(new Subject({ subjectId: s.id, studentId, subjectName: s.name.trim().slice(0, 50) || "科目" }));
+    if (add.length) await this.sync();
+    return add.length;
+  }
+
   private sync() { return pushQuietly(this.syncManager); }
 }

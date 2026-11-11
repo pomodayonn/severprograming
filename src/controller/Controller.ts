@@ -19,7 +19,8 @@ import { NoteDAO } from "../dao/NoteDAO";
 import { TestDAO } from "../dao/TestDAO";
 
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
-export interface ControllerResult { next?: Screen; student?: Student | null; error?: string }
+/** data は Manager が返したもの（作った科目など）。画面はこれを使って表示を変える */
+export interface ControllerResult { next?: Screen; student?: Student | null; error?: string; data?: unknown }
 
 export class Controller {
   readonly syncManager = new SyncManager(neonAuthClient);
@@ -31,7 +32,7 @@ export class Controller {
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager は下の constructor で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  // ---- Aの分（11/11。画面からはまだ使っていない。W2 で画面をつなぐ） ----
+  // ---- Aの分（11/11。G003 から使い始めた） ----
   readonly subjectDAO = new SubjectDAO();
   readonly itemDAO = new LearningItemDAO();
   readonly prerequisiteDAO = new PrerequisiteDAO();
@@ -65,6 +66,15 @@ export class Controller {
           return { next: "G003", student: await this.accountManager.register(params.mail ?? "", params.pass ?? "", params.passConfirm ?? "") };
         case "G002:back": // 外部設計書に追加が必要（ログインへ戻る）
           return { next: "G001" };
+        // ---- G003 科目一覧画面 ----
+        case "G003:addSubject": // 科目の追加
+          return { data: await this.subjectManager.createSubject(params.studentId ?? "", params.name ?? "") };
+        case "G003:renameSubject": // 名前の編集
+          await this.subjectManager.renameSubject(params.studentId ?? "", params.subjectId ?? "", params.name ?? "");
+          return {};
+        case "G003:deleteSubject": // 削除（中の学習項目・ノート・テスト・資料も消える）
+          await this.subjectManager.deleteSubject(params.subjectId ?? "");
+          return { next: "G003" };
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
