@@ -23,6 +23,7 @@ const server = {
   remaining: async () => (await request<Remaining>("GET", "/api/remaining")).remaining,
 };
 
+
 // ---------- 仮の動き（サーバーがまだないとき） ----------
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 const lines = (t: string) => t.split(/\n+/).map(x => x.trim()).filter(x => x.length > 2);
