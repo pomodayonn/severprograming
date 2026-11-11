@@ -3,13 +3,28 @@
 import type { Screen, Student } from "../types";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountError, AccountManager } from "../managers/AccountManager";
+import { SyncManager } from "../managers/SyncManager";
+import { SendContentManager } from "../managers/SendContentManager";
+import { AiSummaryManager } from "../managers/AiSummaryManager";
+import { TestManager } from "../managers/TestManager";
+import { MaterialDAO } from "../dao/MaterialDAO";
+import { NoteDAO } from "../dao/NoteDAO";
+import { TestDAO } from "../dao/TestDAO";
 
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
 export interface ControllerResult { next?: Screen; student?: Student | null; error?: string }
 
 export class Controller {
-  readonly accountManager = new AccountManager(neonAuthClient);
-  // W2 で足す：subjectManager・itemManager・noteManager・materialManager・sendContentManager・aiSummaryManager・testManager
+  readonly syncManager = new SyncManager(neonAuthClient);
+  readonly accountManager = new AccountManager(neonAuthClient, this.syncManager); // ログインしたら pullAll() でデータを受け取る
+  // ---- 黒木・野中の分（画面からはまだ使っていない。W2 で東が画面をつなぐ） ----
+  readonly materialDAO = new MaterialDAO();
+  readonly noteDAO = new NoteDAO();
+  readonly testDAO = new TestDAO();
+  readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
+  readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager ができたら setNoteManager() で渡す
+  readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
+  // W2 で東が足す：subjectManager・itemManager・noteManager・materialManager
 
   /**
    * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。

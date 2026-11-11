@@ -77,6 +77,11 @@ export function useAiRemaining(usage: Record<string, number>) {
   const remaining = SERVER ? srv : Math.max(0, AI_LIMIT - (usage[dayKey()] ?? 0));
   return { remaining, limit: AI_LIMIT, refresh };
 }
+/** 今日の残り利用回数をサーバーに聞く（Manager から使う）。サーバーがないときは null（分からない） */
+export async function fetchRemaining(): Promise<number | null> {
+  if (!SERVER) return null;
+  try { return await server.remaining(); } catch { return null; }
+}
 /** 仮の動きのときだけ、端末で利用回数を足す（サーバーがあるときはサーバーが数えるので何もしない） */
 export const addLocalUsage = (usage: Record<string, number>, n: number): Record<string, number> =>
   SERVER ? usage : { ...usage, [dayKey()]: (usage[dayKey()] ?? 0) + n };
