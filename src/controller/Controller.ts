@@ -1,8 +1,9 @@
 // Controller（Controller／フロントエンド）：画面のボタン操作を受け取り、担当の Manager に仕事を渡す。
-// イベントIDは外部設計書のイベント一覧表のとおり。W2 から SubjectManager などを足していく。
+// イベントIDは外部設計書のイベント一覧表のとおり。W2 で画面を1つずつ handleRequest 経由に置き換えていく。
 import type { Screen, Student } from "../types";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
-import { AccountError, AccountManager } from "../managers/AccountManager";
+import { AccountManager } from "../managers/AccountManager";
+import { AppError } from "../managers/common";
 import { SyncManager } from "../managers/SyncManager";
 import { SendContentManager } from "../managers/SendContentManager";
 import { AiSummaryManager } from "../managers/AiSummaryManager";
@@ -69,7 +70,8 @@ export class Controller {
       if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
       return { error: `まだ作っていない操作です（${screenId}:${eventId}）` };
     } catch (e) {
-      return { error: e instanceof AccountError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
+      // Manager のエラー（AppError）は文をそのまま画面に出す
+      return { error: e instanceof AppError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
     }
   }
 }

@@ -1,5 +1,5 @@
 // NoteManager（Entity Manager／フロントエンド）：ノートを管理する
-// 担当：）。「保存」ボタンで端末に保存し、SyncManager でアカウントにも送る（手動保存）
+// 担当：（11/11）。「保存」ボタンで端末に保存し、SyncManager でアカウントにも送る（手動保存）
 import { Note } from "../beans/Note";
 import { NotePart } from "../beans/NotePart";
 import { Word } from "../beans/Word";
@@ -8,16 +8,15 @@ import { PartType } from "../enums/PartType";
 import type { FrameType } from "../types";
 import { FT } from "../lib/logic";
 import type { NoteDAO } from "../dao/NoteDAO";
-import type { ChangePusher } from "./TestManager";
+import { AppError, newId, pushQuietly, type ChangePusher } from "./common";
 import type { SuggestionApplier } from "./AiSummaryManager";
 
 /** 画面に出す文を持ったエラー */
-export class NoteError extends Error {}
+export class NoteError extends AppError {}
 
 /** 目次の1行（右サイドバー用） */
 export interface TocEntry { partId: string; kind: "heading" | "frame"; level: number; label: string; y: number }
 
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 /** 枠と枠のすき間 */
 const GAP = 16;
 /** 中身の量から枠の高さを決める（今の画面の AiSend.tsx と同じ計算） */
@@ -28,7 +27,7 @@ const heightFor = (frameType: string, content: string): number => {
 /** 「用語：意味」の行を単語にする（区切りは「：」「:」「とは」） */
 const toWords = (content: string): Word[] => content.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
   const [term, ...rest] = l.split(/：|:|とは/);
-  return new Word({ wordId: uid(), term: term.trim(), meaning: (rest.join("") || term).trim() });
+  return new Word({ wordId: newId(), term: term.trim(), meaning: (rest.join("") || term).trim() });
 });
 const frameName = (frameType: string | null) => (frameType && FT[frameType as FrameType]?.n) || "枠";
 
@@ -95,7 +94,7 @@ export class NoteManager implements SuggestionApplier {
       } else {
         const y = n.parts.reduce((m, p) => Math.max(m, p.y + p.height), 0) + (n.parts.length ? 36 : 24);
         n.parts.push(new NotePart({
-          partId: uid(), noteId: n.noteId, studentId: n.studentId, partType: PartType.FRAME, frameType: s.frameType,
+          partId: newId(), noteId: n.noteId, studentId: n.studentId, partType: PartType.FRAME, frameType: s.frameType,
           x: 24, y, width: 380, height: h, color: FT[s.frameType as FrameType]?.c ?? "#5a5670",
           text: s.frameType === "word" ? "" : s.content, words: s.frameType === "word" ? toWords(s.content) : [],
         }));
@@ -117,5 +116,5 @@ export class NoteManager implements SuggestionApplier {
       .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
   }
 
-  private async sync() { try { await this.syncManager?.pushChanges(); } catch { /* 同期の失敗は保存の失敗にしない（次回送る） */ } }
+  private sync() { return pushQuietly(this.syncManager); }
 }

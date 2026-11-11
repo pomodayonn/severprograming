@@ -1,13 +1,14 @@
 // AccountManager（Entity Manager／フロントエンド）：アカウントの登録・ログイン・ログアウト。
-// 中では NeonAuthClient を呼ぶだけ。ログインしたら SyncManager の pullAll() でデータを受け取る（W2 で黒木さんがつなぐ）。
-// TODO（W1 野中さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
+// 中では NeonAuthClient を呼ぶだけ。ログインしたら SyncManager の pullAll() でデータを受け取る（Controller でつないである）。
+// TODO（W2）：画面を beans に置き換えるときに、Student を src/beans/Student.ts のものにする
 import type { Student } from "../types";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
+import { AppError } from "./common";
 
 /** 画面に出す文を持ったエラー。Controller がそのまま画面に渡す */
-export class AccountError extends Error {}
+export class AccountError extends AppError {}
 
-/** SyncManager のうち AccountManager が使う部分（W2 で黒木さんの SyncManager を渡す） */
+/** SyncManager のうち AccountManager が使う部分 */
 export interface PullOnLogin { pullAll(): Promise<void> }
 
 const nfkc = (s: string) => s.normalize("NFKC").trim(); // 全角英数で打っても同じ文字として扱う
@@ -16,7 +17,7 @@ const emailOk = (v: string) => v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.t
 export class AccountManager {
   constructor(private readonly authClient: NeonAuthClient, private syncManager: PullOnLogin | null = null) {}
 
-  /** SyncManager ができたらここで渡す */
+  /** あとから SyncManager を渡すとき用（Controller ではコンストラクタで渡している） */
   setSyncManager(sync: PullOnLogin) { this.syncManager = sync; }
 
   /** お試しログインのときだけ true（画面に見本アカウントを出す・Google ボタンを隠す） */

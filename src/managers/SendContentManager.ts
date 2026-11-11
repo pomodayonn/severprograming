@@ -6,9 +6,9 @@ import { PartType } from "../enums/PartType";
 import type { MaterialDAO } from "../dao/MaterialDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { fetchRemaining } from "../services/ai";
+import { SEND_LIMIT } from "./common";
 
-/** 1回に送れる文字数（これを超えると分けて送り、その分だけ利用回数を使う） */
-export const SEND_LIMIT = 10000;
+export { SEND_LIMIT };
 
 /** 枠の中身を文字にする（単語枠は「用語：意味」を1行ずつ） */
 export const partText = (p: NotePart): string =>

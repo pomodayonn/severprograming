@@ -1,5 +1,5 @@
 // LearningItemManager（Entity Manager／フロントエンド）：学習項目と前提項目（関連図）を管理する
-// 変更はその場で端末に保存し、SyncManager でアカウントにも送る
+// 担当：（11/11）。変更はその場で端末に保存し、SyncManager でアカウントにも送る
 import { LearningItem } from "../beans/LearningItem";
 import { Prerequisite } from "../beans/Prerequisite";
 import type { LearningItemDAO } from "../dao/LearningItemDAO";
@@ -7,21 +7,13 @@ import type { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import type { TestDAO } from "../dao/TestDAO";
 import type { MaterialDAO } from "../dao/MaterialDAO";
-import type { ChangePusher } from "./TestManager";
+import { AppError, checkName, newId, pushQuietly, type ChangePusher } from "./common";
 
 /** 画面に出す文を持ったエラー */
-export class ItemError extends Error {}
+export class ItemError extends AppError {}
 
 /** 関連図を描くためのデータ */
 export interface RelationMap { items: LearningItem[]; prerequisites: Prerequisite[] }
-
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const checkName = (name: string): string => {
-  const n = name.trim();
-  if (!n) throw new ItemError("学習項目名を入力してください");
-  if ([...n].length > 50) throw new ItemError("学習項目名は50文字までです");
-  return n;
-};
 
 export class LearningItemManager {
   constructor(
@@ -42,9 +34,9 @@ export class LearningItemManager {
 
   /** 学習項目を作り、同時に空のノート1枚・空のストレージ・空のテストフォルダを作る */
   async createItem(studentId: string, subjectId: string, name: string): Promise<LearningItem> {
-    const n = checkName(name);
+    const n = checkName(name, "学習項目名", ItemError);
     if ((await this.getItems(subjectId)).some(i => i.itemName === n)) throw new ItemError("同じ名前の学習項目がすでにあります");
-    const item = new LearningItem({ itemId: uid(), studentId, subjectId, itemName: n });
+    const item = new LearningItem({ itemId: newId(), studentId, subjectId, itemName: n });
     await this.itemDAO.insert(item);
     await this.noteDAO.insertEmpty(item.itemId, studentId);
     await this.materialDAO.createStorage(item.itemId);
@@ -55,7 +47,7 @@ export class LearningItemManager {
 
   /** 学習項目の名前を変える */
   async renameItem(itemId: string, name: string): Promise<void> {
-    const n = checkName(name);
+    const n = checkName(name, "学習項目名", ItemError);
     const item = await this.itemDAO.findById(itemId); if (!item) throw new ItemError("学習項目が見つかりません");
     if ((await this.getItems(item.subjectId)).some(i => i.itemName === n && i.itemId !== itemId)) throw new ItemError("同じ名前の学習項目がすでにあります");
     await this.itemDAO.updateName(itemId, n); await this.sync();
@@ -129,5 +121,5 @@ export class LearningItemManager {
     return go(pre);
   }
 
-  private async sync() { try { await this.syncManager?.pushChanges(); } catch { /* 同期の失敗は保存の失敗にしない（次回送る） */ } }
+  private sync() { return pushQuietly(this.syncManager); }
 }

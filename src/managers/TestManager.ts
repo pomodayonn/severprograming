@@ -1,5 +1,5 @@
 // TestManager（Entity Manager／フロントエンド）：テストの作成・解答・採点・解説・直す機能を担当する
-// 
+// 担当：（作成：11/10）
 // 記述テストと解説だけ、services/ai.ts（ApiController）に頼んでAIを使う。保存したら SyncManager で同期する
 import { Test } from "../beans/Test";
 import { Question } from "../beans/Question";
@@ -12,16 +12,12 @@ import { TestType } from "../enums/TestType";
 import type { TestDAO } from "../dao/TestDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { explain as aiExplain, makeEssay, regenerateQuestion as aiRegenerate } from "../services/ai";
+import { AppError, SEND_LIMIT, newId, pushQuietly, type ChangePusher } from "./common";
 
-/** SyncManager のうち、TestManager が使う部分 */
-export interface ChangePusher { pushChanges(): Promise<void> }
 /** 画面に出す文を持ったエラー */
-export class TestError extends Error {}
+export class TestError extends AppError {}
 
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const shuffle = <T>(a: T[]): T[] => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
-/** 1万文字の上限（AIでの書き直しは、追加の指示もこの中に含める） */
-const SEND_LIMIT = 10000;
 
 export class TestManager {
   constructor(private readonly testDAO: TestDAO, private readonly noteDAO: NoteDAO, private syncManager: ChangePusher | null = null) {}
@@ -33,9 +29,9 @@ export class TestManager {
     const words = await this.getWords(itemId);
     if (!words.length) throw new TestError("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
     const n = clampCount(count), picked = shuffle(words).slice(0, n);
-    const testId = uid();
+    const testId = newId();
     const questions = picked.map((w, i) => new Question({
-      questionId: uid(), testId, studentId, number: i + 1,
+      questionId: newId(), testId, studentId, number: i + 1,
       questionText: type === TestType.MEANING_TO_TERM ? w.meaning : w.term,
       modelAnswer: type === TestType.MEANING_TO_TERM ? w.term : w.meaning,
     }));
@@ -49,10 +45,10 @@ export class TestManager {
     if (!content.text.trim()) throw new TestError("先に「内容編集」で、送る内容を決めてください");
     const qs = await makeEssay(content.text, clampCount(count));
     if (!qs.length) throw new TestError("問題を作れませんでした。送る内容を見直してください");
-    const testId = uid();
+    const testId = newId();
     const test = new Test({
       testId, studentId, itemId, testType: TestType.ESSAY, questionCount: qs.length, createdAt: now(),
-      questions: qs.map((q, i) => new Question({ questionId: uid(), testId, studentId, number: i + 1, questionText: q.q, modelAnswer: q.a })),
+      questions: qs.map((q, i) => new Question({ questionId: newId(), testId, studentId, number: i + 1, questionText: q.q, modelAnswer: q.a })),
     });
     await this.testDAO.insert(test); await this.sync();
     return (await this.testDAO.findById(testId))!;
@@ -72,11 +68,11 @@ export class TestManager {
    */
   async submitAnswers(testId: string, answers: string[]): Promise<Attempt> {
     const test = await this.getTest(testId), t = now();
-    const attemptId = uid();
+    const attemptId = newId();
     const attempt = new Attempt({
       attemptId, testId, studentId: test.studentId, attemptNo: test.attempts.length + 1, takenAt: t,
       answers: test.questions.map((q, i) => new Answer({
-        answerId: uid(), attemptId, questionId: q.questionId, studentId: test.studentId, studentAnswer: answers[i] ?? "", answeredAt: t,
+        answerId: newId(), attemptId, questionId: q.questionId, studentId: test.studentId, studentAnswer: answers[i] ?? "", answeredAt: t,
         correct: test.testType === TestType.MEANING_TO_TERM ? this.gradeMeaningToTerm(answers[i] ?? "", q.modelAnswer) : null,
       })),
     });
@@ -161,7 +157,7 @@ export class TestManager {
     const q = (await this.getTest(testId)).questions.find(x => x.questionId === questionId);
     if (!q) throw new TestError("問題が見つかりません"); return q;
   }
-  private async sync() { try { await this.syncManager?.pushChanges(); } catch { /* 同期の失敗は保存の失敗にしない（次回送る） */ } }
+  private sync() { return pushQuietly(this.syncManager); }
 }
 
 /** 問題数は5〜20問 */
