@@ -7,6 +7,12 @@ import { SyncManager } from "../managers/SyncManager";
 import { SendContentManager } from "../managers/SendContentManager";
 import { AiSummaryManager } from "../managers/AiSummaryManager";
 import { TestManager } from "../managers/TestManager";
+import { SubjectManager } from "../managers/SubjectManager";
+import { LearningItemManager } from "../managers/LearningItemManager";
+import { NoteManager } from "../managers/NoteManager";
+import { SubjectDAO } from "../dao/SubjectDAO";
+import { LearningItemDAO } from "../dao/LearningItemDAO";
+import { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
 import { MaterialDAO } from "../dao/MaterialDAO";
 import { NoteDAO } from "../dao/NoteDAO";
 import { TestDAO } from "../dao/TestDAO";
@@ -17,14 +23,26 @@ export interface ControllerResult { next?: Screen; student?: Student | null; err
 export class Controller {
   readonly syncManager = new SyncManager(neonAuthClient);
   readonly accountManager = new AccountManager(neonAuthClient, this.syncManager); // ログインしたら pullAll() でデータを受け取る
-  
+  // ---- K・Nの分（画面からはまだ使っていない。W2 でAが画面をつなぐ） ----
   readonly materialDAO = new MaterialDAO();
   readonly noteDAO = new NoteDAO();
   readonly testDAO = new TestDAO();
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
-  readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager ができたら setNoteManager() で渡す
+  readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager は下の constructor で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  
+  // ---- Aの分（11/11。画面からはまだ使っていない。W2 で画面をつなぐ） ----
+  readonly subjectDAO = new SubjectDAO();
+  readonly itemDAO = new LearningItemDAO();
+  readonly prerequisiteDAO = new PrerequisiteDAO();
+  readonly itemManager = new LearningItemManager(this.itemDAO, this.prerequisiteDAO, this.noteDAO, this.testDAO, this.materialDAO, this.syncManager);
+  readonly subjectManager = new SubjectManager(this.subjectDAO, this.itemManager, this.syncManager);
+  readonly noteManager = new NoteManager(this.noteDAO, this.syncManager);
+  // Fさんが足す：materialManager
+
+  constructor() {
+    this.aiSummaryManager.setNoteManager(this.noteManager); // 承認したAIの提案を NoteManager でノートに反映する
+  }
+
   /**
    * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。
    * 例：G001 の login → AccountManager.login()

@@ -1,6 +1,5 @@
 // SyncManager（Entity Manager／フロントエンド）：端末（IndexedDB）とアカウント（Neon）のデータをそろえる
-// 担
-//
+// 担当：
 // ・Neon の Data API（PostgREST の形）を、ログインの JWT を付けて HTTP で直接呼ぶ（Render のサーバーは通さない）
 // ・どの行を読み書きできるかは、Neon の RLS が JWT の学生IDで決める（db/rls.sql）
 // ・.env に VITE_NEON_DATA_API_URL がなければ何もしない（端末だけで動く）
@@ -82,8 +81,10 @@ export class SyncManager {
   async pushChanges(): Promise<void> {
     if (!this.enabled) return;
     const prev = this.running ?? Promise.resolve();
-    const run = prev.catch(() => {}).then(() => this.push());
-    this.running = run.finally(() => { if (this.running === run) this.running = null; });
+    const run = prev.then(() => this.push());
+    // 順番待ち用の印。失敗しても次の送信は続けられるように、エラーはここでは捨てる（呼んだ側には run でエラーが届く）
+    const tail: Promise<void> = run.catch(() => {}).then(() => { if (this.running === tail) this.running = null; });
+    this.running = tail;
     return run;
   }
 
