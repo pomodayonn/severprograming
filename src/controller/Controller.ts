@@ -17,15 +17,14 @@ export interface ControllerResult { next?: Screen; student?: Student | null; err
 export class Controller {
   readonly syncManager = new SyncManager(neonAuthClient);
   readonly accountManager = new AccountManager(neonAuthClient, this.syncManager); // ログインしたら pullAll() でデータを受け取る
-  // ---- 黒木・野中の分（画面からはまだ使っていない。W2 で東が画面をつなぐ） ----
+  
   readonly materialDAO = new MaterialDAO();
   readonly noteDAO = new NoteDAO();
   readonly testDAO = new TestDAO();
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager ができたら setNoteManager() で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  // W2 で東が足す：subjectManager・itemManager・noteManager・materialManager
-
+  
   /**
    * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。
    * 例：G001 の login → AccountManager.login()
