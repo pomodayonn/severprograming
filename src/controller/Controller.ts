@@ -32,7 +32,7 @@ export class Controller {
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager は下の constructor で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  // ---- Aの分（11/11。G003 から使い始めた） ----
+  // ---- Aの分（11/11。G003・G004 から使い始めた） ----
   readonly subjectDAO = new SubjectDAO();
   readonly itemDAO = new LearningItemDAO();
   readonly prerequisiteDAO = new PrerequisiteDAO();
@@ -75,6 +75,18 @@ export class Controller {
         case "G003:deleteSubject": // 削除（中の学習項目・ノート・テスト・資料も消える）
           await this.subjectManager.deleteSubject(params.subjectId ?? "");
           return { next: "G003" };
+        // ---- G004 学習画面（学習項目・前提項目） ----
+        case "G004:addItem": // 学習項目の追加（空のノートも一緒にできる）
+          return { data: await this.itemManager.createItem(params.studentId ?? "", params.subjectId ?? "", params.name ?? "") };
+        case "G004:renameItem": // 名前の編集
+          await this.itemManager.renameItem(params.itemId ?? "", params.name ?? "");
+          return {};
+        case "G004:deleteItem": // 削除（ノート・テスト・資料も消え、ほかの項目の前提からも外れる）
+          await this.itemManager.deleteItem(params.itemId ?? "");
+          return {};
+        case "G004:setPrerequisites": // 前提項目の設定の「確定」。prereqIds はカンマ区切り
+          await this.itemManager.setPrerequisites(params.itemId ?? "", (params.prereqIds ?? "").split(",").filter(Boolean));
+          return {};
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }

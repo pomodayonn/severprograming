@@ -121,5 +121,28 @@ export class LearningItemManager {
     return go(pre);
   }
 
+  /**
+   * 移行用：画面の古い保存場所（localStorage）にある学習項目と前提項目のうち、まだ端末のデータベースにないものを、同じIDで入れる。
+   * 画面を全部 Manager 経由に置き換えたら使わなくなる
+   */
+  async importItems(studentId: string, subjectId: string, items: { id: string; name: string; prereqs: string[] }[]): Promise<number> {
+    const have = new Set((await this.getItems(subjectId)).map(i => i.itemId));
+    const add = items.filter(i => !have.has(i.id));
+    for (const i of add) {
+      await this.itemDAO.insert(new LearningItem({ itemId: i.id, studentId, subjectId, itemName: i.name.trim().slice(0, 50) || "学習項目" }));
+      if (!(await this.noteDAO.findByItem(i.id))) await this.noteDAO.insertEmpty(i.id, studentId);
+    }
+    // 前提項目：同じ科目の中にある項目どうしで、まだ入っていない組み合わせだけ入れる
+    const ids = new Set(items.map(i => i.id));
+    const list = await this.prerequisiteDAO.findBySubject(subjectId);
+    let added = add.length;
+    for (const i of items) for (const pre of i.prereqs) {
+      if (pre === i.id || !ids.has(pre) || list.some(p => p.itemId === i.id && p.prereqItemId === pre)) continue;
+      await this.prerequisiteDAO.insert(new Prerequisite({ studentId, itemId: i.id, prereqItemId: pre })); added++;
+    }
+    if (added) await this.sync();
+    return added;
+  }
+
   private sync() { return pushQuietly(this.syncManager); }
 }

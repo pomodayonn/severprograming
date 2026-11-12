@@ -1,9 +1,13 @@
 // G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
-import { useState } from "react";
+// 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
+// ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
+import { useEffect, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType, Item, MaterialMeta } from "../types";
-import { FT, MAX_FILE, bottomY, newEl, txtName, uid, wouldCycle } from "../lib/logic";
+import { FT, MAX_FILE, bottomY, newEl, txtName, uid } from "../lib/logic";
 import { delBlob, putBlob } from "../services/db";
+import { controller } from "../controller/Controller";
+import type { LearningItem as ItemBean } from "../beans/LearningItem";
 import { transcribe } from "../services/ocr";
 import { NoteCanvas } from "./NoteCanvas";
 import { RelationGraph } from "./RelationGraph";
@@ -15,12 +19,26 @@ function SideMaterial({ id }: { id: string | null }) {
   const { data, account } = useApp(); const m = data.materials.find(x => x.id === id); const v = useBlob(m && account ? `${account.id}:${m.id}` : undefined);
   return <div className="vbox">{m ? <Viewer type={m.type} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
 }
+/** 移行（importSubjects・importItems）を1つずつ順番に行うための待ち行列 */
+let importing: Promise<void> = Promise.resolve();
+
 export function Study() {
   const { data, setData, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
   const subject = data.subjects.find(s => s.id === route.subjectId);
   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
+  const sid = account?.id ?? "";
+  // 移行用：前からある科目・学習項目・前提項目を、Manager の保存場所にも入れておく（同じIDなので2回目からは何もしない）
+  useEffect(() => {
+    if (!sid || !subject) return;
+    const items = subject.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs }));
+    // 続けて呼ばれても同時に走らないよう、前の移行が終わってから順番に行う
+    importing = importing.then(async () => {
+      await controller.subjectManager.importSubjects(sid, [{ id: subject.id, name: subject.name }]);
+      await controller.itemManager.importItems(sid, subject.id, items);
+    }).catch(() => { /* 移行に失敗しても画面はそのまま使える（次に開いたときにもう一度試す） */ });
+  }, [sid, subject]);
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
   const item: Item | undefined = subject.items.find(i => i.id === route.itemId) ?? subject.items[0];
   const note = item ? (drafts[item.id] ?? item.note) : null;
@@ -29,18 +47,34 @@ export function Study() {
   const addEl = (k: Parameters<typeof newEl>[0], f?: FrameType) => note && setEls([...note.els, newEl(k, bottomY(note.els), f)]);
   const patchItems = (f: (items: Item[]) => Item[]) => setData(d => ({ ...d, subjects: d.subjects.map(s => s.id === subject.id ? { ...s, items: f(s.items) } : s) }));
   const open = (id: string) => go({ s: "G004", subjectId: subject.id, itemId: id });
-  const addItem = async () => { const n = await askName("学習項目の追加"); if (!n) return; const it: Item = { id: uid(), name: n, prereqs: [], note: { els: [], savedAt: 0 } }; patchItems(a => [...a, it]); nav({ s: "G004", subjectId: subject.id, itemId: it.id }); };
-  const rename = async () => { if (!item) return; const n = await askName("学習項目名の編集", item.name); if (n) patchItems(a => a.map(i => i.id === item.id ? { ...i, name: n } : i)); };
+  const addItem = async () => {
+    const n = await askName("学習項目の追加"); if (!n) return;
+    const r = await controller.handleRequest("G004", "addItem", { studentId: sid, subjectId: subject.id, name: n });
+    if (r.error) return toast(r.error);
+    const b = r.data as ItemBean;
+    const it: Item = { id: b.itemId, name: b.itemName, prereqs: [], note: { els: [], savedAt: 0 } };
+    patchItems(a => [...a, it]); nav({ s: "G004", subjectId: subject.id, itemId: it.id });
+  };
+  const rename = async () => {
+    if (!item) return;
+    const n = await askName("学習項目名の編集", item.name); if (!n) return;
+    const r = await controller.handleRequest("G004", "renameItem", { itemId: item.id, name: n });
+    if (r.error) return toast(r.error);
+    patchItems(a => a.map(i => i.id === item.id ? { ...i, name: n.trim() } : i));
+  };
   const del = async () => {
     if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", primary: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.id });
+    if (r.error) return toast(r.error);
     mats.forEach(m => delBlob(`${account.id}:${m.id}`)); setDraft(item.id, null);
     patchItems(a => a.filter(i => i.id !== item.id).map(i => ({ ...i, prereqs: i.prereqs.filter(p => p !== item.id) })));
     setData(d => ({ ...d, materials: d.materials.filter(m => m.itemId !== item.id), tests: d.tests.filter(t => t.itemId !== item.id) }));
     nav({ s: "G004", subjectId: subject.id }); toast("学習項目を削除したよ");
   };
-  const savePre = () => {
+  const savePre = async () => {
     if (!item || !pre) return;
-    if (pre.some(p => wouldCycle(subject.items, item.id, p))) return setPreMsg("前提項目が輪になるため設定できません");
+    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.id, prereqIds: pre.join(",") });
+    if (r.error) return setPreMsg(r.error); // 輪になるときは「前提項目が輪になるため設定できません」
     patchItems(a => a.map(i => i.id === item.id ? { ...i, prereqs: pre } : i)); setPre(null); setPreMsg("");
   };
   const upload = async (files: FileList | null) => {
