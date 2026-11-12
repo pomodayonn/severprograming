@@ -1,6 +1,6 @@
 // Controller（Controller／フロントエンド）：画面のボタン操作を受け取り、担当の Manager に仕事を渡す。
 // イベントIDは外部設計書のイベント一覧表のとおり。W2 で画面を1つずつ handleRequest 経由に置き換えていく。
-import type { Screen, Student } from "../types";
+import type { El, Screen, Student, Subject as ScreenSubject } from "../types";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountManager } from "../managers/AccountManager";
 import { AppError } from "../managers/common";
@@ -32,7 +32,7 @@ export class Controller {
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager は下の constructor で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  // ---- Aの分（11/11。G003・G004 から使い始めた） ----
+  // ---- Aの分（11/11。G003・G004・ノートの保存から使い始めた） ----
   readonly subjectDAO = new SubjectDAO();
   readonly itemDAO = new LearningItemDAO();
   readonly prerequisiteDAO = new PrerequisiteDAO();
@@ -87,6 +87,12 @@ export class Controller {
         case "G004:setPrerequisites": // 前提項目の設定の「確定」。prereqIds はカンマ区切り
           await this.itemManager.setPrerequisites(params.itemId ?? "", (params.prereqIds ?? "").split(",").filter(Boolean));
           return {};
+        case "G004:saveNote": // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。els は画面の部品の JSON
+          await this.noteManager.saveElements(params.studentId ?? "", params.itemId ?? "", JSON.parse(params.els ?? "[]") as El[]);
+          return {};
+        // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
+        case "G003:loadSubjects":
+          return { data: await this.loadScreenSubjects(params.studentId ?? "") };
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
@@ -95,6 +101,28 @@ export class Controller {
       // Manager のエラー（AppError）は文をそのまま画面に出す
       return { error: e instanceof AppError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
     }
+  }
+
+  /**
+   * 移行中のつなぎ：科目・学習項目・前提項目・ノートを Manager から読み、画面の形（types.ts の Subject）にする。
+   * 別の端末で作った分も、ログインしたときに画面に出せるようにするため
+   */
+  private async loadScreenSubjects(studentId: string): Promise<ScreenSubject[]> {
+    const out: ScreenSubject[] = [];
+    for (const sub of await this.subjectManager.getSubjects(studentId)) {
+      const { items, prerequisites } = await this.itemManager.getRelationMap(sub.subjectId);
+      const its: ScreenSubject["items"] = [];
+      for (const it of items) {
+        const note = await this.noteManager.getNote(it.itemId, studentId);
+        its.push({
+          id: it.itemId, name: it.itemName,
+          prereqs: prerequisites.filter(p => p.itemId === it.itemId).map(p => p.prereqItemId),
+          note: { els: this.noteManager.toElements(note), savedAt: note.lastSavedAt ? Date.parse(note.lastSavedAt) : 0 },
+        });
+      }
+      out.push({ id: sub.subjectId, name: sub.subjectName, items: its });
+    }
+    return out;
   }
 }
 

@@ -1,6 +1,6 @@
 // アプリ全体の状態：ログイン中の学生・その学生のデータ・いまの画面・保存前のノート・確認ダイアログ
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Data, Note, Route, Student } from "../types";
+import type { Data, Note, Route, Student, Subject } from "../types";
 import { emptyData, loadData, saveData } from "../services/db";
 import { controller } from "../controller/Controller";
 import { toast } from "../components/toast";
@@ -24,6 +24,24 @@ export function Redirect({ to }: { to: Route }) {
   const { nav } = useApp();
   useEffect(() => { nav(to); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
+}
+
+/**
+ * 画面のデータ（local）に、Manager から読んだデータ（db）を足す（移行中のつなぎ）。
+ * ・db にしかない科目・学習項目は足す（別の端末で作った分）
+ * ・両方にある学習項目は、名前と前提項目は db（Manager で変えたもの）に、ノートは保存日時が新しい方にそろえる
+ * ・local にしかないものは残す（まだ Manager に移していない前からのデータの場合があるため）
+ */
+export function mergeSubjects(local: Subject[], db: Subject[]): Subject[] {
+  const out = local.map(s => {
+    const d = db.find(x => x.id === s.id); if (!d) return s;
+    const items = s.items.map(i => {
+      const di = d.items.find(x => x.id === i.id); if (!di) return i;
+      return { ...i, name: di.name, prereqs: di.prereqs, note: di.note.savedAt > i.note.savedAt ? di.note : i.note };
+    });
+    return { ...s, name: d.name, items: [...items, ...d.items.filter(x => !s.items.some(i => i.id === x.id))] };
+  });
+  return [...out, ...db.filter(x => !local.some(s => s.id === x.id))];
 }
 
 /** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
@@ -63,7 +81,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return n;
   }), [flush]);
 
-  const open = useCallback((a: Student) => { flush(); setAccount(a); setD(loadData(a.id)); setDrafts({}); setRoute({ s: "G003" }); }, [flush]);
+  const open = useCallback((a: Student) => {
+    flush(); setAccount(a); setD(loadData(a.id)); setDrafts({}); setRoute({ s: "G003" });
+    // 11/12：アカウントから受け取ったデータ（別の端末で作った科目・学習項目・ノート）を画面のデータに足す（移行中のつなぎ）
+    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id }).then(r => {
+      if (r.data && aRef.current?.id === a.id) setData(d => ({ ...d, subjects: mergeSubjects(d.subjects, r.data as Subject[]) }));
+    });
+  }, [flush]); // eslint-disable-line react-hooks/exhaustive-deps
   const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
   useEffect(() => { // 前回ログインしたまま（Google から戻ってきたときも）なら、その学生のデータを開く
     let live = true;
@@ -77,6 +101,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dr = dRef.current[itemId]; if (!dr) return;
     setData(d => ({ ...d, subjects: d.subjects.map(s => ({ ...s, items: s.items.map(i => i.id === itemId ? { ...i, note: { ...dr, savedAt: Date.now() } } : i) })) }));
     setDrafts(p => { const n = { ...p }; delete n[itemId]; return n; });
+    // 11/12：Controller → NoteManager でも保存して、アカウントに送る（失敗しても画面の保存は済んでいる）
+    const sid = aRef.current?.id; if (!sid) return;
+    void controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, els: JSON.stringify(dr.els) }).then(r => { if (r.error) toast(r.error); });
   }, [setData]);
   /** 保存していないノートがあれば確認する（D04）。移ってよければ true */
   const guard = useCallback(async () => {

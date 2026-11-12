@@ -1,5 +1,6 @@
 // G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
 // 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
+// 11/12：ノートの「保存」は state/app.tsx の save() から Controller → NoteManager に送る（A）
 // ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
 import { useEffect, useState } from "react";
 import { Redirect, useApp } from "../state/app";
@@ -29,14 +30,16 @@ export function Study() {
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
   const sid = account?.id ?? "";
-  // 移行用：前からある科目・学習項目・前提項目を、Manager の保存場所にも入れておく（同じIDなので2回目からは何もしない）
+  // 移行用：前からある科目・学習項目・前提項目・保存済みのノートを、Manager の保存場所にも入れておく（同じIDなので2回目からは何もしない）
   useEffect(() => {
     if (!sid || !subject) return;
     const items = subject.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs }));
+    const notes = subject.items.map(i => ({ itemId: i.id, els: i.note.els, savedAt: i.note.savedAt }));
     // 続けて呼ばれても同時に走らないよう、前の移行が終わってから順番に行う
     importing = importing.then(async () => {
       await controller.subjectManager.importSubjects(sid, [{ id: subject.id, name: subject.name }]);
       await controller.itemManager.importItems(sid, subject.id, items);
+      for (const n of notes) await controller.noteManager.importNote(sid, n.itemId, n.els, n.savedAt); // 保存済みのノートも移す
     }).catch(() => { /* 移行に失敗しても画面はそのまま使える（次に開いたときにもう一度試す） */ });
   }, [sid, subject]);
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;

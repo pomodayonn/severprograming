@@ -5,7 +5,7 @@ import { NotePart } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import type { Suggestion } from "../beans/Suggestion";
 import { PartType } from "../enums/PartType";
-import type { FrameType } from "../types";
+import type { El, FrameType } from "../types";
 import { FT } from "../lib/logic";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { AppError, newId, pushQuietly, type ChangePusher } from "./common";
@@ -114,6 +114,54 @@ export class NoteManager implements SuggestionApplier {
     const note = await this.noteDAO.findByItem(itemId);
     return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word")
       .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
+  }
+
+  // ======== 移行中のつなぎ：画面の部品（El）とノートの部品（NotePart）を変換する ========
+  // 画面がまだ El の形で描いているので、保存するときは NotePart に、読み込むときは El に直す。
+  // 図形の「四角・丸」は NotePart に入れる列がないので、図形の text に "rect" か "ellipse" を入れておく（図形は文字を持たないため）
+
+  /** 画面の部品を NotePart に直す。部品のIDはそのまま、単語のIDは「部品ID-w番号」にする（保存のたびに変わらないように） */
+  toParts(els: El[], noteId: string, studentId: string): NotePart[] {
+    const type = { frame: PartType.FRAME, text: PartType.TEXT, shape: PartType.SHAPE, arrow: PartType.ARROW } as const;
+    return els.map(e => new NotePart({
+      partId: e.id, studentId, noteId, partType: type[e.kind], frameType: e.kind === "frame" ? (e.ft ?? null) : null,
+      x: e.x, y: e.y, width: e.w, height: e.h, color: e.color,
+      text: e.kind === "shape" ? (e.shape ?? "rect") : e.text, headingLevel: e.kind === "text" ? (e.head ?? 0) : 0,
+      words: (e.words ?? []).map((w, i) => new Word({ wordId: `${e.id}-w${i}`, studentId, partId: e.id, term: w.term, meaning: w.meaning })),
+    }));
+  }
+
+  /** NotePart を画面の部品に直す */
+  toElements(note: Note): El[] {
+    const kind = { [PartType.FRAME]: "frame", [PartType.TEXT]: "text", [PartType.SHAPE]: "shape", [PartType.ARROW]: "arrow" } as const;
+    return note.parts.map(p => {
+      const k = kind[p.partType];
+      return {
+        id: p.partId, kind: k, ft: k === "frame" ? (p.frameType as FrameType) : undefined,
+        x: p.x, y: p.y, w: p.width, h: p.height, color: p.color, text: k === "shape" ? "" : p.text,
+        words: k === "frame" && p.frameType === "word" ? p.words.map(w => ({ term: w.term, meaning: w.meaning })) : undefined,
+        head: (k === "text" ? Math.min(3, Math.max(0, p.headingLevel)) : 0) as El["head"],
+        shape: k === "shape" ? (p.text === "ellipse" ? "ellipse" : "rect") : undefined, at: Date.parse(p.updatedAt) || Date.now(),
+      };
+    });
+  }
+
+  /** 画面の「保存」ボタン：画面の部品でノートを置き換えて保存し、アカウントにも送る */
+  async saveElements(studentId: string, itemId: string, els: El[]): Promise<Note> {
+    const note = await this.getNote(itemId, studentId);
+    return this.saveNote(new Note({ ...note, parts: this.toParts(els, note.noteId, studentId) }));
+  }
+
+  /**
+   * 移行用：画面の古い保存場所にあるノートを、まだ一度も Manager で保存していなければ入れる。
+   * アカウントから受け取ったノートや、すでに保存したノートは上書きしない
+   */
+  async importNote(studentId: string, itemId: string, els: El[], savedAt: number): Promise<boolean> {
+    if (!savedAt || !els.length) return false;
+    const note = await this.getNote(itemId, studentId);
+    if (note.lastSavedAt || note.parts.length) return false;
+    await this.saveNote(new Note({ ...note, parts: this.toParts(els, note.noteId, studentId) }));
+    return true;
   }
 
   private sync() { return pushQuietly(this.syncManager); }
