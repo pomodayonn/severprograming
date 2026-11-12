@@ -91,7 +91,9 @@ export class Controller {
           await this.noteManager.saveElements(params.studentId ?? "", params.itemId ?? "", JSON.parse(params.els ?? "[]") as El[]);
           return {};
         // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
+        // この端末で初めてなら、前の保存場所（local）のデータを先に Manager に移す（1回だけ）
         case "G003:loadSubjects":
+          await this.migrateOnce(params.studentId ?? "", JSON.parse(params.local ?? "[]") as ScreenSubject[]);
           return { data: await this.loadScreenSubjects(params.studentId ?? "") };
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
@@ -101,6 +103,21 @@ export class Controller {
       // Manager のエラー（AppError）は文をそのまま画面に出す
       return { error: e instanceof AppError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
     }
+  }
+
+  /**
+   * 移行中のつなぎ：画面の前の保存場所（localStorage）にある科目・学習項目・前提項目・保存済みのノートを、
+   * この端末・この学生で1回だけ Manager に移す。2回目からは移さない
+   * （移し直すと、別の端末で消したものが戻ってきてしまうため）
+   */
+  private async migrateOnce(studentId: string, local: ScreenSubject[]): Promise<void> {
+    if (!studentId || await this.subjectManager.isMigrated(studentId)) return;
+    await this.subjectManager.importSubjects(studentId, local.map(s => ({ id: s.id, name: s.name })));
+    for (const s of local) {
+      await this.itemManager.importItems(studentId, s.id, s.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs })));
+      for (const i of s.items) await this.noteManager.importNote(studentId, i.id, i.note.els, i.note.savedAt);
+    }
+    await this.subjectManager.setMigrated(studentId);
   }
 
   /**

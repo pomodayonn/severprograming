@@ -27,21 +27,20 @@ export function Redirect({ to }: { to: Route }) {
 }
 
 /**
- * 画面のデータ（local）に、Manager から読んだデータ（db）を足す（移行中のつなぎ）。
- * ・db にしかない科目・学習項目は足す（別の端末で作った分）
- * ・両方にある学習項目は、名前と前提項目は db（Manager で変えたもの）に、ノートは保存日時が新しい方にそろえる
- * ・local にしかないものは残す（まだ Manager に移していない前からのデータの場合があるため）
+ * 画面のデータを、Manager から読んだデータ（db）にそろえる（移行中のつなぎ）。
+ * ・科目・学習項目・前提項目・ノートは db のとおりにする（別の端末で作った分は増え、消した分は消える）
+ * ・ただし読み込んでいる間に画面で作った科目・学習項目（before になかったもの）は残す
+ * ・消えた学習項目の資料とテストの一覧も画面から外す
  */
-export function mergeSubjects(local: Subject[], db: Subject[]): Subject[] {
-  const out = local.map(s => {
-    const d = db.find(x => x.id === s.id); if (!d) return s;
-    const items = s.items.map(i => {
-      const di = d.items.find(x => x.id === i.id); if (!di) return i;
-      return { ...i, name: di.name, prereqs: di.prereqs, note: di.note.savedAt > i.note.savedAt ? di.note : i.note };
-    });
-    return { ...s, name: d.name, items: [...items, ...d.items.filter(x => !s.items.some(i => i.id === x.id))] };
+export function applyDbSubjects(d: Data, db: Subject[], before: Set<string>): Data {
+  const subjects = db.map(s => {
+    const cur = d.subjects.find(x => x.id === s.id);
+    const added = (cur?.items ?? []).filter(i => !before.has(i.id) && !s.items.some(x => x.id === i.id));
+    return { ...s, items: [...s.items, ...added] };
   });
-  return [...out, ...db.filter(x => !local.some(s => s.id === x.id))];
+  subjects.push(...d.subjects.filter(s => !before.has(s.id) && !db.some(x => x.id === s.id)));
+  const ids = new Set(subjects.flatMap(s => s.items.map(i => i.id)));
+  return { ...d, subjects, materials: d.materials.filter(m => ids.has(m.itemId)), tests: d.tests.filter(t => ids.has(t.itemId)) };
 }
 
 /** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
@@ -82,10 +81,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), [flush]);
 
   const open = useCallback((a: Student) => {
-    flush(); setAccount(a); setD(loadData(a.id)); setDrafts({}); setRoute({ s: "G003" });
-    // 11/12：アカウントから受け取ったデータ（別の端末で作った科目・学習項目・ノート）を画面のデータに足す（移行中のつなぎ）
-    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id }).then(r => {
-      if (r.data && aRef.current?.id === a.id) setData(d => ({ ...d, subjects: mergeSubjects(d.subjects, r.data as Subject[]) }));
+    const local = loadData(a.id);
+    flush(); setAccount(a); setD(local); setDrafts({}); setRoute({ s: "G003" });
+    // 11/12：画面のデータを Manager のデータ（アカウントから受け取った分）にそろえる（移行中のつなぎ）。
+    // この端末で初めてなら、先に前のデータを Manager に移す（Controller の migrateOnce）
+    const before = new Set(local.subjects.flatMap(s => [s.id, ...s.items.map(i => i.id)]));
+    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: JSON.stringify(local.subjects) }).then(r => {
+      if (r.data && aRef.current?.id === a.id) setData(d => applyDbSubjects(d, r.data as Subject[], before));
     });
   }, [flush]); // eslint-disable-line react-hooks/exhaustive-deps
   const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない

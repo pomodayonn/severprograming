@@ -2,6 +2,7 @@
 // 担当：（11/11）。変更はその場で端末に保存し、SyncManager でアカウントにも送る
 import { Subject } from "../beans/Subject";
 import type { SubjectDAO } from "../dao/SubjectDAO";
+import { get, put } from "../dao/idb";
 import { AppError, checkName, newId, pushQuietly, type ChangePusher } from "./common";
 import type { LearningItemManager } from "./LearningItemManager";
 
@@ -58,6 +59,15 @@ export class SubjectManager {
     for (const s of add) await this.subjectDAO.insert(new Subject({ subjectId: s.id, studentId, subjectName: s.name.trim().slice(0, 50) || "科目" }));
     if (add.length) await this.sync();
     return add.length;
+  }
+
+  /** 移行用：この端末で、この学生の前のデータをもう移したか */
+  async isMigrated(studentId: string): Promise<boolean> {
+    return !!(await get<boolean>("meta", `migrated:${studentId}`));
+  }
+  /** 移行用：この端末で、この学生の前のデータを移し終えた印を付ける（2回目からは移さない） */
+  async setMigrated(studentId: string): Promise<void> {
+    await put("meta", true, `migrated:${studentId}`);
   }
 
   private sync() { return pushQuietly(this.syncManager); }

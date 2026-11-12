@@ -1,7 +1,7 @@
 // G003 科目一覧画面：左に科目の階層、中央で科目の作成・名前の編集・削除
 // 11/11：作成・名前の編集・削除を Controller → SubjectManager 経由にした（A）。
 // ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
-import { useEffect } from "react";
+// 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
 import { useApp } from "../state/app";
 import { controller } from "../controller/Controller";
 import type { Subject as SubjectBean } from "../beans/Subject";
@@ -12,11 +12,6 @@ export function SubjectList() {
   const { account, data, setData, route, nav, go, ask, askName } = useApp();
   const cur = data.subjects.find(s => s.id === route.subjectId);
   const sid = account?.id ?? "";
-
-  // 移行用：前からある科目を、Manager の保存場所にも入れておく（同じIDなので2回目からは何もしない）
-  useEffect(() => {
-    if (sid && data.subjects.length) void controller.subjectManager.importSubjects(sid, data.subjects.map(s => ({ id: s.id, name: s.name })));
-  }, [sid, data.subjects]);
 
   const add = async () => {
     const n = await askName("科目の追加"); if (!n) return;
