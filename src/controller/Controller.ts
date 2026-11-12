@@ -1,6 +1,7 @@
 // Controller（Controller／フロントエンド）：画面のボタン操作を受け取り、担当の Manager に仕事を渡す。
 // イベントIDは外部設計書のイベント一覧表のとおり。W2 で画面を1つずつ handleRequest 経由に置き換えていく。
-import type { El, Screen, Student, Subject as ScreenSubject } from "../types";
+import type { El, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
+import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountManager } from "../managers/AccountManager";
 import { AppError } from "../managers/common";
@@ -8,6 +9,7 @@ import { SyncManager } from "../managers/SyncManager";
 import { SendContentManager } from "../managers/SendContentManager";
 import { AiSummaryManager } from "../managers/AiSummaryManager";
 import { TestManager } from "../managers/TestManager";
+import { TestType } from "../enums/TestType";
 import { SubjectManager } from "../managers/SubjectManager";
 import { LearningItemManager } from "../managers/LearningItemManager";
 import { NoteManager } from "../managers/NoteManager";
@@ -17,6 +19,7 @@ import { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
 import { MaterialDAO } from "../dao/MaterialDAO";
 import { NoteDAO } from "../dao/NoteDAO";
 import { TestDAO } from "../dao/TestDAO";
+import { SendContent } from "../beans/SendContent";
 
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
 /** data は Manager が返したもの（作った科目など）。画面はこれを使って表示を変える */
@@ -32,7 +35,7 @@ export class Controller {
   readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager); // NoteManager は下の constructor で渡す
   readonly testManager = new TestManager(this.testDAO, this.noteDAO, this.syncManager);
-  // ---- Aの分（11/11。G003・G004・ノートの保存から使い始めた） ----
+  // ---- Aの分（11/11。G003・G004・ノートの保存・テスト（G008〜G011）から使い始めた） ----
   readonly subjectDAO = new SubjectDAO();
   readonly itemDAO = new LearningItemDAO();
   readonly prerequisiteDAO = new PrerequisiteDAO();
@@ -90,17 +93,41 @@ export class Controller {
         case "G004:saveNote": // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。els は画面の部品の JSON
           await this.noteManager.saveElements(params.studentId ?? "", params.itemId ?? "", JSON.parse(params.els ?? "[]") as El[]);
           return {};
+        // ---- G008 テスト作成 ----
+        case "G008:createWordTest": { // 単語テスト（AIを使わない）。partIds は「枠を選ぶ」のときだけ、カンマ区切り
+          const type = TestManager.typeOf(params.kind as TestKind) as TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING;
+          const partIds = params.partIds ? params.partIds.split(",").filter(Boolean) : undefined;
+          const r = await this.testManager.createWordTest(params.itemId ?? "", params.studentId ?? "", type, Number(params.count), partIds);
+          return { data: { test: this.testManager.toScreenTest(r.test), shortage: r.shortage } };
+        }
+        case "G008:createEssayTest": // 記述テスト（AIで作る）。text は G007 で決めた送る内容
+          return { data: this.testManager.toScreenTest(await this.testManager.createEssayTest(params.itemId ?? "", params.studentId ?? "", new SendContent({ text: params.text ?? "", charCount: (params.text ?? "").length }), Number(params.count))) };
+        // ---- G009 テスト解答 ----
+        case "G009:submit": { // 解答：初回も解き直しも、新しい受験として保存して採点する。answers は解答の JSON
+          const testId = params.testId ?? "";
+          await this.testManager.submitAnswers(testId, JSON.parse(params.answers ?? "[]") as string[]);
+          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+        }
+        // ---- G010 テスト結果 ----
+        case "G010:explain": { // 解説（AI）。index は画面の問題番号（0から）
+          const testId = params.testId ?? "";
+          return { data: await this.testManager.explain(testId, await this.testManager.questionIdAt(testId, Number(params.index))) };
+        }
         // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
         // この端末で初めてなら、前の保存場所（local）のデータを先に Manager に移す（1回だけ）
-        case "G003:loadSubjects":
-          await this.migrateOnce(params.studentId ?? "", JSON.parse(params.local ?? "[]") as ScreenSubject[]);
-          return { data: await this.loadScreenSubjects(params.studentId ?? "") };
+        case "G003:loadSubjects": {
+          const sid = params.studentId ?? "";
+          await this.migrateOnce(sid, JSON.parse(params.local ?? "[]") as ScreenSubject[], JSON.parse(params.localTests ?? "[]") as ScreenTest[]);
+          const subjects = await this.loadScreenSubjects(sid);
+          return { data: { subjects, tests: await this.loadScreenTests(subjects) } };
+        }
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
       return { error: `まだ作っていない操作です（${screenId}:${eventId}）` };
     } catch (e) {
       // Manager のエラー（AppError）は文をそのまま画面に出す
+      if (e instanceof ApiError) return { error: errorText(e) }; // AIのサーバーのエラー（回数切れ・長すぎるなど）
       return { error: e instanceof AppError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
     }
   }
@@ -110,14 +137,32 @@ export class Controller {
    * この端末・この学生で1回だけ Manager に移す。2回目からは移さない
    * （移し直すと、別の端末で消したものが戻ってきてしまうため）
    */
-  private async migrateOnce(studentId: string, local: ScreenSubject[]): Promise<void> {
-    if (!studentId || await this.subjectManager.isMigrated(studentId)) return;
-    await this.subjectManager.importSubjects(studentId, local.map(s => ({ id: s.id, name: s.name })));
-    for (const s of local) {
-      await this.itemManager.importItems(studentId, s.id, s.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs })));
-      for (const i of s.items) await this.noteManager.importNote(studentId, i.id, i.note.els, i.note.savedAt);
+  private async migrateOnce(studentId: string, local: ScreenSubject[], localTests: ScreenTest[]): Promise<void> {
+    if (!studentId) return;
+    if (!(await this.subjectManager.isMigrated(studentId))) {
+      await this.subjectManager.importSubjects(studentId, local.map(s => ({ id: s.id, name: s.name })));
+      for (const s of local) {
+        await this.itemManager.importItems(studentId, s.id, s.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs })));
+        for (const i of s.items) await this.noteManager.importNote(studentId, i.id, i.note.els, i.note.savedAt);
+      }
+      await this.subjectManager.setMigrated(studentId);
     }
-    await this.subjectManager.setMigrated(studentId);
+    // テストは 11/12 の後から移すので、印を分けてある。学習項目がある分だけ移す
+    if (!(await this.subjectManager.isMigrated(studentId, "tests"))) {
+      const itemIds = new Set<string>();
+      for (const s of await this.subjectManager.getSubjects(studentId)) for (const i of await this.itemManager.getItems(s.subjectId)) itemIds.add(i.itemId);
+      let added = 0;
+      for (const t of localTests) if (itemIds.has(t.itemId) && await this.testManager.importScreenTest(studentId, t)) added++;
+      if (added) await this.testManager.syncNow();
+      await this.subjectManager.setMigrated(studentId, "tests");
+    }
+  }
+
+  /** 移行中のつなぎ：画面に出している学習項目のテストを、画面の形にして返す */
+  private async loadScreenTests(subjects: ScreenSubject[]): Promise<ScreenTest[]> {
+    const out: ScreenTest[] = [];
+    for (const s of subjects) for (const i of s.items) for (const t of await this.testManager.getTests(i.id)) out.push(this.testManager.toScreenTest(t));
+    return out;
   }
 
   /**

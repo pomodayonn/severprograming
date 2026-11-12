@@ -1,10 +1,13 @@
 // G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧
+// 11/12：テストの作成・解答（採点と保存）・解説を Controller → TestManager 経由にした（A）。
+// 解き直しも毎回「受験」として保存する（要件定義書 UC-023・UC-027）。
+// ほかの画面がまだ data.tests を使っているので、Manager で成功したら data.tests にも同じ変更を入れる（移行中のつなぎ）
 import { useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
-import { fmt, isCorrect, shuffle, uid, wordTest, wordsOf } from "../lib/logic";
-import { addLocalUsage, explain, makeEssay, useAiRemaining } from "../services/ai";
-import { errorText } from "../services/api";
+import { fmt, shuffle } from "../lib/logic";
+import { addLocalUsage, useAiRemaining } from "../services/ai";
+import { controller } from "../controller/Controller";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
@@ -12,7 +15,7 @@ const KIND: Record<TestKind, string> = { "w-m2t": "単語テスト（意味→�
 const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; };
 
 export function TestCreate() {
-  const { data, setData, route, nav, go, tmp, setTmp } = useApp();
+  const { data, setData, route, nav, go, tmp, setTmp, account } = useApp();
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
   const { remaining, limit, refresh } = useAiRemaining(data.usage);
@@ -20,18 +23,24 @@ export function TestCreate() {
   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
   const make = async () => {
-    setMsg(""); const n = Math.min(20, Math.max(5, Math.round(count) || 10)); let qs;
+    setMsg(""); const n = Math.min(20, Math.max(5, Math.round(count) || 10)); let t: Test;
     if (!essay) {
-      const ws = wordsOf(els); if (!ws.length) return setMsg("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
-      qs = wordTest(ws, kind, n); if (ws.length < n) toast(`単語が少ないので、ある分（${ws.length}問）だけ出題します`);
+      if (scope === "pick" && !picks.length) return setMsg("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
+      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.id ?? "", itemId: item.id, kind, count: String(n), partIds: scope === "pick" ? picks.join(",") : "" });
+      if (r.error) return setMsg(r.error);
+      const d = r.data as { test: Test; shortage: number }; t = d.test;
+      if (d.shortage > 0) toast(`単語が少ないので、ある分（${t.qs.length}問）だけ出題します`);
     } else {
       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
       const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
-      setBusy(true); try { qs = await makeEssay(send, n); } catch (e) { setBusy(false); void refresh(); return setMsg(errorText(e)); } setBusy(false);
-      if (!qs.length) return setMsg("問題を作れませんでした。送る内容を見直してください");
-      setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); void refresh(); setTmp({ send: "", sendCalls: 1 });
+      setBusy(true);
+      const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.id ?? "", itemId: item.id, text: send, count: String(n) });
+      setBusy(false); void refresh();
+      if (r.error) return setMsg(r.error);
+      t = r.data as Test;
+      setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); setTmp({ send: "", sendCalls: 1 });
     }
-    const t: Test = { id: uid(), itemId: item.id, kind, created: Date.now(), qs }; setData(d => ({ ...d, tests: [...d.tests, t] }));
+    setData(d => ({ ...d, tests: [...d.tests, t] }));
     nav({ s: "G009", subjectId: subject.id, itemId: item.id, testId: t.id, mode: "new" }); // 問題だけを表示（模範解答・解説は出さない）
   };
   return <Shell center={<>
@@ -50,6 +59,7 @@ export function TestCreate() {
 export function TestAnswer() {
   const { data, setData, route, nav, ask } = useApp();
   const test = data.tests.find(t => t.id === route.testId), retry = route.mode === "retry";
+  const [busy, setBusy] = useState(false);
   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => test?.qs.map(() => "") ?? []), [kb, setKb] = useState(test?.kind === "essay");
   const pool = useMemo(() => test ? test.qs.map(q => q.a) : [], [test]);
   const choices = useMemo(() => !test || test.kind === "essay" ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [test, idx, pool]); // eslint-disable-line
@@ -59,15 +69,18 @@ export function TestAnswer() {
   const done = async () => {
     const un = ans.filter(a => !a.trim()).length;
     if (un && await ask("答えていない問題があります。確定しますか", [{ label: "確定", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
-    const ok = test.kind === "w-m2t" ? test.qs.map((q, i) => isCorrect(ans[i], q.a)) : undefined; // 採点するのは「意味→用語」だけ
-    if (!retry) setData(d => ({ ...d, tests: d.tests.map(t => t.id === test.id ? { ...t, ans, ok, last: Date.now() } : t) })); // 解き直しの解答は保存しない
-    nav({ s: "G010", ...base, testId: test.id, mode: retry ? "retry" : "new", ans, ok });
+    // TestManager が新しい受験として保存し、「意味→用語」なら採点する（解き直しも保存する）
+    setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.id, answers: JSON.stringify(ans) }); setBusy(false);
+    if (r.error) return toast(r.error);
+    const saved = r.data as Test;
+    setData(d => ({ ...d, tests: d.tests.map(t => t.id === test.id ? saved : t) }));
+    nav({ s: "G010", ...base, testId: test.id, mode: retry ? "retry" : "new", ans: saved.ans, ok: saved.ok });
   };
   const quit = async () => { if (await ask("今回の解答は保存されません。やめますか", [{ label: "やめる", value: "ok", primary: true }, { label: "続ける", value: "no" }]) === "ok") leave(); };
   const set = (v: string) => setAns(ans.map((a, i) => i === idx ? v : a));
-  return <Shell right={<><div className="col">{test.qs.map((_, i) => <div key={i} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn round fill" onClick={done}>解答</button></>}
+  return <Shell right={<><div className="col">{test.qs.map((_, i) => <div key={i} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn round fill" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
     center={<>
-      <div className="mute">{KIND[test.kind]}{retry ? "（解き直し：この回の解答は保存されません）" : ""}　問 {idx + 1} / {test.qs.length}</div>
+      <div className="mute">{KIND[test.kind]}{retry ? "（解き直し：解答は新しい回として保存されます）" : ""}　問 {idx + 1} / {test.qs.length}</div>
       <div className="vbox" style={{ marginTop: 6 }}><h3>第{idx + 1}問</h3><div style={{ fontSize: 17 }}>{test.qs[idx].q}</div>
         {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
         {(kb || test.kind === "essay") && <textarea className="tx" style={{ minHeight: 110, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}</div>
@@ -84,8 +97,10 @@ export function TestResult() {
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const expl = async () => {
     if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
-    try { const e = await explain(q); void refresh(); setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg(""); }
-    catch (e) { setMsg(errorText(e)); void refresh(); }
+    const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: String(idx) }); void refresh();
+    if (r.error) return setMsg(r.error);
+    const e = r.data as string;
+    setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg("");
   };
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{ans || list ? q.a : "（解答するとここに表示されます）"}</div></div>
       <button className="btn" style={{ alignSelf: "flex-end" }} onClick={expl}>解説</button>{q.expl && <div className="pop">{q.expl}</div>}{msg && <div className="err">{msg}</div>}</>}

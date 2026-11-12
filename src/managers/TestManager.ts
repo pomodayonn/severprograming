@@ -13,6 +13,7 @@ import type { TestDAO } from "../dao/TestDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { explain as aiExplain, makeEssay, regenerateQuestion as aiRegenerate } from "../services/ai";
 import { AppError, SEND_LIMIT, newId, pushQuietly, type ChangePusher } from "./common";
+import type { Test as ScreenTest, TestKind } from "../types";
 
 /** 画面に出す文を持ったエラー */
 export class TestError extends AppError {}
@@ -24,9 +25,12 @@ export class TestManager {
 
   setSyncManager(sync: ChangePusher) { this.syncManager = sync; }
 
-  /** AIを使わず単語枠から単語テストを作る。単語が足りなければある分だけ出題する（足りない数は shortage で分かる） */
-  async createWordTest(itemId: string, studentId: string, type: TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING, count: number): Promise<{ test: Test; shortage: number }> {
-    const words = await this.getWords(itemId);
+  /**
+   * AIを使わず単語枠から単語テストを作る。単語が足りなければある分だけ出題する（足りない数は shortage で分かる）。
+   * partIds を渡したときは、その枠の単語だけを使う（G008 の「枠を選ぶ」）
+   */
+  async createWordTest(itemId: string, studentId: string, type: TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING, count: number, partIds?: string[]): Promise<{ test: Test; shortage: number }> {
+    const words = await this.getWords(itemId, partIds);
     if (!words.length) throw new TestError("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
     const n = clampCount(count), picked = shuffle(words).slice(0, n);
     const testId = newId();
@@ -137,6 +141,51 @@ export class TestManager {
     return text;
   }
 
+  // ======== 移行中のつなぎ：画面のテスト（types.ts の Test）と beans の Test を変換する ========
+
+  /** テストの種類：画面の書き方 → TestType */
+  static typeOf(kind: TestKind): TestType {
+    return kind === "w-m2t" ? TestType.MEANING_TO_TERM : kind === "w-t2m" ? TestType.TERM_TO_MEANING : TestType.ESSAY;
+  }
+
+  /** beans の Test を画面の形にする。解答と正誤は、いちばん新しい受験の分を入れる */
+  toScreenTest(test: Test): ScreenTest {
+    const kind: TestKind = test.testType === TestType.MEANING_TO_TERM ? "w-m2t" : test.testType === TestType.TERM_TO_MEANING ? "w-t2m" : "essay";
+    const qs = [...test.questions].sort((a, b) => a.number - b.number);
+    const last = [...test.attempts].sort((a, b) => b.attemptNo - a.attemptNo)[0];
+    const answerOf = (questionId: string) => last?.answers.find(x => x.questionId === questionId);
+    return {
+      id: test.testId, itemId: test.itemId, kind, created: Date.parse(test.createdAt) || Date.now(),
+      last: test.lastTakenAt ? Date.parse(test.lastTakenAt) : undefined,
+      qs: qs.map(q => ({ q: q.questionText, a: q.modelAnswer, expl: q.explanation ?? undefined })),
+      ans: last ? qs.map(q => answerOf(q.questionId)?.studentAnswer ?? "") : undefined,
+      ok: last && test.testType === TestType.MEANING_TO_TERM ? qs.map(q => !!answerOf(q.questionId)?.correct) : undefined,
+    };
+  }
+
+  /** 画面の問題番号（0から）から問題IDを探す */
+  async questionIdAt(testId: string, index: number): Promise<string> {
+    const q = [...(await this.getTest(testId)).questions].sort((a, b) => a.number - b.number)[index];
+    if (!q) throw new TestError("問題が見つかりません"); return q.questionId;
+  }
+
+  /** 移行用：画面の古い保存場所にあるテストを、同じIDで入れる（解いたことがあれば、その解答も1回目の受験として入れる） */
+  async importScreenTest(studentId: string, t: ScreenTest): Promise<boolean> {
+    if (await this.testDAO.findById(t.id) || !t.qs.length) return false;
+    const type = TestManager.typeOf(t.kind), created = new Date(t.created || Date.now()).toISOString();
+    const questions = t.qs.map((q, i) => new Question({ questionId: newId(), testId: t.id, studentId, number: i + 1, questionText: q.q, modelAnswer: q.a, explanation: q.expl ?? null }));
+    await this.testDAO.insert(new Test({ testId: t.id, studentId, itemId: t.itemId, testType: type, questionCount: questions.length, createdAt: created, questions }));
+    if (t.ans) {
+      const attemptId = newId(), at = new Date(t.last || t.created || Date.now()).toISOString();
+      await this.testDAO.insertAttempt(new Attempt({
+        attemptId, testId: t.id, studentId, attemptNo: 1, takenAt: at,
+        answers: questions.map((q, i) => new Answer({ answerId: newId(), attemptId, questionId: q.questionId, studentId, studentAnswer: t.ans?.[i] ?? "", answeredAt: at, correct: type === TestType.MEANING_TO_TERM ? !!t.ok?.[i] : null })),
+      }));
+      await this.testDAO.updateLastTaken(t.id, at);
+    }
+    return true;
+  }
+
   // ---------- private ----------
 
   /** 単語テストの「意味→用語」のときだけ使う。全角半角・大文字小文字・前後の空白を区別せず、完全一致で正誤を判定する */
@@ -147,16 +196,18 @@ export class TestManager {
   /** 解答を直せる種類か。意味→用語なら false */
   private canEditAnswer(type: TestType): boolean { return type !== TestType.MEANING_TO_TERM; }
 
-  /** 単語枠から、用語と意味が両方入っている単語を取り出す */
-  private async getWords(itemId: string) {
+  /** 単語枠から、用語と意味が両方入っている単語を取り出す（partIds があればその枠だけ） */
+  private async getWords(itemId: string, partIds?: string[]) {
     const note = await this.noteDAO.findByItem(itemId);
-    return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word")
+    return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word" && (!partIds || partIds.includes(p.partId)))
       .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
   }
   private async question(testId: string, questionId: string): Promise<Question> {
     const q = (await this.getTest(testId)).questions.find(x => x.questionId === questionId);
     if (!q) throw new TestError("問題が見つかりません"); return q;
   }
+  /** 移行のあとにまとめて送る */
+  syncNow() { return this.sync(); }
   private sync() { return pushQuietly(this.syncManager); }
 }
 

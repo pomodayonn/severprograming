@@ -1,6 +1,6 @@
 // アプリ全体の状態：ログイン中の学生・その学生のデータ・いまの画面・保存前のノート・確認ダイアログ
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Data, Note, Route, Student, Subject } from "../types";
+import type { Data, Note, Route, Student, Subject, Test } from "../types";
 import { emptyData, loadData, saveData } from "../services/db";
 import { controller } from "../controller/Controller";
 import { toast } from "../components/toast";
@@ -30,9 +30,9 @@ export function Redirect({ to }: { to: Route }) {
  * 画面のデータを、Manager から読んだデータ（db）にそろえる（移行中のつなぎ）。
  * ・科目・学習項目・前提項目・ノートは db のとおりにする（別の端末で作った分は増え、消した分は消える）
  * ・ただし読み込んでいる間に画面で作った科目・学習項目（before になかったもの）は残す
- * ・消えた学習項目の資料とテストの一覧も画面から外す
+ * ・テストも db のとおりにする。消えた学習項目の資料とテストは画面から外す
  */
-export function applyDbSubjects(d: Data, db: Subject[], before: Set<string>): Data {
+export function applyDbSubjects(d: Data, db: Subject[], before: Set<string>, dbTests: Test[] = []): Data {
   const subjects = db.map(s => {
     const cur = d.subjects.find(x => x.id === s.id);
     const added = (cur?.items ?? []).filter(i => !before.has(i.id) && !s.items.some(x => x.id === i.id));
@@ -40,7 +40,9 @@ export function applyDbSubjects(d: Data, db: Subject[], before: Set<string>): Da
   });
   subjects.push(...d.subjects.filter(s => !before.has(s.id) && !db.some(x => x.id === s.id)));
   const ids = new Set(subjects.flatMap(s => s.items.map(i => i.id)));
-  return { ...d, subjects, materials: d.materials.filter(m => ids.has(m.itemId)), tests: d.tests.filter(t => ids.has(t.itemId)) };
+  // テストも db のとおりにする（読み込んでいる間に作ったテストは残す）
+  const tests = [...dbTests, ...d.tests.filter(t => !before.has(t.id) && !dbTests.some(x => x.id === t.id))];
+  return { ...d, subjects, materials: d.materials.filter(m => ids.has(m.itemId)), tests: tests.filter(t => ids.has(t.itemId)) };
 }
 
 /** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
@@ -85,9 +87,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flush(); setAccount(a); setD(local); setDrafts({}); setRoute({ s: "G003" });
     // 11/12：画面のデータを Manager のデータ（アカウントから受け取った分）にそろえる（移行中のつなぎ）。
     // この端末で初めてなら、先に前のデータを Manager に移す（Controller の migrateOnce）
-    const before = new Set(local.subjects.flatMap(s => [s.id, ...s.items.map(i => i.id)]));
-    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: JSON.stringify(local.subjects) }).then(r => {
-      if (r.data && aRef.current?.id === a.id) setData(d => applyDbSubjects(d, r.data as Subject[], before));
+    const before = new Set([...local.subjects.flatMap(s => [s.id, ...s.items.map(i => i.id)]), ...local.tests.map(t => t.id)]);
+    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: JSON.stringify(local.subjects), localTests: JSON.stringify(local.tests) }).then(r => {
+      const db = r.data as { subjects: Subject[]; tests: Test[] } | undefined;
+      if (db && aRef.current?.id === a.id) setData(d => applyDbSubjects(d, db.subjects, before, db.tests));
     });
   }, [flush]); // eslint-disable-line react-hooks/exhaustive-deps
   const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない

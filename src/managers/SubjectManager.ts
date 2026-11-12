@@ -61,13 +61,13 @@ export class SubjectManager {
     return add.length;
   }
 
-  /** 移行用：この端末で、この学生の前のデータをもう移したか */
-  async isMigrated(studentId: string): Promise<boolean> {
-    return !!(await get<boolean>("meta", `migrated:${studentId}`));
+  /** 移行用：この端末で、この学生の前のデータをもう移したか（what は "" ＝科目〜ノート、"tests" ＝テスト） */
+  async isMigrated(studentId: string, what = ""): Promise<boolean> {
+    return !!(await get<boolean>("meta", `migrated${what ? "-" + what : ""}:${studentId}`));
   }
   /** 移行用：この端末で、この学生の前のデータを移し終えた印を付ける（2回目からは移さない） */
-  async setMigrated(studentId: string): Promise<void> {
-    await put("meta", true, `migrated:${studentId}`);
+  async setMigrated(studentId: string, what = ""): Promise<void> {
+    await put("meta", true, `migrated${what ? "-" + what : ""}:${studentId}`);
   }
 
   private sync() { return pushQuietly(this.syncManager); }
