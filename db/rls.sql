@@ -1,5 +1,11 @@
 -- るんです。RLS（Row-Level Security）の決まり
+-- 担当：黒木（作成：東 11/10）
 -- schema.sql のあとに実行する
+--
+-- ・ブラウザは Neon の Data API に、ログインの JWT を付けて直接読み書きする（authenticated の役割）
+-- ・同期する10テーブルは「student_id = 自分の学生ID（auth.user_id()）」の行だけ読み書きできる
+-- ・ai_usage は Data API から一切触れない（回数を書き換えられないように）。サーバー（Render）はテーブルの持ち主の役割で接続するので読み書きできる
+-- ・テーブルを足したら、必ずここにも足す。入れ忘れたテーブルは誰でも見られてしまう
 
 GRANT USAGE ON SCHEMA public TO authenticated;
 
@@ -16,8 +22,8 @@ BEGIN
   END LOOP;
 END $$;
 
--- AI利用回数：Data API からは見えない・書けない
-ALTER TABLE ai_usage ENABLE ROW LEVEL SECURITY;
+-- AI利用回数：Data API（authenticated・anonymous）からは見えない・書けない
+ALTER TABLE ai_usage ENABLE ROW LEVEL SECURITY; -- ポリシーを作らない＝持ち主以外は1行も触れない
 REVOKE ALL ON ai_usage FROM authenticated, anonymous;
 
 -- 確認用：RLS が入っていないテーブルがあれば表示される（何も出なければOK）
