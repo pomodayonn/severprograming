@@ -146,6 +146,15 @@ export class NoteManager implements SuggestionApplier {
     });
   }
 
+  /**
+   * 画面の部品で adjustOverlap() を使う：id の部品が大きくなって下の部品と重なりそうなら、下の部品をずらす。
+   * 保存はしない（ノート画面の下書きに使う）。ずらした後の部品を返す
+   */
+  adjustElements(els: El[], id: string): El[] {
+    const parts = this.adjustOverlap(new Note({ parts: this.toParts(els, "", "") }), id).parts;
+    return els.map(e => { const y = parts.find(p => p.partId === e.id)?.y ?? e.y; return y === e.y ? e : { ...e, y, at: Date.now() }; });
+  }
+
   /** 画面の「保存」ボタン：画面の部品でノートを置き換えて保存し、アカウントにも送る */
   async saveElements(studentId: string, itemId: string, els: El[]): Promise<Note> {
     const note = await this.getNote(itemId, studentId);

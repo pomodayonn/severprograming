@@ -1,8 +1,9 @@
 // G008 テスト作成 / G009 テスト解答 / G010 テスト結果 / G011 テスト一覧
 // 11/12：テストの作成・解答（採点と保存）・解説を Controller → TestManager 経由にした（A）。
 // 解き直しも毎回「受験」として保存する（要件定義書 UC-023・UC-027）。
+// 11/12：G010 に「直す」（問題と模範解答・自分の解答・解説、AIで直す）と、過去の受験を選ぶ機能を追加（UC-026・UC-028）。
 // ほかの画面がまだ data.tests を使っているので、Manager で成功したら data.tests にも同じ変更を入れる（移行中のつなぎ）
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
 import { fmt, shuffle } from "../lib/logic";
@@ -88,13 +89,32 @@ export function TestAnswer() {
         {test.kind !== "essay" && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
 
+/** 1回分の受験（何回目・日時・解答・正誤） */
+interface Att { no: number; at: number; ans: string[]; ok?: boolean[] }
+/** 直す対象：問題と模範解答／自分の解答／解説 */
+type Fix = "question" | "answer" | "expl";
+
 export function TestResult() {
-  const { data, setData, route, nav, go } = useApp();
+  const { data, setData, route, go } = useApp();
   const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
   const { remaining, refresh } = useAiRemaining(data.usage);
+  // 過去の受験（1回目から順に）と、いま表示している回
+  const [atts, setAtts] = useState<Att[]>([]), [no, setNo] = useState(0);
+  // 直す（G010）：直す対象・書き直し欄・追加の指示
+  const [fix, setFix] = useState<Fix | null>(null), [f1, setF1] = useState(""), [f2, setF2] = useState(""), [extra, setExtra] = useState(""), [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!test) return;
+    void controller.handleRequest("G010", "getAttempts", { testId: test.id }).then(r => {
+      if (r.data) { const a = r.data as Att[]; setAtts(a); setNo(a.length ? a[a.length - 1].no : 0); }
+    });
+  }, [test?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!test) return <Redirect to={{ s: "G003" }} />;
-  const list = route.mode === "list", ans = list ? test.ans : route.ans, ok = list ? test.ok : route.ok, q = test.qs[idx];
-  const base = { subjectId: route.subjectId, itemId: route.itemId };
+  const list = route.mode === "list", q = test.qs[idx], base = { subjectId: route.subjectId, itemId: route.itemId };
+  const att = atts.find(a => a.no === no);
+  const ans = att?.ans ?? (list ? test.ans : route.ans), ok = att ? att.ok : (list ? test.ok : route.ok);
+  const essay = test.kind === "essay", canAnswer = test.kind !== "w-m2t" && !!att;
+  const mirror = (t: Test) => setData(d => ({ ...d, tests: d.tests.map(x => x.id === t.id ? t : x) }));
+  const useAi = () => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1) })); void refresh(); };
   const expl = async () => {
     if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
     const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: String(idx) }); void refresh();
@@ -102,11 +122,53 @@ export function TestResult() {
     const e = r.data as string;
     setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg("");
   };
+  // 「直す」：対象を選ぶと、いまの内容を書き直し欄に入れる
+  const open = (f: Fix) => {
+    setFix(f); setMsg(""); setExtra("");
+    if (f === "question") { setF1(q.q); setF2(q.a); } else if (f === "answer") { setF1(ans?.[idx] ?? ""); setF2(""); } else { setF1(q.expl ?? ""); setF2(""); }
+  };
+  const close = () => { setFix(null); setMsg(""); };
+  const saveFix = async () => {
+    if (!fix) return; setBusy(true);
+    const p = { testId: test.id, index: String(idx) };
+    const r = fix === "question" ? await controller.handleRequest("G010", "editQuestion", { ...p, question: f1, modelAnswer: f2 })
+      : fix === "answer" ? await controller.handleRequest("G010", "editAnswer", { ...p, attemptNo: String(no), answer: f1 })
+      : await controller.handleRequest("G010", "editExplanation", { ...p, explanation: f1 });
+    setBusy(false);
+    if (r.error) return setMsg(r.error);
+    if (fix === "answer") { const d = r.data as { test: Test; attempts: Att[] }; mirror(d.test); setAtts(d.attempts); } else mirror(r.data as Test);
+    close(); toast("直したよ");
+  };
+  const aiFix = async () => {
+    if (fix !== "question" && fix !== "expl") return;
+    if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
+    setBusy(true);
+    const r = await controller.handleRequest("G010", fix === "question" ? "regenerateQuestion" : "regenerateExplanation", { testId: test.id, index: String(idx), extra });
+    setBusy(false);
+    if (r.error) { void refresh(); return setMsg(r.error); }
+    useAi(); const t = r.data as Test; mirror(t);
+    if (fix === "question") { setF1(t.qs[idx].q); setF2(t.qs[idx].a); } else setF1(t.qs[idx].expl ?? "");
+    setMsg(""); toast("AIで直して保存したよ");
+  };
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{ans || list ? q.a : "（解答するとここに表示されます）"}</div></div>
-      <button className="btn" style={{ alignSelf: "flex-end" }} onClick={expl}>解説</button>{q.expl && <div className="pop">{q.expl}</div>}{msg && <div className="err">{msg}</div>}</>}
+      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn" onClick={expl}>解説</button></span>
+      {q.expl && <div className="pop" style={{ whiteSpace: "pre-wrap" }}>{q.expl}</div>}
+      {fix && <div className="pop">
+        <b>直す内容</b>
+        <label className="ck"><input type="radio" checked={fix === "question"} disabled={!essay} onChange={() => open("question")} />問題と模範解答</label>
+        <label className="ck"><input type="radio" checked={fix === "answer"} disabled={!canAnswer} onChange={() => open("answer")} />自分の解答{att ? `（第${att.no}回）` : ""}</label>
+        <label className="ck"><input type="radio" checked={fix === "expl"} onChange={() => open("expl")} />解説</label>
+        {!essay && <div className="mute">単語テストの問題は、ノートの単語枠で直してください{test.kind === "w-m2t" ? "。「意味→用語」は採点があるので、自分の解答は直せません" : ""}</div>}
+        {fix === "question" && <><div className="mute">問題</div><textarea className="tx" rows={3} style={{ minHeight: 0, height: "auto" }} value={f1} onChange={e => setF1(e.target.value)} /><div className="mute">模範解答</div><textarea className="tx" rows={3} style={{ minHeight: 0, height: "auto" }} value={f2} onChange={e => setF2(e.target.value)} /></>}
+        {fix !== "question" && <textarea className="tx" rows={4} style={{ minHeight: 0, height: "auto" }} value={f1} onChange={e => setF1(e.target.value)} placeholder={fix === "expl" ? "解説を入力" : "解答を入力"} />}
+        {fix !== "answer" && <><div className="mute">AIへの追加の指示（空なら最初から作り直す）</div><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} placeholder="例：もっと短く" /></>}
+        <span className="row"><button className="btn fill" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn line" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
+      </div>}
+      {msg && <div className="err">{msg}</div>}</>}
     center={<>
-      <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{ok && <b>{ok.filter(Boolean).length} / {test.qs.length} 問正解</b>}<span className="mute">{KIND[test.kind]}{list ? `　最後に解いた日時 ${fmt(test.last)}` : ""}</span></div>
-      <div className="qtabs" style={{ marginTop: 8 }}>{test.qs.map((_, i) => <button key={i} className={"btn sm" + (i === idx ? " fill" : " line")} onClick={() => { setIdx(i); setMsg(""); }}>第{i + 1}問</button>)}</div>
+      <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{ok && <b>{ok.filter(Boolean).length} / {test.qs.length} 問正解</b>}<span className="mute">{KIND[test.kind]}{att ? `　第${att.no}回　${fmt(att.at)}` : list ? `　最後に解いた日時 ${fmt(test.last)}` : ""}</span>
+        {atts.length > 1 && <select className="inp" style={{ width: "auto", display: "inline-block", margin: 0 }} value={no} onChange={e => { setNo(Number(e.target.value)); close(); }} aria-label="受験を選ぶ">{atts.map(a => <option key={a.no} value={a.no}>第{a.no}回（{fmt(a.at)}）</option>)}</select>}</div>
+      <div className="qtabs" style={{ marginTop: 8 }}>{test.qs.map((_, i) => <button key={i} className={"btn sm" + (i === idx ? " fill" : " line")} onClick={() => { setIdx(i); close(); }}>第{i + 1}問</button>)}</div>
       <div className="vbox"><h3>自身の回答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.q}</div>
         {ans ? <div style={{ whiteSpace: "pre-wrap" }}>{ans[idx] || "（未回答）"}　{ok && (ok[idx] ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">まだ解いていません。「解き直し」で解けます。</p>}</div>
       <div className="bar2"><button className="btn line round" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn round fill" onClick={() => go({ s: "G011", ...base })}>戻る</button></div></>} />;

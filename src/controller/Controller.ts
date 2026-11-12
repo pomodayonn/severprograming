@@ -113,6 +113,35 @@ export class Controller {
           const testId = params.testId ?? "";
           return { data: await this.testManager.explain(testId, await this.testManager.questionIdAt(testId, Number(params.index))) };
         }
+        case "G010:getAttempts": // 過去の受験の一覧（1回目から順に）
+          return { data: this.testManager.toScreenAttempts(await this.testManager.getTest(params.testId ?? "")) };
+        // ---- G010 テストを直す（index は画面の問題番号（0から）） ----
+        case "G010:editQuestion": { // 問題と模範解答を手で直す（記述テストだけ）
+          const testId = params.testId ?? "";
+          await this.testManager.editQuestion(testId, await this.testManager.questionIdAt(testId, Number(params.index)), params.question ?? "", params.modelAnswer ?? "");
+          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+        }
+        case "G010:regenerateQuestion": { // 問題と模範解答をAIで作り直す（記述テストだけ・1回分）。extra は追加の指示
+          const testId = params.testId ?? "";
+          await this.testManager.regenerateQuestion(testId, await this.testManager.questionIdAt(testId, Number(params.index)), params.extra ?? "");
+          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+        }
+        case "G010:editAnswer": { // 自分の解答を直す（「意味→用語」以外）。attemptNo は何回目の受験か
+          const testId = params.testId ?? "";
+          await this.testManager.editAnswer(testId, await this.testManager.attemptIdOf(testId, Number(params.attemptNo)), await this.testManager.questionIdAt(testId, Number(params.index)), params.answer ?? "");
+          const test = await this.testManager.getTest(testId);
+          return { data: { test: this.testManager.toScreenTest(test), attempts: this.testManager.toScreenAttempts(test) } };
+        }
+        case "G010:editExplanation": { // 解説を手で直す
+          const testId = params.testId ?? "";
+          await this.testManager.editExplanation(testId, await this.testManager.questionIdAt(testId, Number(params.index)), params.explanation ?? "");
+          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+        }
+        case "G010:regenerateExplanation": { // 解説をAIで作り直す（1回分）。extra は追加の指示
+          const testId = params.testId ?? "";
+          await this.testManager.regenerateExplanation(testId, await this.testManager.questionIdAt(testId, Number(params.index)), params.extra ?? "");
+          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+        }
         // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
         // この端末で初めてなら、前の保存場所（local）のデータを先に Manager に移す（1回だけ）
         case "G003:loadSubjects": {

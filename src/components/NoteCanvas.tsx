@@ -1,8 +1,16 @@
 // ノートのキャンバス：枠・文字・図形・矢印を置いて、動かす・大きさを変える・色を変える
 // 1つの部品を動かしても、ほかの部品は描き直さない（ElView を memo）。ドラッグは1フレームに1回だけ反映する。
+// 11/12：部品が大きくなったら（大きさの変更・単語の追加・文字があふれたとき）、NoteManager.adjustOverlap で下の部品をずらす（A）
 import { memo, useCallback, useEffect, useRef } from "react";
 import type { El } from "../types";
 import { FT } from "../lib/logic";
+import { controller } from "../controller/Controller";
+
+/** id の部品が old より高くなっていたら、下の部品をずらす（保存はしない。ノートの下書きを変えるだけ） */
+const grow = (els: El[], id: string, old: number): El[] => {
+  const e = els.find(x => x.id === id);
+  return e && e.h > old ? controller.noteManager.adjustElements(els, id) : els;
+};
 
 type Mode = "move" | "size";
 interface Handlers {
@@ -30,7 +38,11 @@ const ElView = memo(function ElView({ el, h }: { el: El; h: Handlers }) {
             <input placeholder="意味" value={w.meaning} onChange={e => h.upd(el.id, { words: words.map((x, j) => j === i ? { ...x, meaning: e.target.value } : x) })} />
             <button onClick={() => h.upd(el.id, { words: words.filter((_, j) => j !== i) })} aria-label="この単語を消す">×</button></div>))}
           <button className="btn sm" onClick={() => h.upd(el.id, { words: [...words, { term: "", meaning: "" }], h: el.h + 28 })}>＋ 単語</button></div>)}
-      {(el.kind === "text" || (el.kind === "frame" && el.ft !== "word")) && <textarea className={`h${el.head ?? 0}`} value={el.text} placeholder={el.kind === "text" ? "文字を入力" : "ここに書く"} onChange={e => h.upd(el.id, { text: e.target.value })} />}
+      {(el.kind === "text" || (el.kind === "frame" && el.ft !== "word")) && <textarea className={`h${el.head ?? 0}`} value={el.text} placeholder={el.kind === "text" ? "文字を入力" : "ここに書く"} onChange={e => {
+        // 文字があふれたら、あふれた分だけ部品を高くする（下の部品は grow でずらす）
+        const t = e.target, over = t.scrollHeight - t.clientHeight;
+        h.upd(el.id, over > 0 ? { text: t.value, h: el.h + over } : { text: t.value });
+      }} />}
       {el.kind === "arrow" && <svg width="100%" height={el.h - 24} viewBox={`0 0 ${el.w} ${el.h - 24}`} preserveAspectRatio="none"><line x1="4" y1="50%" x2={el.w - 14} y2="50%" stroke={el.color} strokeWidth="3" /><polygon points={`${el.w - 14},${(el.h - 24) / 2 - 7} ${el.w - 2},${(el.h - 24) / 2} ${el.w - 14},${(el.h - 24) / 2 + 7}`} fill={el.color} /></svg>}
       <span className="rs" onPointerDown={e => h.start(e, el, "size")} />
     </div>);
@@ -53,10 +65,15 @@ export function NoteCanvas({ els, onChange }: { els: El[]; onChange: (e: El[]) =
   }, [apply]);
   const up = useCallback(() => {
     const d = drag.current; if (d?.raf) { cancelAnimationFrame(d.raf); apply(); } // 最後の位置は必ず反映
+    if (d?.mode === "size") { const r = ref.current, n = grow(r.els, d.id, d.h); if (n !== r.els) r.onChange(n); } // 大きくしたら下をずらす
     drag.current = null; window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up);
   }, [apply, mv]);
   if (!h.current) h.current = {
-    upd: (id, p) => { const r = ref.current; r.onChange(r.els.map(e => e.id === id ? { ...e, ...p, at: Date.now() } : e)); },
+    upd: (id, p) => {
+      const r = ref.current, old = r.els.find(e => e.id === id)?.h ?? 0;
+      const n = r.els.map(e => e.id === id ? { ...e, ...p, at: Date.now() } : e);
+      r.onChange(p.h !== undefined ? grow(n, id, old) : n); // 高くなったら下の部品をずらす（単語の追加・文字があふれたとき）
+    },
     remove: id => { const r = ref.current; r.onChange(r.els.filter(x => x.id !== id)); },
     start: (e, el, mode) => {
       e.preventDefault(); e.stopPropagation();
