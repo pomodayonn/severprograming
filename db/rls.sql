@@ -1,5 +1,5 @@
 -- るんです。RLS（Row-Level Security）の決まり
--- 担当：黒木（作成：東 11/10）
+-- 担当：
 -- schema.sql のあとに実行する
 --
 -- ・ブラウザは Neon の Data API に、ログインの JWT を付けて直接読み書きする（authenticated の役割）

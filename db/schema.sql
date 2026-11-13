@@ -1,5 +1,5 @@
 -- るんです。テーブル定義（Neon / PostgreSQL）
--- 担当：黒木（作成：東 11/10）
+-- 担当：
 -- 流し方：Neon の SQL Editor で、schema.sql → rls.sql の順に実行する
 --
 -- 決まり
