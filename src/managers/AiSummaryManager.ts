@@ -1,6 +1,12 @@
 // AiSummaryManager（Entity Manager／フロントエンド）：AIでノートをまとめる流れを担当する
 // 
 // AIへの送信は services/ai.ts（JWT を付けて ApiController に HTTP で頼む）を使う
+//
+// 【このファイルで何が起きているか】
+// 「AIでまとめる」の流れを進める係です（Manager）。G007 の画面で使う予定。
+// 1. summarize：送る内容をAIに渡し、「この枠にこう書いたら？」という提案（Suggestion）を受け取る
+// 2. 学生が提案を直したり、使う・使わないを選んだりする（editSuggestion・setApproved）
+// 3. applyApproved：使うと決めた提案だけを NoteManager に渡して、ノートに書き込む
 import { Suggestion } from "../beans/Suggestion";
 import type { SendContent } from "../beans/SendContent";
 import type { Note } from "../beans/Note";

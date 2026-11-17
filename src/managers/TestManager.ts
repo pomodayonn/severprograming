@@ -1,6 +1,16 @@
 // TestManager（Entity Manager／フロントエンド）：テストの作成・解答・採点・解説・直す機能を担当する
 // 担当：（作成：11/10）
 // 記述テストと解説だけ、services/ai.ts（ApiController）に頼んでAIを使う。保存したら SyncManager で同期する
+//
+// 【このファイルで何が起きているか】
+// 模擬テストの係です（Manager）。流れはこう。
+// 1. 作る ：単語テストはノートの単語枠から（createWordTest）、記述テストはAIに頼んで（createEssayTest）作る
+// 2. 解く ：解答を受け取り、新しい「受験」として保存する（submitAnswers）。解き直すと 2回目、3回目…と増える
+// 3. 採点 ：「意味→用語」のテストだけ、答えが合っているかを確かめる（gradeMeaningToTerm）
+// 4. 解説 ：「解説」を押したときだけ、AIに作ってもらって保存する（explain）
+// 5. 直す ：問題・自分の解答・解説を書き直す。AIで作り直すこともできる（editQuestion など）
+// 保存はすべて TestDAO がして、そのあと sync() で Neon に送る。
+// 後半の toScreenTest などは、画面の形（types.ts）に変換するためのもの（移行中のつなぎ）
 import { Test } from "../beans/Test";
 import { Question } from "../beans/Question";
 import { Attempt } from "../beans/Attempt";

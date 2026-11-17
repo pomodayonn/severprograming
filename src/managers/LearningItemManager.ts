@@ -1,5 +1,11 @@
 // LearningItemManager（Entity Manager／フロントエンド）：学習項目と前提項目（関連図）を管理する
 // 担当：（11/11）。変更はその場で端末に保存し、SyncManager でアカウントにも送る
+// 【このファイルで何が起きているか】
+// 学習項目と前提項目（関連図）の確認係です（Manager）。
+// ・createItem：学習項目を作るとき、空のノート・資料置き場・テスト置き場も一緒に作る
+// ・deleteItem：消すときは、ノート・テスト・資料・前提の関係もまとめて消す（削除の連鎖）
+// ・setPrerequisites：前提項目を設定する。「A の前は B、B の前は A」のように輪になる設定は wouldCycle で止める
+// どれも最後に sync() で Neon に送る
 import { LearningItem } from "../beans/LearningItem";
 import { Prerequisite } from "../beans/Prerequisite";
 import type { LearningItemDAO } from "../dao/LearningItemDAO";
