@@ -1,4 +1,8 @@
 // beans/ と enums/ をまとめて読み込めるようにする。例：import { Subject, PartType } from "../beans";
+
+// 【このファイルで何が起きているか】
+// beans/ の中のクラスを1か所にまとめて書き出しているだけのファイルです（中身の処理はない）。
+// これがあると、使う側は1行の import で済む
 export { Student } from "./Student";
 export { Subject } from "./Subject";
 export { LearningItem } from "./LearningItem";
