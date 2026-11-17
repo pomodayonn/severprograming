@@ -1,5 +1,12 @@
 // サーバー（Render の ApiController）を呼ぶ窓口。やり取りの形は docs/API.md を参照。
 // .env に VITE_API_URL があればサーバーに送り、なければ services/ai.ts の仮のAIで動く。
+//
+// 【このファイルで何が起きているか】
+// サーバー（ Render）を呼ぶ窓口です。
+// 1. ログインの JWT（本人だという証明）を Neon Auth から受け取り、Authorization に付ける
+// 2. fetch でサーバーに送る
+// 3. エラーなら、HTTP の番号（401・429 など）から画面に出す文を決めて ApiError にする
+// VITE_API_URL が空のあいだは呼ばれず、services/ai.ts の仮のAIが答える
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
