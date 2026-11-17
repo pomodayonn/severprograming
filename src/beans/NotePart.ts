@@ -1,5 +1,12 @@
 // NotePart（ノート部品）（Entity Bean／フロントエンド）：枠・文字・図形・矢印の1つ分
 // 担当：）。持つデータはクラス一覧（11/10版）のとおり
+// 【このファイルで何が起きているか】
+// 「ノートの部品1つ（枠・文字・図形・矢印）」のデータを入れておく入れ物（Bean）です。中身を入れるだけで、計算や保存はしません。
+// ・作る ：Manager（NoteManager）が new NotePart({ ... }) で作る
+// ・しまう：DAO（NoteDAO（ノートと一緒に保存））が端末の IndexedDB に保存する
+// ・送る ：SyncManager が Neon（クラウド）の note_part テーブルに同期する（列の名前は snake_case になる
+// ・見せる：画面は Controller を通して受け取る
+// x・y・width・height は、ノートの左上を (0, 0) にした位置と大きさ（px）
 import type { DateTime } from "./DateTime";
 import type { Word } from "./Word";
 import { PartType } from "../enums/PartType";

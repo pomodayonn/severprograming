@@ -1,4 +1,16 @@
 // アプリ全体の状態：ログイン中の学生・その学生のデータ・いまの画面・保存前のノート・確認ダイアログ
+//
+// 【このファイルで何が起きているか】
+// アプリ全体で共有する「今の状態」を持っている所です。どの画面からでも useApp() で使える。
+// ・account：ログイン中の学生（いなければ null）
+// ・data   ：その学生の科目・テストなど（画面の表示用。localStorage に写しを保存）
+// ・route  ：今どの画面か（例：{ s: "G004", subjectId: "...", itemId: "..." }）
+// ・drafts ：まだ「保存」していないノートの下書き
+// ログインからの流れ
+//   1. ページを開く → getCurrentStudent で、前のログインが続いているか確かめる
+//   2. 続いていれば open()：保存してあった表示用データを出す
+//   3. すぐに Controller（G003:loadSubjects）で Manager の本当のデータを読み、表示用データをそれにそろえる
+//      （別の端末で作った分が増え、消した分が消える）
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Data, Note, Route, Student, Subject, Test } from "../types";
 import { emptyData, loadData, saveData } from "../services/db";

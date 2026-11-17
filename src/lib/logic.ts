@@ -1,4 +1,8 @@
 // 純粋ロジック（画面に依存しない）
+// 【このファイルで何が起きているか】
+// 画面にもデータベースにも関係しない、小さな計算をまとめたファイルです（入力が同じなら答えも必ず同じ）。
+// 例：枠の色と名前（FT）、IDを作る（uid）、日時の表示（fmt）、送る回数の計算（calls）、新しい部品を作る（newEl）
+// ※ isCorrect・wordsOf・wordTest・wouldCycle は、今は Manager 側に移ったので使われていない（11/30 ごろのリファクタリングで消す予定）
 import type { El, FrameType, Item, Question, TestKind, Word } from "../types";
 export const AI_LIMIT = 20, SEND_LIMIT = 10000, MAX_FILE = 20 * 1024 * 1024;
 export const FT: Record<FrameType, { n: string; c: string }> = {

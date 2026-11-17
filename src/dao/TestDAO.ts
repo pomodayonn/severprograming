@@ -1,6 +1,13 @@
 // TestDAO（DAO／フロントエンド）：テストを問題・受験・解答ごと端末（IndexedDB）に保存・読み込みする
 // 
 // テストは「問題・受験・解答」を中に持ったまま1件として保存する。中のどれかが変わったらテストの更新日時も変える（同期で送るため）
+//
+// 【このファイルで何が起きているか】
+// テスト（中の問題・受験・解答ごと1件にまとめて）を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（TestManager）がする。
+// 流れ：画面 → Controller → TestManager → ここ → IndexedDB
+// 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
+// Neon では test・question・attempt・answer の4つの表に分かれる
 import { Test } from "../beans/Test";
 import { Question } from "../beans/Question";
 import { Attempt } from "../beans/Attempt";

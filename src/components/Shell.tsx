@@ -1,4 +1,9 @@
 // 全画面共通の外枠：紫のヘッダー（ログアウト）＋ 左サイドバー（科目一覧の階層）＋ 中央 ＋ 右サイドバー
+//
+// 【このファイルで何が起きているか】
+// どの画面にも出る外側の枠です（ヘッダー・左の一覧・真ん中・右の関連図の4か所）。
+// 各画面は <Shell center={...} right={...} /> のように、真ん中と右に出すものだけを渡す
+
 import { useState, type ReactNode } from "react";
 import { useApp } from "../state/app";
 import { Mascot } from "./Mascot";

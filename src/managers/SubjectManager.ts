@@ -1,5 +1,13 @@
 // SubjectManager（Entity Manager／フロントエンド）：科目を管理する
 // 担当：（11/11）。変更はその場で端末に保存し、SyncManager でアカウントにも送る
+//
+// 【このファイルで何が起きているか】
+// 科目の「作る・名前を変える・消す」の確認係です（Manager）。
+// 例：「＋ 科目の追加」→ Controller（G003:addSubject）→ createSubject
+//   1. 名前を確認（空・51文字以上はだめ、同じ名前の科目もだめ）
+//   2. SubjectDAO で端末に保存
+//   3. sync() で Neon に送る（pushQuietly）
+// 後半の importSubjects・isMigrated・setMigrated は、前の保存場所からデータを移すための一時的なもの（移行用）
 import { Subject } from "../beans/Subject";
 import type { SubjectDAO } from "../dao/SubjectDAO";
 import { get, put } from "../dao/idb";

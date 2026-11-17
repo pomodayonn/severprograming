@@ -1,5 +1,10 @@
 // SendContent（送る内容）（Bean／フロントエンド）：AIに送る内容。送ったら使い終わりなので保存しない
 // 担当：）。持つデータはクラス一覧（11/10版）のとおり
+// 【このファイルで何が起きているか】
+// AIに送る文章（資料やノートから選んだもの）を入れておく入れ物です。
+// ・作る：SendContentManager.createContent が、選んだ資料・枠から作る
+// ・使う：AiSummaryManager（AIまとめ）や TestManager（記述テスト）がAIに送る
+// ・送ったら使い終わりなので、どこにも保存しない
 
 export class SendContent {
   /** 元の資料IDのリスト */

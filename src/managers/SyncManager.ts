@@ -4,6 +4,15 @@
 // ・どの行を読み書きできるかは、Neon の RLS が JWT の学生IDで決める（db/rls.sql）
 // ・.env に VITE_NEON_DATA_API_URL がなければ何もしない（端末だけで動く）
 // ・資料と文字起こしは端末だけなので、同期しない
+//
+// 【このファイルで何が起きているか】
+// 端末（IndexedDB）とクラウド（Neon）のデータをそろえる係です。
+// ・pullAll（受け取る）：ログインしたとき。Neon から自分のデータを全部もらい、端末のデータをそれに置き換える
+//     → だから別の端末で作った科目も出てくる
+// ・pushChanges（送る）：保存したとき。前回送った時刻（lastSyncedAt）より新しいものと、消したものだけを送る
+//     → 毎回全部を送らないので速い
+// Neon の表は「subject_name」のような snake_case、beans は「subjectName」のような camelCase なので、ここで書き換えている。
+// 「自分のデータだけ」に絞るのは Neon の RLS（db/rls.sql）。JWT の中の学生IDを見て、他人の行は返さない
 import { Subject } from "../beans/Subject";
 import { LearningItem } from "../beans/LearningItem";
 import { Prerequisite } from "../beans/Prerequisite";

@@ -1,5 +1,12 @@
 // NoteDAO（DAO／フロントエンド）：ノートを部品・単語ごと端末（IndexedDB）に保存・読み込みする
 // 担当
+//
+// 【このファイルで何が起きているか】
+// ノート（中の部品・単語ごと1件にまとめて）を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（NoteManager）がする。
+// 流れ：画面 → Controller → NoteManager → ここ → IndexedDB
+// 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
+// Neon では note・note_part・word の3つの表に分かれるが、端末ではノート1件の中に全部入れておく
 import { Note } from "../beans/Note";
 import { NotePart } from "../beans/NotePart";
 import { Word } from "../beans/Word";

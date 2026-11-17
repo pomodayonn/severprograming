@@ -1,6 +1,12 @@
 // AccountManager（Entity Manager／フロントエンド）：アカウントの登録・ログイン・ログアウト。
 // 中では NeonAuthClient を呼ぶだけ。ログインしたら SyncManager の pullAll() でデータを受け取る（Controller でつないである）。
 // TODO（W2）：画面を beans に置き換えるときに、Student を src/beans/Student.ts のものにする
+// 【このファイルで何が起きているか】
+// 登録・ログイン・ログアウトの「確認係」です（Manager）。
+// 1. 画面から来たメールとパスワードを確かめる（空欄・メールの形・8〜16文字で英字と数字）
+// 2. よければ NeonAuthClient に頼んで、Neon Auth に登録・ログインしてもらう
+// 3. ログインできたら SyncManager.pullAll で、アカウント（Neon）のデータを端末に受け取る
+// だめなときは AccountError（画面に出す文）を throw し、Controller がその文を画面に出す
 import type { Student } from "../types";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
 import { AppError } from "./common";

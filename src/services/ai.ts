@@ -1,5 +1,11 @@
 // AIの窓口。VITE_API_URL があればサーバー（Render）経由で本物のAIを使い、なければ仮の動きで画面を確かめられる。
 // 利用回数（1日20回）はサーバーが数える。仮の動きのときだけ端末で数える（画面側の consumeLocal）。
+//
+// 【このファイルで何が起きているか】
+// AIに「まとめて」「問題を作って」「解説して」と頼む窓口です。中身が2通りあります。
+// ・server：VITE_API_URL があるとき。services/api.ts を通して福山さんのサーバーに送り、サーバーが Groq に聞く
+// ・mock  ：サーバーがまだないとき。AIを使わず、決まった作り方で「それっぽい答え」を返す（画面の確認用）
+// 下の impl = SERVER ? server : mock で、どちらを使うかが決まる。使う側（Manager）はどちらか気にしなくてよい
 import { useCallback, useEffect, useState } from "react";
 import type { FrameType, Question, Word } from "../types";
 import { AI_LIMIT, FT, dayKey } from "../lib/logic";

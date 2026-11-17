@@ -1,8 +1,16 @@
-// G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
+ G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
 // 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
 // 11/12：ノートの「保存」は state/app.tsx の save() から Controller → NoteManager に送る（A）
 // 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
 // ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
+//
+// 【このファイルで何が起きているか】
+// 学習画面（G004）です。いちばん大きな画面で、3列に分かれている。
+// ・左  ：科目と学習項目の一覧（階層）／ノートに置く部品（部品）。学習項目の追加・名前の編集・削除・前提項目の設定、資料の追加
+// ・真ん中：ノート（NoteCanvas.tsx）。下に「保存」「AIでまとめる」「テスト一覧」「模擬テスト」のボタン
+// ・右  ：関連図（RelationGraph.tsx）／目次
+// ノートを書いている間は drafts（下書き）に入れておき、「保存」を押すと app.tsx の save() で本当に保存する
+// ボタンの流れ：画面 → controller.handleRequest("G004", イベントID) → LearningItemManager など → DAO → 端末に保存（→ Neon）
 import { useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType, Item, MaterialMeta } from "../types";

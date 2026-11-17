@@ -1,6 +1,12 @@
 // ノートのキャンバス：枠・文字・図形・矢印を置いて、動かす・大きさを変える・色を変える
 // 1つの部品を動かしても、ほかの部品は描き直さない（ElView を memo）。ドラッグは1フレームに1回だけ反映する。
 // 11/12：部品が大きくなったら（大きさの変更・単語の追加・文字があふれたとき）、NoteManager.adjustOverlap で下の部品をずらす（A）
+//
+// 【このファイルで何が起きているか】
+// ノートを書く白い紙の部分です。部品（枠・文字・図形・矢印）を置いて、つかんで動かしたり、右下をつかんで大きさを変えたりする。
+// ・ElView：部品1つを描く。中の文字を変えたら h.upd で知らせる
+// ・NoteCanvas：部品を並べて、ドラッグ（動かす・大きさを変える）を処理する
+// 変えた結果は onChange で Study.tsx に渡し、Study.tsx が下書き（drafts）に入れる。ここでは保存しない
 import { memo, useCallback, useEffect, useRef } from "react";
 import type { El } from "../types";
 import { FT } from "../lib/logic";

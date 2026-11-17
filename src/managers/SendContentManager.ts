@@ -1,5 +1,12 @@
 // SendContentManager（Entity Manager／フロントエンド）：AIに送る内容を作る専用のクラス
 // 担当：）。ノートまとめと記述テスト作成の両方で使う（どちらも G007 の画面）
+//
+// 【このファイルで何が起きているか】
+// AIに送る文章を用意する係です（Manager）。G007 の画面で使う予定（福山さんのサーバーができたらつなぐ）。
+// 1. 選んだ資料（文字起こし）とノートの枠から文章を集める（createContent）
+// 2. 文字数から「何回分のAI利用になるか」を数える（1万文字ごとに1回。countCalls）
+// 3. 今日の残り回数で足りるかを確かめる（canSend）
+// 4. 1万文字を超えたら、なるべく改行の所で分ける（split）
 import { SendContent } from "../beans/SendContent";
 import type { NotePart } from "../beans/NotePart";
 import { PartType } from "../enums/PartType";
