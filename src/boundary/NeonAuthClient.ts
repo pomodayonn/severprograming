@@ -2,10 +2,6 @@
 // .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
 // なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
 // TODO（W1 さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
-// NeonAuthClient（Boundary／フロントエンド）：Neon Auth とやり取りする窓口。
-// .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
-// なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
-// TODO（W1 さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
 //
 // 【このファイルで何が起きているか】
 // ログイン・登録・ログアウトを、Neon Auth（ログインの外部サービス）に頼む窓口です。

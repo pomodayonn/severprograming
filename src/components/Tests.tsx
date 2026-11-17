@@ -3,6 +3,14 @@
 // 解き直しも毎回「受験」として保存する（要件定義書 UC-023・UC-027）。
 // 11/12：G010 に「直す」（問題と模範解答・自分の解答・解説、AIで直す）と、過去の受験を選ぶ機能を追加（UC-026・UC-028）。
 // ほかの画面がまだ data.tests を使っているので、Manager で成功したら data.tests にも同じ変更を入れる（移行中のつなぎ）
+//
+// 【このファイルで何が起きているか】
+// テストの4画面がこのファイルに入っている。
+// ・TestCreate（G008）：範囲・種類・問題数を選んで「作成」→ Controller（G008:createWordTest / createEssayTest）
+// ・TestAnswer（G009）：1問ずつ解く。選択肢かキーボードで答え、「解答」→ Controller（G009:submit）が採点して保存
+// ・TestResult（G010）：結果を見る。「解説」でAIの解説、「直す」で問題・自分の解答・解説を書き直す。過去の回も選べる
+// ・TestList  （G011）：その科目のテストの一覧。「結果表示」「解き直し」
+// どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
 import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";

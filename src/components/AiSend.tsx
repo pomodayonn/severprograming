@@ -1,4 +1,13 @@
 // G007 送信内容・提案確認画面：AIに送る内容の編集（送信前）と、AIの提案の確認（返ってきた後）を同じ画面で行う
+//
+// 【このファイルで何が起きているか】
+// 送信内容・提案確認画面（G007）です。使い方が2つある。
+// ・AIまとめ（purpose = "summary"）：
+//     1. 元にする内容（文字起こし・ノートの枠）を選ぶ → 2. 送る内容を編集 → 3. 送信 → 4. AIの提案を確認して承認
+//     承認した提案は apply() でノートの下書きに入れる（保存は学習画面で「保存」を押したとき）
+// ・記述テスト（purpose = "essay"）：送る内容を決めて、テスト作成画面（G008）に戻る
+// 1万文字を超えると分けて送ることになり、その分AIの利用回数を多く使う（confirmCalls で確認する）
+// ※この画面はまだ AiSummaryManager を通していない（サーバーができたら Controller 経由にする）
 import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { El, FrameType } from "../types";

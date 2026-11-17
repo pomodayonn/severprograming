@@ -1,5 +1,13 @@
 // G001 ログイン画面 / G002 アカウント登録画面
 // ボタンを押したら Controller.handleRequest(画面ID, イベントID) に渡す。中身は AccountManager → NeonAuthClient
+//
+// 【このファイルで何が起きているか】
+// ログイン画面（G001）と登録画面（G002）です。
+// 1. メールとパスワードを入れてボタンを押す
+// 2. useEvent の send が Controller に渡す（例：G001:login）
+// 3. Controller → AccountManager → NeonAuthClient → Neon Auth の順に進む
+// 4. 成功：enter(学生) で科目一覧（G003）へ／失敗：r.error の文を赤字で出す
+// 「Google でログイン」は Google のページに移動し、ログインすると戻ってくる（戻ったら app.tsx が気づく）
 import { useState } from "react";
 import { Mascot } from "./Mascot";
 import { useApp } from "../state/app";

@@ -1,4 +1,10 @@
 // G005 資料表示画面 / G006 文字起こし修正画面
+// 【このファイルで何が起きているか】
+// 資料表示画面（G005）と、文字起こし修正画面（G006）です。
+// ・useBlob：資料の中身を端末（services/db.ts の IndexedDB）から読み、画像・PDF なら表示用の URL を作る
+// ・Viewer ：中身の種類（文字・PDF・画像）に合わせて表示する
+// ・G006 では「元の文字→直した文字」の形の指示で、文字起こしの文字をまとめて置き換えられる
+// 資料はまだ MaterialManager を通していない（ MaterialManager ができたら Controller 経由にする）
 import { useEffect, useState } from "react";
 import { useApp } from "../state/app";
 import { delBlob, getBlob, putBlob } from "../services/db";

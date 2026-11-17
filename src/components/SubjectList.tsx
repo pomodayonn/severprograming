@@ -2,6 +2,11 @@
 // 11/11：作成・名前の編集・削除を Controller → SubjectManager 経由にした（A）。
 // ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
 // 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
+//
+// 【このファイルで何が起きているか】
+// 科目一覧画面（G003）です。科目の追加・名前の編集・削除と、科目を開くボタンがある。
+// ボタンを押したときの流れ：画面 → controller.handleRequest("G003", イベントID) → Manager → DAO → 端末に保存（→ Neon）
+// 結果に error があれば画面に文を出し、なければ表示用データ（useApp の data）を同じように書き換える
 import { useApp } from "../state/app";
 import { controller } from "../controller/Controller";
 import type { Subject as SubjectBean } from "../beans/Subject";

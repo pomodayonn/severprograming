@@ -1,4 +1,6 @@
 // マスコット「るん」（ことり）：まんまるの体、ほっぺ、くちばし、頭の毛、頭にさした鉛筆
+// 【このファイルで何が起きているか】
+// マスコットの絵を、SVG（図形の文字）で組み立てるファイルです。mood（気分）で目や口の形が変わる
 export type Mood = "happy" | "cheer" | "worried" | "sleepy";
 export function birdInner(mood: Mood): string {
   const K = "#2a2740", W = "#fffdf8", O = "#f2a43a", up = mood === "cheer";
