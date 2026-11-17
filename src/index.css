@@ -84,3 +84,6 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 .grid2 .btn,.grid3 .btn{padding-left:6px;padding-right:6px;white-space:nowrap}
 /* 学習画面の下のボタン：左に「保存」、右にそのほかを並べる */
 .bar2.stick{align-items:center;justify-content:flex-start}.bar2.stick>.btn:first-child{margin-right:auto}
+/* テスト解答：前・次の問題のボタン */
+.qnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px;padding-top:12px;border-top:1px dashed var(--line);flex-wrap:wrap}
+.qnav .mute{flex:1;text-align:center}

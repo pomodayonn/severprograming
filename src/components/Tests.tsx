@@ -11,7 +11,7 @@
 // ・TestResult（G010）：結果を見る。「解説」でAIの解説、「直す」で問題・自分の解答・解説を書き直す。過去の回も選べる
 // ・TestList  （G011）：その科目のテストの一覧。「結果表示」「解き直し」
 // どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
 import { fmt, shuffle } from "../lib/logic";
@@ -69,9 +69,25 @@ export function TestAnswer() {
   const { data, setData, route, nav, ask } = useApp();
   const test = data.tests.find(t => t.id === route.testId), retry = route.mode === "retry";
   const [busy, setBusy] = useState(false);
+  const keys = useRef<{ next: () => void; prev: () => void; choose: (n: number) => void; essay: boolean } | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => test?.qs.map(() => "") ?? []), [kb, setKb] = useState(test?.kind === "essay");
   const pool = useMemo(() => test ? test.qs.map(q => q.a) : [], [test]);
   const choices = useMemo(() => !test || test.kind === "essay" ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [test, idx, pool]); // eslint-disable-line
+  // キーボード：Enter＝次の問題（記述・入力欄の中では Ctrl＋Enter）、1〜4＝選択肢を選ぶ、← →＝前・次の問題
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = keys.current; if (!k || document.querySelector(".ov")) return; // 確認ダイアログが出ている間は何もしない
+      const typing = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
+      if (e.key === "Enter" && (!typing || !k.essay || e.ctrlKey || e.metaKey)) { e.preventDefault(); k.next(); return; }
+      if (typing) return;
+      if (/^[1-4]$/.test(e.key)) k.choose(Number(e.key) - 1);
+      else if (e.key === "ArrowRight") k.next();
+      else if (e.key === "ArrowLeft") k.prev();
+    };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => { box.current?.focus(); }, [idx, kb]); // 問題が変わったら、入力欄にすぐ打てるようにする
   if (!test) return <Redirect to={{ s: "G003" }} />;
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const leave = () => nav({ s: retry ? "G011" : "G004", ...base });
@@ -87,12 +103,20 @@ export function TestAnswer() {
   };
   const quit = async () => { if (await ask("今回の解答は保存されません。やめますか", [{ label: "やめる", value: "ok", primary: true }, { label: "続ける", value: "no" }]) === "ok") leave(); };
   const set = (v: string) => setAns(ans.map((a, i) => i === idx ? v : a));
+  // 11/17：次の問題へ進む方法を分かりやすく（ボタン・Enter キー・1〜4 キー）
+  const last = idx === test.qs.length - 1;
+  const next = () => { if (last) void done(); else setIdx(idx + 1); };
+  const prev = () => { if (idx > 0) setIdx(idx - 1); };
+  keys.current = { next, prev, choose: (n: number) => { if (!kb && choices[n]) set(choices[n]); }, essay: test.kind === "essay" };
   return <Shell right={<><div className="col">{test.qs.map((_, i) => <div key={i} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
     center={<>
       <div className="mute">{KIND[test.kind]}{retry ? "（解き直し：解答は新しい回として保存されます）" : ""}　問 {idx + 1} / {test.qs.length}</div>
       <div className="vbox" style={{ marginTop: 6 }}><h3>第{idx + 1}問</h3><div style={{ fontSize: 17 }}>{test.qs[idx].q}</div>
         {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
-        {(kb || test.kind === "essay") && <textarea className="tx" style={{ minHeight: 110, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}</div>
+        {(kb || test.kind === "essay") && <textarea ref={box} className="tx" style={{ minHeight: test.kind === "essay" ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
+        <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
+          <span className="mute">{test.kind === "essay" || kb ? (test.kind === "essay" ? "Ctrl＋Enter" : "Enter") : "1〜4 キーで選んで Enter"}で{last ? "解答" : "次の問題へ"}</span>
+          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div></div>
       <div className="bar2"><span className="row"><button className="btn" onClick={() => { toast("テストを保存したよ"); nav({ s: "G011", ...base }); }}>保存</button><button className="btn line" onClick={quit}>やめる</button></span>
         {test.kind !== "essay" && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
