@@ -11,7 +11,7 @@
 // ・TestResult（G010）：結果を見る。「解説」でAIの解説、「直す」で問題・自分の解答・解説を書き直す。過去の回も選べる
 // ・TestList  （G011）：その科目のテストの一覧。「結果表示」「解き直し」
 // どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { Test, TestKind } from "../types";
 import { fmt, shuffle } from "../lib/logic";
@@ -60,18 +60,34 @@ export function TestCreate() {
           <b>問題数（5〜20問）</b><input className="inp" type="number" min={5} max={20} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 100 }} />
           {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
       {msg && <div className="err">{msg}</div>}</div>
-    <div className="bar2"><span className="row"><button className="btn" disabled={busy} onClick={make}>{busy ? "作成中…" : "作成"}</button>
+    <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy} onClick={make}>{busy ? "作成中…" : "作成"}</button>
       <button className="btn line" disabled={!essay} onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "essay" })}>内容編集</button></span>
-      <button className="btn" onClick={() => go({ s: "G004", subjectId: subject.id, itemId: item.id })}>戻る</button></div></>} />;
+      <button className="btn line" onClick={() => go({ s: "G004", subjectId: subject.id, itemId: item.id })}>戻る</button></div></>} />;
 }
 
 export function TestAnswer() {
   const { data, setData, route, nav, ask } = useApp();
   const test = data.tests.find(t => t.id === route.testId), retry = route.mode === "retry";
   const [busy, setBusy] = useState(false);
+  const keys = useRef<{ next: () => void; prev: () => void; choose: (n: number) => void; essay: boolean } | null>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => test?.qs.map(() => "") ?? []), [kb, setKb] = useState(test?.kind === "essay");
   const pool = useMemo(() => test ? test.qs.map(q => q.a) : [], [test]);
   const choices = useMemo(() => !test || test.kind === "essay" ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [test, idx, pool]); // eslint-disable-line
+  // キーボード：Enter＝次の問題（記述・入力欄の中では Ctrl＋Enter）、1〜4＝選択肢を選ぶ、← →＝前・次の問題
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = keys.current; if (!k || document.querySelector(".ov")) return; // 確認ダイアログが出ている間は何もしない
+      const typing = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
+      if (e.key === "Enter" && (!typing || !k.essay || e.ctrlKey || e.metaKey)) { e.preventDefault(); k.next(); return; }
+      if (typing) return;
+      if (/^[1-4]$/.test(e.key)) k.choose(Number(e.key) - 1);
+      else if (e.key === "ArrowRight") k.next();
+      else if (e.key === "ArrowLeft") k.prev();
+    };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => { box.current?.focus(); }, [idx, kb]); // 問題が変わったら、入力欄にすぐ打てるようにする
   if (!test) return <Redirect to={{ s: "G003" }} />;
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const leave = () => nav({ s: retry ? "G011" : "G004", ...base });
@@ -87,13 +103,21 @@ export function TestAnswer() {
   };
   const quit = async () => { if (await ask("今回の解答は保存されません。やめますか", [{ label: "やめる", value: "ok", primary: true }, { label: "続ける", value: "no" }]) === "ok") leave(); };
   const set = (v: string) => setAns(ans.map((a, i) => i === idx ? v : a));
-  return <Shell right={<><div className="col">{test.qs.map((_, i) => <div key={i} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn round fill" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
+  // 11/17：次の問題へ進む方法を分かりやすく（ボタン・Enter キー・1〜4 キー）
+  const last = idx === test.qs.length - 1;
+  const next = () => { if (last) void done(); else setIdx(idx + 1); };
+  const prev = () => { if (idx > 0) setIdx(idx - 1); };
+  keys.current = { next, prev, choose: (n: number) => { if (!kb && choices[n]) set(choices[n]); }, essay: test.kind === "essay" };
+  return <Shell right={<><div className="col">{test.qs.map((_, i) => <div key={i} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
     center={<>
       <div className="mute">{KIND[test.kind]}{retry ? "（解き直し：解答は新しい回として保存されます）" : ""}　問 {idx + 1} / {test.qs.length}</div>
       <div className="vbox" style={{ marginTop: 6 }}><h3>第{idx + 1}問</h3><div style={{ fontSize: 17 }}>{test.qs[idx].q}</div>
         {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
-        {(kb || test.kind === "essay") && <textarea className="tx" style={{ minHeight: 110, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}</div>
-      <div className="bar2"><span className="row"><button className="btn line round" onClick={() => { toast("テストを保存したよ"); nav({ s: "G011", ...base }); }}>保存</button><button className="btn line round" onClick={quit}>やめる</button></span>
+        {(kb || test.kind === "essay") && <textarea ref={box} className="tx" style={{ minHeight: test.kind === "essay" ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
+        <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
+          <span className="mute">{test.kind === "essay" || kb ? (test.kind === "essay" ? "Ctrl＋Enter" : "Enter") : "1〜4 キーで選んで Enter"}で{last ? "解答" : "次の問題へ"}</span>
+          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div></div>
+      <div className="bar2"><span className="row"><button className="btn" onClick={() => { toast("テストを保存したよ"); nav({ s: "G011", ...base }); }}>保存</button><button className="btn line" onClick={quit}>やめる</button></span>
         {test.kind !== "essay" && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
 
@@ -159,7 +183,7 @@ export function TestResult() {
     setMsg(""); toast("AIで直して保存したよ");
   };
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{ans || list ? q.a : "（解答するとここに表示されます）"}</div></div>
-      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn" onClick={expl}>解説</button></span>
+      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn ai" onClick={expl}>解説</button></span>
       {q.expl && <div className="pop" style={{ whiteSpace: "pre-wrap" }}>{q.expl}</div>}
       {fix && <div className="pop">
         <b>直す内容</b>
@@ -170,7 +194,7 @@ export function TestResult() {
         {fix === "question" && <><div className="mute">問題</div><textarea className="tx" rows={3} style={{ minHeight: 0, height: "auto" }} value={f1} onChange={e => setF1(e.target.value)} /><div className="mute">模範解答</div><textarea className="tx" rows={3} style={{ minHeight: 0, height: "auto" }} value={f2} onChange={e => setF2(e.target.value)} /></>}
         {fix !== "question" && <textarea className="tx" rows={4} style={{ minHeight: 0, height: "auto" }} value={f1} onChange={e => setF1(e.target.value)} placeholder={fix === "expl" ? "解説を入力" : "解答を入力"} />}
         {fix !== "answer" && <><div className="mute">AIへの追加の指示（空なら最初から作り直す）</div><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} placeholder="例：もっと短く" /></>}
-        <span className="row"><button className="btn fill" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn line" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
+        <span className="row"><button className="btn pri" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn ai" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
       </div>}
       {msg && <div className="err">{msg}</div>}</>}
     center={<>
@@ -179,7 +203,7 @@ export function TestResult() {
       <div className="qtabs" style={{ marginTop: 8 }}>{test.qs.map((_, i) => <button key={i} className={"btn sm" + (i === idx ? " fill" : " line")} onClick={() => { setIdx(i); close(); }}>第{i + 1}問</button>)}</div>
       <div className="vbox"><h3>自身の回答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.q}</div>
         {ans ? <div style={{ whiteSpace: "pre-wrap" }}>{ans[idx] || "（未回答）"}　{ok && (ok[idx] ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">まだ解いていません。「解き直し」で解けます。</p>}</div>
-      <div className="bar2"><button className="btn line round" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn round fill" onClick={() => go({ s: "G011", ...base })}>戻る</button></div></>} />;
+      <div className="bar2"><button className="btn line" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn pri" onClick={() => go({ s: "G011", ...base })}>テスト一覧へ戻る</button></div></>} />;
 }
 
 export function TestList() {
@@ -192,7 +216,7 @@ export function TestList() {
     <div className="folders">{data.subjects.map(s => <div key={s.id} className={"folder" + (s.id === sid ? " on" : "")} onClick={() => { setSid(s.id); setSel(null); }}><i />{s.name}</div>)}</div>
     <div className="vbox" style={{ minHeight: 220 }}>{rows.length === 0 && <p className="mute">テストがまだありません。</p>}
       {rows.map(({ t, i }) => <div key={t.id} className={"trow" + (sel === t.id ? " on" : "")} onClick={() => setSel(t.id)}><i className="dot" /><span>{i.name}-{ymd(t.created)}</span><span className="mute">{KIND[t.kind]}／{t.qs.length}問／最後に解いた日時 {fmt(t.last)}</span></div>)}</div>
-    <div className="bar2"><span className="row"><button className="btn line round" disabled={!sel} onClick={() => nav({ s: "G010", ...base(rows.find(r => r.t.id === sel)?.t), testId: sel!, mode: "list" })}>結果表示</button>
-      <button className="btn line round" disabled={!sel} onClick={() => nav({ s: "G009", ...base(rows.find(r => r.t.id === sel)?.t), testId: sel!, mode: "retry" })}>解き直し</button></span>
-      <button className="btn round fill" onClick={() => nav({ s: "G004", subjectId: route.subjectId ?? sid, itemId: route.itemId })}>戻る</button></div></>} />;
+    <div className="bar2"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(rows.find(r => r.t.id === sel)?.t), testId: sel!, mode: "list" })}>結果表示</button>
+      <button className="btn" disabled={!sel} onClick={() => nav({ s: "G009", ...base(rows.find(r => r.t.id === sel)?.t), testId: sel!, mode: "retry" })}>解き直し</button></span>
+      <button className="btn line" onClick={() => nav({ s: "G004", subjectId: route.subjectId ?? sid, itemId: route.itemId })}>戻る</button></div></>} />;
 }

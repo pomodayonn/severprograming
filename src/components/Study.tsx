@@ -1,4 +1,4 @@
- G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
+// G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
 // 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
 // 11/12：ノートの「保存」は state/app.tsx の save() から Controller → NoteManager に送る（A）
 // 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
@@ -60,7 +60,7 @@ export function Study() {
     patchItems(a => a.map(i => i.id === item.id ? { ...i, name: n.trim() } : i));
   };
   const del = async () => {
-    if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", primary: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.id });
     if (r.error) return toast(r.error);
     mats.forEach(m => delBlob(`${account.id}:${m.id}`)); setDraft(item.id, null);
@@ -110,26 +110,32 @@ export function Study() {
         {ltab === "tree" ? (<>
           <Tree heading="科目一覧" extra={extra} />
           {prog !== null && <div className="mute" style={{ margin: "6px 0" }}>文字起こし中… {prog}%</div>}{msg && <div className="err">{msg}</div>}
-          <div className="col" style={{ marginTop: 10 }}>
-            <label className="btn sm">資料の追加<input hidden type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item} onChange={e => { upload(e.target.files); e.target.value = ""; }} /></label>
-            <button className="btn sm" onClick={addItem}>＋ 学習項目を追加</button>
-            <div className="row"><button className="btn sm line" disabled={!item} onClick={rename}>名前の編集</button><button className="btn sm line" disabled={!item} onClick={del}>削除</button></div>
-            <button className="btn sm line" disabled={!item || subject.items.length < 2} onClick={() => { setPre(item!.prereqs); setPreMsg(""); }}>前提項目の設定</button></div>
+          {/* 11/17：操作ボタンを「学習項目」「資料」のまとまりに分け、大きく押しやすくした */}
+          <div className="sec"><div className="sh">学習項目{item && <b>{item.name}</b>}</div>
+            <button className="btn pri wide" onClick={addItem}>＋ 学習項目を追加</button>
+            <div className="grid2"><button className="btn sm" disabled={!item} onClick={rename}>名前を変更</button><button className="btn sm danger" disabled={!item} onClick={del}>削除</button></div>
+            <button className="btn sm wide" disabled={!item || subject.items.length < 2} onClick={() => { setPre(item!.prereqs); setPreMsg(""); }}>前提項目の設定</button></div>
+          <div className="sec"><div className="sh">資料</div>
+            <label className={"btn wide" + (item ? "" : " disabled")} aria-disabled={!item} style={item ? undefined : { opacity: .45, cursor: "not-allowed" }}>＋ 資料の追加<input hidden type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item} onChange={e => { upload(e.target.files); e.target.value = ""; }} /></label>
+            <span className="mute">画像・PDF・テキスト（1件20MBまで）。画像とPDFは文字起こしもします</span></div>
           {pre && item && <div className="pop"><h3>前提項目の設定</h3>
             {subject.items.filter(i => i.id !== item.id).map(i => <label className="ck" key={i.id}><input type="checkbox" checked={pre.includes(i.id)} onChange={e => setPre(e.target.checked ? [...pre, i.id] : pre.filter(p => p !== i.id))} />{i.name}</label>)}
-            {preMsg && <div className="err">{preMsg}</div>}<div className="row"><button className="btn sm line" onClick={() => setPre(null)}>やめる</button><button className="btn sm" onClick={savePre}>確定</button></div></div>}
+            {preMsg && <div className="err">{preMsg}</div>}<div className="row"><button className="btn sm line" onClick={() => setPre(null)}>やめる</button><button className="btn sm pri" onClick={savePre}>確定</button></div></div>}
         </>) : (<div className="col">
-          <div className="row"><select className="inp" style={{ margin: 0, width: "auto" }} value={ft} onChange={e => setFt(e.target.value as FrameType)}>{(Object.keys(FT) as FrameType[]).map(k => <option key={k} value={k}>{FT[k].n}</option>)}</select><button className="btn sm" disabled={!note} onClick={() => addEl("frame", ft)}>枠を置く</button></div>
-          <button className="btn line" disabled={!note} onClick={() => addEl("text")}>文字</button><button className="btn line" disabled={!note} onClick={() => addEl("shape")}>図形</button><button className="btn line" disabled={!note} onClick={() => addEl("arrow")}>矢印</button>
+          <div className="sec"><div className="sh">枠（種類を選んで置く）</div>
+            <select className="inp" style={{ margin: 0 }} value={ft} onChange={e => setFt(e.target.value as FrameType)}>{(Object.keys(FT) as FrameType[]).map(k => <option key={k} value={k}>{FT[k].n}</option>)}</select>
+            <button className="btn pri wide" disabled={!note} onClick={() => addEl("frame", ft)}>＋ 枠を置く</button></div>
+          <div className="sec"><div className="sh">そのほかの部品</div>
+            <div className="grid3"><button className="btn sm" disabled={!note} onClick={() => addEl("text")}>文字</button><button className="btn sm" disabled={!note} onClick={() => addEl("shape")}>図形</button><button className="btn sm" disabled={!note} onClick={() => addEl("arrow")}>矢印</button></div></div>
           <p className="mute">置いた部品はドラッグで動かし、右下で大きさ、上の色ボタンで色を変えます。文字は「見出し」に変えられます。</p></div>)}
       </aside>
       <main className="ct">{item && note ? (<>
         <div className="tabs"><button className={"chip" + (mode === "note" ? " on" : "")} onClick={() => setMode("note")}>ノート</button><button className={"chip" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>資料と並べる</button><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.name}</b><span className="mute">　{drafts[item.id] ? "未保存の変更あり" : "保存済み"}</span></div>
         {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
-        <div className="bar2 stick"><button className="btn" onClick={doSave}>保存</button>
+        <div className="bar2 stick"><button className="btn pri lg" onClick={doSave}>保存</button>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].id) : setMenu(!menu)}>資料</button>
             {menu && <div className="pop" style={{ position: "absolute", bottom: "110%", left: 0, minWidth: 180, zIndex: 5 }}>{mats.map(m => <div key={m.id} className="ind mat" style={{ margin: "3px 0" }} onClick={() => openMat(m.id)}>{m.name}</div>)}</div>}</span>
-          <button className="btn" onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "summary" })}>AIでまとめる</button>
+          <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "summary" })}>AIでまとめる</button>
           <button className="btn" onClick={() => go({ s: "G011", subjectId: subject.id, itemId: item.id })}>テスト一覧</button>
           <button className="btn" onClick={() => go({ s: "G008", subjectId: subject.id, itemId: item.id })}>模擬テスト</button></div>
       </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
@@ -138,7 +144,7 @@ export function Study() {
         {rtab === "graph" ? <RelationGraph s={subject} selId={item?.id} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.id} className="toc" onClick={() => jump(e.id)}>{e.kind === "frame" ? `${FT[e.ft!].n}　${(e.words?.[0]?.term ?? e.text).slice(0, 12)}` : `見出し${e.head}　${e.text.slice(0, 14)}`}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </div>
-    {full && note && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.name}</b><span className="sp" />{matSelect}<button className="btn" onClick={doSave}>保存</button><button className="btn fill" onClick={() => setFull(false)}>全画面を閉じる</button></div>
+    {full && note && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.name}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave}>保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
       <div className="body" style={{ gridTemplateColumns: ref ? "1fr 1fr" : "1fr" }}><div>{canvas}</div>{ref && <SideMaterial id={ref} />}</div></div>}
   </div>);
 }

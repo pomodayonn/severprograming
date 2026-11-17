@@ -36,15 +36,15 @@ export function MaterialView() {
   if (!m || !account) return <Shell center={<><p>資料がありません。</p><button className="btn" onClick={back}>戻る</button></>} />;
   const del = async () => {
     const tx = data.materials.filter(x => x.srcId === m.id); let both = false;
-    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.name).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", primary: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
-    else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", primary: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.name).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
+    else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
     const gone = [m.id, ...(both ? tx.map(t => t.id) : [])]; gone.forEach(id => delBlob(`${account.id}:${id}`));
     setData(d => ({ ...d, materials: d.materials.filter(x => !gone.includes(x.id)) })); toast("資料を削除したよ"); back();
   };
   return <Shell center={<>
-    <div className="row"><span className="sp" /><span className="fname">{m.name}</span><button className="btn sm line" onClick={del}>削除</button></div>
+    <div className="row"><span className="sp" /><span className="fname">{m.name}</span><button className="btn sm danger" onClick={del}>削除</button></div>
     <div className="vbox"><Viewer type={m.type} v={v} /></div>
-    <div className="bar2">{m.type === "transcript" ? <button className="btn" onClick={() => go({ ...route, s: "G006" })}>修正</button> : <span />}<button className="btn" onClick={back}>戻る</button></div></>} />;
+    <div className="bar2">{m.type === "transcript" ? <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button> : <span />}<button className="btn" onClick={back}>戻る</button></div></>} />;
 }
 export function TranscriptEdit() {
   const { data, route, nav, account } = useApp();
@@ -63,6 +63,6 @@ export function TranscriptEdit() {
     <div className="row"><span className="sp" /><span className="fname">{m.name}</span></div>
     <div className="two"><div><h3>元の資料</h3><div className="vbox">{src ? <Viewer type={src.type} v={orig} /> : <p className="mute">元の資料がありません（文字起こしだけ表示しています）</p>}</div></div>
       <div><h3>文字起こし</h3><textarea className="tx" style={{ height: 330 }} value={text ?? ""} onChange={e => setText(e.target.value)} /></div></div></>}
-    right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn sm" onClick={async () => { await putBlob(`${account.id}:${m.id}`, text ?? ""); toast("上書き保存したよ"); back(); }}>確定</button><button className="btn sm line" onClick={back}>キャンセル</button></div>
+    right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" onClick={async () => { await putBlob(`${account.id}:${m.id}`, text ?? ""); toast("上書き保存したよ"); back(); }}>確定</button><button className="btn line" onClick={back}>キャンセル</button></div>
       <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="修正指示（例：兀→元）" value={ins} onChange={e => { setIns(e.target.value); setMsg(""); }} onKeyDown={e => e.key === "Enter" && apply()} /></>} />;
 }

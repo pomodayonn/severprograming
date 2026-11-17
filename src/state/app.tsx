@@ -17,7 +17,8 @@ import { emptyData, loadData, saveData } from "../services/db";
 import { controller } from "../controller/Controller";
 import { toast } from "../components/toast";
 
-export interface Btn { label: string; value: string; primary?: boolean }
+/** 確認ダイアログのボタン。primary＝主な操作（紺）、danger＝消す操作（赤） */
+export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
 interface Ctx {
   account: Student | null; ready: boolean; data: Data; setData: (f: (d: Data) => Data) => void;
   route: Route; nav: (r: Route) => void;
@@ -156,11 +157,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <C.Provider value={value}>
       {children}
-      {dlg && <div className="ov"><div className="dlg" role="dialog"><p>{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} className={"btn" + (b.primary ? " pri" : "")} onClick={() => { dlg.res(b.value); setDlg(null); }}>{b.label}</button>)}</div></div></div>}
+      {dlg && <div className="ov"><div className="dlg" role="dialog"><p>{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} className={"btn" + (b.danger ? " danger" : b.primary ? " pri" : " line")} onClick={() => { dlg.res(b.value); setDlg(null); }}>{b.label}</button>)}</div></div></div>}
       {pop && <div className="ov"><div className="dlg" role="dialog"><h3>{pop.title}</h3>
         <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => e.key === "Enter" && submitPop()} placeholder="50文字まで" />
         {pop.err && <div className="err">{pop.err}</div>}
-        <div className="row"><button className="btn" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
+        <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
     </C.Provider>
   );
 }
