@@ -90,7 +90,6 @@ export function TestAnswer() {
   useEffect(() => { box.current?.focus(); }, [idx, kb]); // 問題が変わったら、入力欄にすぐ打てるようにする
   if (!test) return <Redirect to={{ s: "G003" }} />;
   const base = { subjectId: route.subjectId, itemId: route.itemId };
-  const leave = () => nav({ s: retry ? "G011" : "G004", ...base });
   const done = async () => {
     const un = ans.filter(a => !a.trim()).length;
     if (un && await ask("答えていない問題があります。確定しますか", [{ label: "確定", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
@@ -101,7 +100,14 @@ export function TestAnswer() {
     setData(d => ({ ...d, tests: d.tests.map(t => t.id === test.id ? saved : t) }));
     nav({ s: "G010", ...base, testId: test.id, mode: retry ? "retry" : "new", ans: saved.ans, ok: saved.ok });
   };
-  const quit = async () => { if (await ask("今回の解答は保存されません。やめますか", [{ label: "やめる", value: "ok", primary: true }, { label: "続ける", value: "no" }]) === "ok") leave(); };
+  // 11/17：前は「保存」ボタンがあったが、途中の答えは保存されないのに「保存したよ」と出て紛らわしかったので、
+  // 「中断する」1つにまとめた。途中の答えは保存されないことをはっきり伝えて、戻る先を選んでもらう
+  const quit = async () => {
+    const answered = ans.filter(a => a.trim()).length;
+    const v = await ask(`テストを中断しますか。${answered ? `答えた ${answered} 問の答えは保存されません。` : ""}あとで「テスト一覧」の「解き直し」から、もう一度解けます`,
+      [{ label: "続ける", value: "no", primary: true }, { label: "テスト一覧へ", value: "list" }, { label: "学習画面へ", value: "study" }]);
+    if (v === "list") nav({ s: "G011", ...base }); else if (v === "study") nav({ s: "G004", ...base });
+  };
   const set = (v: string) => setAns(ans.map((a, i) => i === idx ? v : a));
   // 11/17：次の問題へ進む方法を分かりやすく（ボタン・Enter キー・1〜4 キー）
   const last = idx === test.qs.length - 1;
@@ -117,7 +123,7 @@ export function TestAnswer() {
         <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
           <span className="mute">{test.kind === "essay" || kb ? (test.kind === "essay" ? "Ctrl＋Enter" : "Enter") : "1〜4 キーで選んで Enter"}で{last ? "解答" : "次の問題へ"}</span>
           <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div></div>
-      <div className="bar2"><span className="row"><button className="btn" onClick={() => { toast("テストを保存したよ"); nav({ s: "G011", ...base }); }}>保存</button><button className="btn line" onClick={quit}>やめる</button></span>
+      <div className="bar2"><span className="row"><button className="btn line" onClick={quit}>中断する</button></span>
         {test.kind !== "essay" && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
 
