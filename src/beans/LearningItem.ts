@@ -1,5 +1,11 @@
 // LearningItem（学習項目）（Entity Bean／フロントエンド）：学習項目
 // 担当）。持つデータはクラス一覧（11/10版）のとおり
+// 【このファイルで何が起きているか】
+// 「学習項目」のデータを入れておく入れ物（Bean）です。中身を入れるだけで、計算や保存はしません。
+// ・作る ：Manager（LearningItemManager）が new LearningItem({ ... }) で作る
+// ・しまう：DAO（LearningItemDAO）が端末の IndexedDB に保存する
+// ・送る ：SyncManager が Neon（クラウド）の learning_item テーブルに同期する（列の名前は snake_case になる）
+// ・見せる：画面は Controller を通して受け取る
 import type { DateTime } from "./DateTime";
 
 export class LearningItem {
