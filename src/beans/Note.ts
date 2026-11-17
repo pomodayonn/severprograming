@@ -1,5 +1,12 @@
 // Note（ノート）（Entity Bean／フロントエンド）：学習項目1つにノート1枚
 // 担当：）。持つデータはクラス一覧（11/10版）のとおり
+// 【このファイルで何が起きているか】
+// 「ノート1枚」のデータを入れておく入れ物（Bean）です。中身を入れるだけで、計算や保存はしません。
+// ・作る ：Manager（NoteManager）が new Note({ ... }) で作る
+// ・しまう：DAO（NoteDAO）が端末の IndexedDB に保存する
+// ・送る ：SyncManager が Neon（クラウド）の note テーブルに同期する（列の名前は snake_case になる）
+// ・見せる：画面は Controller を通して受け取る
+// ノートの中身（枠・文字など）は parts に、NotePart として並んでいる
 import type { DateTime } from "./DateTime";
 import type { NotePart } from "./NotePart";
 

@@ -1,5 +1,10 @@
 // Suggestion（AIの提案）（Bean／フロントエンド）：AIまとめの提案1つ分。承認したものだけノートに反映し、提案そのものは保存しない
 // 担当：）。持つデータはクラス一覧（11/10版）のとおり
+// 【このファイルで何が起きているか】
+// AIまとめが返してきた「この枠にこう書いたら？」という提案1つを入れておく入れ物です。
+// ・作る：AiSummaryManager.summarize がAIの答えから作る
+// ・使う：画面で承認したもの（approved = true）だけ、NoteManager.applySuggestions でノートに入れる
+// ・提案そのものは保存しない
 
 export class Suggestion {
   /** 対象の枠（新しい枠なら null） */

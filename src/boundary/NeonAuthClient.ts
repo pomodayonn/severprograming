@@ -2,6 +2,18 @@
 // .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
 // なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
 // TODO（W1 さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
+// NeonAuthClient（Boundary／フロントエンド）：Neon Auth とやり取りする窓口。
+// .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
+// なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
+// TODO（W1 さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
+//
+// 【このファイルで何が起きているか】
+// ログイン・登録・ログアウトを、Neon Auth（ログインの外部サービス）に頼む窓口です。
+// ・VITE_NEON_AUTH_URL がある → 本物の Neon Auth に送る（パスワードは Neon Auth が持ち、アプリは見ない）
+// ・ない                     → 端末の中だけの「お試しログイン」（demo@example.com / demo1234）
+// 流れの例（ログイン）：G001 画面 → Controller → AccountManager.login → ここの signIn → Neon Auth
+// ログインに成功すると、Neon Auth がブラウザに「ログイン中」の印（セッション）を残す。
+// 次にページを開いたときは getSession でその印を確かめるので、もう一度パスワードを入れなくてよい
 import type { Student } from "../types";
 import { localAccounts, saveLocalAccounts, sha } from "../services/db";
 
