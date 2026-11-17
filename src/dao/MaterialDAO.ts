@@ -1,5 +1,11 @@
 // MaterialDAO（DAO／フロントエンド）：資料と文字起こしを端末（IndexedDB）に保存する。サーバーには送らない
 // 
+//
+// 【このファイルで何が起きているか】
+// 資料（情報は materials、ファイルの中身は materialContents）を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（MaterialManager（福山さんが作る））がする。
+// 流れ：画面 → Controller → MaterialManager（福山さんが作る） → ここ → IndexedDB
+// 資料は大きいので Neon には送らない（この端末だけ）
 import { Material } from "../beans/Material";
 import { now } from "../beans/DateTime";
 import { del, get, getAllBy, put } from "./idb";

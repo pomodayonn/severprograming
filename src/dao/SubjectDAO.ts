@@ -1,5 +1,11 @@
 // SubjectDAO（DAO／フロントエンド）：科目を端末（IndexedDB）に保存・読み込みする
 // 担当：。Neon への同期は SyncManager がする
+//
+// 【このファイルで何が起きているか】
+// 科目を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（SubjectManager）がする。
+// 流れ：画面 → Controller → SubjectManager → ここ → IndexedDB
+// 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
 import { Subject } from "../beans/Subject";
 import { now } from "../beans/DateTime";
 import { del, get, getAllBy, put, recordDeletion } from "./idb";

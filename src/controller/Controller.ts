@@ -1,5 +1,14 @@
 // Controller（Controller／フロントエンド）：画面のボタン操作を受け取り、担当の Manager に仕事を渡す。
 // イベントIDは外部設計書のイベント一覧表のとおり。W2 で画面を1つずつ handleRequest 経由に置き換えていく。
+//
+// 【このファイルで何が起きているか】
+// 画面とプログラムの中身をつなぐ「受付」です（Controller）。どの画面のボタンも、まずここに来る。
+// 流れ（例：科目の追加）
+//   画面（SubjectList.tsx）が controller.handleRequest("G003", "addSubject", { name: "数学" }) を呼ぶ
+//   → 下の switch で "G003:addSubject" を見つける
+//   → 担当の SubjectManager.createSubject に仕事を渡す
+//   → 結果を { data } で、エラーなら { error: "画面に出す文" } で画面に返す
+// 画面は Manager や DAO を直接さわらず、必ずここを通る（設計書の「画面 → Controller → Manager → DAO」）。。
 import type { El, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
 import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";

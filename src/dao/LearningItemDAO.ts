@@ -1,5 +1,11 @@
 // LearningItemDAO（DAO／フロントエンド）：学習項目を端末（IndexedDB）に保存・読み込みする
 // 担当：）
+//
+// 【このファイルで何が起きているか】
+// 学習項目を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（LearningItemManager）がする。
+// 流れ：画面 → Controller → LearningItemManager → ここ → IndexedDB
+// 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
 import { LearningItem } from "../beans/LearningItem";
 import { now } from "../beans/DateTime";
 import { del, get, getAllBy, put, recordDeletion } from "./idb";

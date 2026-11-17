@@ -1,5 +1,12 @@
 // PrerequisiteDAO（DAO／フロントエンド）：前提項目（「この項目の前提はこれ」）を端末（IndexedDB）に保存・読み込みする
 // 担当：
+//
+// 【このファイルで何が起きているか】
+// 前提項目（「この項目を学ぶ前に、あの項目」）を、端末の IndexedDB（dao/idb.ts）に保存したり読み出したりする係（DAO）です。
+// DAO は「しまう・取り出す」だけをして、名前が正しいかなどの確認は Manager（LearningItemManager）がする。
+// 流れ：画面 → Controller → LearningItemManager → ここ → IndexedDB
+// 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
+// 1件は [学習項目ID, 前提学習項目ID] の組で見分ける
 import { Prerequisite } from "../beans/Prerequisite";
 import { now } from "../beans/DateTime";
 import { del, get, getAll, getAllBy, put, recordDeletion } from "./idb";
