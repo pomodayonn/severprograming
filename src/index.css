@@ -50,3 +50,37 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 @media(max-width:900px){.cols{grid-template-columns:1fr;grid-auto-rows:auto;overflow:auto}.lf,.rt{border-bottom:1px solid var(--line)}.ct{min-height:60vh;padding-left:16px;background-image:none}}
 .or{display:flex;align-items:center;gap:8px;margin:14px 0 0;color:var(--mute);font-size:12px}.or::before,.or::after{content:"";flex:1;border-top:1px solid #d8d0c2}
 .btn:disabled{opacity:.55;cursor:not-allowed}
+/* ===== 11/17 ボタンの決まり（どの画面でも同じ見た目・同じ意味） =====
+   pri    ：その画面でいちばん大事な操作（1画面に1つ）。紺の塗り　例：ログイン・保存・作成・解答・決定
+   ai     ：AIを使う操作（その日の利用回数を使う）。緑の塗り　例：AIでまとめる・送信・解説・AIで直す
+   danger ：消す操作。赤の枠と赤い文字　例：削除・削除する
+   (なし) ：ふつうの操作。白の枠　例：名前の編集・テスト一覧・戻る
+   line   ：控えめな操作。うすい枠　例：キャンセル・やめる
+   大きさ：ふつう 40px／sm 34px／lg 48px（画面の主な操作）。wide は横いっぱい
+   .dark・.fill は前の書き方。pri と同じ見た目にしてある */
+:root{--pri:#2f2b52;--pri-h:#433d70;--ai:#2e7d6d;--ai-h:#25685a}
+.btn{min-height:40px;padding:6px 20px;font-size:15px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;line-height:1.3}
+.btn.sm{min-height:34px;padding:4px 14px;font-size:14px}
+.btn.lg{min-height:48px;padding:8px 28px;font-size:16px}
+.btn.wide{width:100%}
+.btn.pri,.btn.dark,.btn.fill{background:var(--pri);border-color:var(--pri);color:#fff;box-shadow:0 2px 0 rgba(0,0,0,.25)}
+.btn.pri:hover,.btn.dark:hover,.btn.fill:hover{background:var(--pri-h)}
+.btn.ai{background:var(--ai);border-color:var(--ai);color:#fff;box-shadow:0 2px 0 rgba(0,0,0,.2)}.btn.ai:hover{background:var(--ai-h)}
+.btn.ai::before{content:"✦";font-size:.85em}
+.btn.danger{background:#fff;border-color:var(--err);color:var(--err)}.btn.danger:hover{background:var(--soft)}
+.btn.line{background:transparent;border-color:var(--line2);color:var(--ink);box-shadow:none;font-weight:500}.btn.line:hover{background:#fff}
+.btn:focus-visible{outline:3px solid color-mix(in srgb,var(--pri) 35%,transparent);outline-offset:2px}
+.btn:disabled,.btn:disabled:hover{opacity:.45;cursor:not-allowed;transform:none}
+/* 左の操作パネル（学習画面） */
+.sec{background:var(--pn);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.sec .sh{font-size:12px;font-weight:700;color:var(--mute);display:flex;justify-content:space-between;align-items:baseline}
+.sec .sh b{color:var(--ink);font-size:13px;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* ログイン画面の「何をするサイトか」 */
+.about{margin:2px 0 6px;text-align:center}.about .lead{font-size:15px;font-weight:700;margin:0 0 8px}
+.about ul{list-style:none;margin:0 auto;padding:10px 12px;display:grid;gap:6px;text-align:left;background:var(--bg);border-radius:12px;font-size:13px;max-width:400px}
+.about li{display:flex;gap:8px;align-items:flex-start}.about li i{font-style:normal;flex:none}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid2 .btn,.grid3 .btn{padding-left:6px;padding-right:6px;white-space:nowrap}
+/* 学習画面の下のボタン：左に「保存」、右にそのほかを並べる */
+.bar2.stick{align-items:center;justify-content:flex-start}.bar2.stick>.btn:first-child{margin-right:auto}
