@@ -61,7 +61,7 @@ export class NeonAuthClient {
     try {
       const r = await (await this.auth()).signUp.email({ name: email.split("@")[0] || "User", email, password });
       return r.error || !r.data ? this.fail(r.error ?? {}, "up") : { ok: true, student: toStudent(r.data.user) };
-    } catch { return { ok: false, error: MSG.net }; }
+    } catch (e) { return this.failThrown(e, "up"); }
   }
 
   /** ログインする */
@@ -70,7 +70,7 @@ export class NeonAuthClient {
     try {
       const r = await (await this.auth()).signIn.email({ email, password });
       return r.error || !r.data ? this.fail(r.error ?? {}, "in") : { ok: true, student: toStudent(r.data.user) };
-    } catch { return { ok: false, error: MSG.net }; }
+    } catch (e) { return this.failThrown(e, "in"); }
   }
 
   /** Google でログインする（Neon の管理画面で Google ログインを有効にしておく）。ページが Google に移動し、戻ってきたら getSession で分かる */
@@ -101,6 +101,16 @@ export class NeonAuthClient {
   private async auth(): Promise<NeonAuth> {
     if (!this.client) { const { createAuthClient } = await import("@neon/neon-js/auth"); this.client = createAuthClient(this.url!) as unknown as NeonAuth; }
     return this.client;
+  }
+  /**
+   * 例外として投げられたエラーを画面の文にする。
+   * Neon Auth は、パスワード違い（401）などを「結果の error」ではなく AuthApiError という例外で投げてくる。
+   * HTTP の番号（status）が分かるものは fail() と同じ決まりで文を選び、本当に通信できなかったときだけ MSG.net にする
+   */
+  private failThrown(e: unknown, kind: "in" | "up"): AuthResult {
+    const x = (e ?? {}) as { name?: string; status?: number; code?: string; message?: string };
+    if (typeof x.status === "number" || x.name === "AuthApiError") return this.fail({ status: x.status ?? 400, code: x.code, message: x.message }, kind);
+    return { ok: false, error: MSG.net };
   }
   private fail(e: NonNullable<NeonRes<unknown>["error"]>, kind: "in" | "up"): AuthResult {
     const code = e.code ?? "";
