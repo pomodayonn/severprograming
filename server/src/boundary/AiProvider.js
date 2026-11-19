@@ -7,8 +7,8 @@
 //
 // ・canAccept：この長さの文章を受け取れるか（キーがない・長すぎるときは false で、次のAIに回す）
 // ・send：プロンプトを送って、AIの返事（文字列）を返す。失敗したら例外を投げる
-
-const TIMEOUT_MS = 60_000; // 60秒待っても返事がなければあきらめて次のAIへ
+// モデル名・文字数の上限・待つ時間は config.js で決める（ここでは変えない）
+import { AI_CONFIG } from "../config.js";
 
 export class AiProvider {
   /**
@@ -18,13 +18,15 @@ export class AiProvider {
    * @param {string} o.model     モデル名
    * @param {number} o.maxChars  1回に受け取れる文字数（プロンプト全体）
    * @param {string} o.apiKeyEnv APIキーが入っている環境変数の名前（例："GROQ_API_KEY"）
+   * @param {number} [o.timeoutMs] 何ミリ秒待つか
    */
-  constructor({ name, baseUrl, model, maxChars, apiKeyEnv }) {
+  constructor({ name, baseUrl, model, maxChars, apiKeyEnv, timeoutMs = AI_CONFIG.timeoutMs }) {
     this.name = name;
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.model = model;
     this.maxChars = maxChars;
     this.apiKeyEnv = apiKeyEnv;
+    this.timeoutMs = timeoutMs;
   }
 
   get apiKey() {
@@ -55,7 +57,7 @@ export class AiProvider {
         // response_format（JSONモード）は対応がAIごとにまちまちなので使わない。
         // 代わりにプロンプトで「JSONだけ返して」と頼み、AiPrompts の parseJson で取り出す
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok) {
       // 本文の先頭だけログに残す（APIキーは本文に入らないので出しても大丈夫）
@@ -69,33 +71,7 @@ export class AiProvider {
   }
 }
 
-/**
- * 使うAIを、試す順番（Groq → NVIDIA NIM → Gemini）で作る
- * モデル名と文字数の上限は .env で変えられる（無料枠のモデルはよく入れ替わるため）
- */
-export function defaultProviders(env = process.env) {
-  const num = (v, d) => (Number(v) > 0 ? Number(v) : d);
-  return [
-    new AiProvider({
-      name: "Groq",
-      baseUrl: "https://api.groq.com/openai/v1",
-      model: env.GROQ_MODEL || "openai/gpt-oss-120b",
-      maxChars: num(env.GROQ_MAX_CHARS, 12000),
-      apiKeyEnv: "GROQ_API_KEY",
-    }),
-    new AiProvider({
-      name: "NVIDIA NIM",
-      baseUrl: "https://integrate.api.nvidia.com/v1",
-      model: env.NVIDIA_MODEL || "meta/llama-3.3-70b-instruct",
-      maxChars: num(env.NVIDIA_MAX_CHARS, 30000),
-      apiKeyEnv: "NVIDIA_API_KEY",
-    }),
-    new AiProvider({
-      name: "Gemini",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-      model: env.GEMINI_MODEL || "gemini-3.8-flash",
-      maxChars: num(env.GEMINI_MAX_CHARS, 100000),
-      apiKeyEnv: "GEMINI_API_KEY",
-    }),
-  ];
+/** config.js に書いた順番（Groq → NVIDIA NIM → Gemini）で AI を作る */
+export function defaultProviders(config = AI_CONFIG) {
+  return config.providers.map((p) => new AiProvider({ ...p, timeoutMs: config.timeoutMs }));
 }
