@@ -7,4 +7,5 @@
 VITE_NEON_AUTH_URL=https://ep-quiet-violet-az2t31tw.neonauth.c-3.ap-southeast-1.aws.neon.tech/neondb/auth
 
 # Render のサーバーの URL（例：https://runndesu-api.onrender.com）。末尾の / はいらない
+#今はテスト用にローカルサーバー
 VITE_API_URL=http://localhost:3000
