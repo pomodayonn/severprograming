@@ -75,8 +75,7 @@ export class ApiController {
         return sendError(res, 429, "LIMIT_EXCEEDED", `${calls}回分が必要ですが、今日の残りが足りません`);
       }
       const result = await run(); // ここで失敗したら回数は数えない
-      await this.aiUsageManager.addUsage(studentId, calls);
-      const remaining = await this.aiUsageManager.getRemaining(studentId);
+      const remaining = await this.aiUsageManager.addUsage(studentId, calls); // 足したあとの残りが返ってくる
       res.json({ ...result, remaining, limit: DAILY_LIMIT });
     } catch (e) {
       if (e instanceof BadRequest) return sendError(res, 400, "BAD_REQUEST", e.message);
@@ -149,26 +148,30 @@ export class ApiController {
 
   /** POST /api/explain：解説（G010） */
   explain(req, res) {
-    return this.useAi(req, res, (body) => {
-      const question = questionOf(body.question);
-      const extra = extraOf(body.extra);
-      if (lengthOf(question.q + question.a + extra) > SEND_LIMIT) throw new TooLong("問題と追加の指示で1万文字を超えています");
-      return {
-        calls: 1,
-        run: async () => ({ explanation: await this.aiService.send(buildExplain(question, extra), readExplain) }),
-      };
-    });
+    return this.useAiForQuestion(req, res, "explanation", buildExplain, readExplain);
   }
 
   /** POST /api/regenerate-question：記述テストの1問を作り直す（G010・G011） */
   regenerateQuestion(req, res) {
+    return this.useAiForQuestion(req, res, "question", buildRegenerate, readRegenerate);
+  }
+
+  /**
+   * 1問分（{ question: { q, a }, extra }）を受け取ってAIを1回使うAPIで共通の流れ（explain・regenerateQuestion）。
+   * 2つの違いは「どんなプロンプトを作るか」「返事をどう読むか」「どの名前で返すか」だけなので、それを引数で受け取る
+   * （Java でいうと、違う部分だけをインターフェースで渡すストラテジーパターン）
+   * @param {string} key 返すときの名前（"explanation" か "question"）
+   * @param {(question: { q: string, a: string }, extra: string) => string} build プロンプトを作る関数
+   * @param {(reply: string) => any} read AIの返事を読む関数
+   */
+  useAiForQuestion(req, res, key, build, read) {
     return this.useAi(req, res, (body) => {
       const question = questionOf(body.question);
       const extra = extraOf(body.extra);
       if (lengthOf(question.q + question.a + extra) > SEND_LIMIT) throw new TooLong("問題と追加の指示で1万文字を超えています");
       return {
         calls: 1,
-        run: async () => ({ question: await this.aiService.send(buildRegenerate(question, extra), readRegenerate) }),
+        run: async () => ({ [key]: await this.aiService.send(build(question, extra), read) }),
       };
     });
   }
