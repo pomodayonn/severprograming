@@ -11,36 +11,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { El, FrameType } from "../types";
-import { FT, bottomY, calls, chunkText, newEl } from "../lib/logic";
-import { addLocalUsage, organize, useAiRemaining, type Proposal } from "../services/ai";
-import { errorText } from "../services/api";
+import { FT, calls, chunkText } from "../lib/logic";
+import { addLocalUsage, useAiRemaining, type Proposal } from "../services/ai";
+import { controller } from "../controller/Controller";
+import { AiWait, useOnline } from "./AiWait";
 import { getBlob } from "../services/db";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
 interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
 const frameText = (e: El) => e.ft === "word" ? (e.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : e.text;
-const hOf = (n: number) => Math.max(110, 50 + n * 24);
-/** 承認された提案をノートに反映：もとからある枠は位置そのままで中身を置き換え、新しい枠は一番下へ。大きくなったら下の枠をずらす */
-function apply(els: El[], ps: Proposal[]): El[] {
-  let out = [...els];
-  for (const p of ps) {
-    const nh = p.ft === "word" ? Math.max(150, 90 + (p.words?.length ?? 1) * 30) : hOf(p.text.split("\n").length), t = out.find(e => e.id === p.targetId);
-    if (t) { const d = Math.max(0, nh - t.h), bottom = t.y + t.h;
-      out = out.map(e => e.id === t.id ? { ...e, text: p.text, words: p.words ?? e.words, h: Math.max(e.h, nh), at: Date.now() } : d && e.y >= bottom ? { ...e, y: e.y + d, at: Date.now() } : e); }
-    else { const e = newEl("frame", bottomY(out), p.ft); e.text = p.text; e.h = nh; if (p.ft === "word") e.words = p.words ?? e.words; out.push(e); }
-  }
-  return out;
-}
 export function AiSend() {
-  const { data, setData, route, nav, go, ask, setDraft, account, setTmp } = useApp();
+  const { data, setData, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
+  const online = useOnline();
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const essay = route.purpose === "essay";
   const [parts, setParts] = useState<Part[]>([]), [sel, setSel] = useState<string[]>([]), [text, setText] = useState("");
   const [types, setTypes] = useState<FrameType[]>(Object.keys(FT) as FrameType[]), [tab, setTab] = useState<"src" | "send" | "prop">("src");
   const [props, setProps] = useState<Proposal[]>([]), [pick, setPick] = useState<string[]>([]), [msg, setMsg] = useState(""), [set, setSet] = useState(false);
   const [ins, setIns] = useState(""), [ref, setRef] = useState<string | null>(null), [busy, setBusy] = useState(false);
-  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames = useMemo(() => (item?.note.els ?? []).filter(e => e.kind === "frame"), [item]);
+  // 今のノート：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
+  const note = item ? (drafts[item.id] ?? item.note) : null;
+  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames = useMemo(() => (note?.els ?? []).filter(e => e.kind === "frame"), [note]);
   useEffect(() => { // 元にできる内容：文字起こし済みの資料（ページごと）とノートの枠
     if (!item || !account) return; let live = true;
     (async () => {
@@ -66,14 +58,24 @@ export function AiSend() {
   };
   const send = async () => {
     if (!types.length) return setMsg("枠の種類を選んでください");
+    if (!online) return setMsg("インターネットにつながっていません。つながってから送信してください");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
-    try { const ps = await organize(text, types, frames.map(e => ({ id: e.id, ft: e.ft }))); consume(n); setProps(ps); setPick(ps.map(p => p.id)); setTab("prop"); if (!ps.length) setMsg("提案が作れませんでした。送る内容を見直してください"); }
-    catch (e) { setMsg(errorText(e)); void refresh(); } setBusy(false);
+    // 11/20：Controller → AiSummaryManager.summarize でAIに送る（1万文字を超えたら分けて送る）
+    const r = await controller.handleRequest("G007", "summarize", { studentId: account?.id ?? "", itemId: item.id, text, frameTypes: types.join(","), els: JSON.stringify(note?.els ?? []) });
+    setBusy(false);
+    if (r.error) { setMsg(r.error); void refresh(); return; }
+    const ps = r.data as Proposal[]; consume(n); setProps(ps); setPick(ps.map(p => p.id)); setTab("prop");
+    if (!ps.length) setMsg("提案が作れませんでした。送る内容を見直してください");
   };
   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.id, itemId: item.id }); };
-  const approve = () => {
+  const approve = async () => {
     const ps = props.filter(p => pick.includes(p.id));
-    if (ps.length) setDraft(item.id, { ...item.note, els: apply(item.note.els, ps) }); // 反映するが保存はしない（学習画面の「保存」で保存）
+    if (ps.length && note) {
+      // 11/20：Controller → AiSummaryManager.mergeApproved で、選んだ提案を入れたノートを作ってもらう（枠が大きくなったら下の部品もずらす）
+      const r = await controller.handleRequest("G007", "approve", { studentId: account?.id ?? "", itemId: item.id, els: JSON.stringify(note.els), proposals: JSON.stringify(ps) });
+      if (r.error) return setMsg(r.error);
+      setDraft(item.id, { ...note, els: r.data as El[] }); // 反映するが保存はしない（学習画面の「保存」で保存）
+    }
     toast(ps.length ? "提案をノートに反映したよ（保存は学習画面で）" : "提案をすべて捨てたよ"); nav({ s: "G004", subjectId: subject.id, itemId: item.id });
   };
   const replace = () => { // 編集指示「元→先」
@@ -100,8 +102,9 @@ export function AiSend() {
             onChange={e => setProps(props.map(x => x.id !== p.id ? x : p.ft === "word" ? { ...x, words: e.target.value.split("\n").filter(Boolean).map(l => { const [a, ...b] = l.split(/：|:/); return { term: a.trim(), meaning: b.join("：").trim() }; }) } : { ...x, text: e.target.value }))} /></div></div></div>); })}</div>}
     {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
     {set && essay && <div className="pop">記述テストに使う内容を決めます。AIの利用はテストを作るときです。</div>}
-    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>{msg && <div className="err">{msg}</div>}
-    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop"} onClick={send}>{busy ? "送信中…" : "送信"}</button>}<button className="btn line" onClick={() => setSet(!set)}>設定</button>
+    <AiWait busy={busy} what="AIがまとめています" />
+    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
+    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "送信"}</button>}<button className="btn line" onClick={() => setSet(!set)}>設定</button>
       {!essay && <button className="btn pri lg" disabled={tab !== "prop"} onClick={approve}>承認</button>}</span>
       <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("提案をすべて捨てたよ"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id }); }}>キャンセル</button></div></>}
     right={<><h3>参照</h3><div className="mute">ストレージの資料とノートの枠。押すと中身を見られます（AIの提案と見比べるとき）</div>

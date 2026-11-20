@@ -8,11 +8,13 @@ import { useState, type ReactNode } from "react";
 import { useApp } from "../state/app";
 import { Mascot } from "./Mascot";
 import { RelationGraph } from "./RelationGraph";
+import { OfflineBar } from "./AiWait";
 
 export function Header({ plain = false }: { plain?: boolean }) {
   const { account, logout } = useApp();
-  return (<header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
-    {!plain && account && <><span className="who">{account.email}</span><button className="pill" onClick={logout}>ログアウト</button></>}</header>);
+  return (<><header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
+    {!plain && account && <><span className="who">{account.email}</span><button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
+  // ↑ ヘッダーの下に、オフラインのときだけ帯を出す（OfflineBar）。ヘッダーと帯を1つにまとめて返すため、下で包んでいる
 }
 /** 左サイドバーの階層：科目（▼▶）の下に学習項目（●）。extra で選択中の項目の下に足せる */
 export function Tree({ heading, extra }: { heading: string; extra?: (itemId: string) => ReactNode }) {
