@@ -6,3 +6,5 @@ interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
 }
 interface ImportMeta { readonly env: ImportMetaEnv }
+/** 文字起こし用ファイルの版の名前（例：tesseract7.0.0-pdfjs6.5.438）。vite.config.ts が node_modules から読んで入れる */
+declare const __OCR_VERSION__: string;
