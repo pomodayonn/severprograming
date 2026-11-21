@@ -3,14 +3,16 @@
 // 【このファイルで何が起きているか】
 // アプリ全体で共有する「今の状態」を持っている所です。どの画面からでも useApp() で使える。
 // ・account：ログイン中の学生（いなければ null）
-// ・data   ：その学生の科目・テストなど（画面の表示用。localStorage に写しを保存）
+// ・subjects・tests：科目（学習項目・ノート入り）とテスト。Controller（G003:loadSubjects）で Manager から読む
+//   11/21：前は data.subjects・data.tests（localStorage の写し）を画面が読んでいたが、Manager のデータだけを見るようにした。
+//   追加・保存などのあとは reload() で読み直す（写しを手で同じように書き換えることはしない）
+// ・data   ：資料の一覧（data.materials）だけを使う（MaterialManager ができたら、これも Controller 経由にする）
 // ・route  ：今どの画面か（例：{ s: "G004", subjectId: "...", itemId: "..." }）
 // ・drafts ：まだ「保存」していないノートの下書き
 // ログインからの流れ
 //   1. ページを開く → getCurrentStudent で、前のログインが続いているか確かめる
-//   2. 続いていれば open()：保存してあった表示用データを出す
-//   3. すぐに Controller（G003:loadSubjects）で Manager の本当のデータを読み、表示用データをそれにそろえる
-//      （別の端末で作った分が増え、消した分が消える）
+//   2. 続いていれば open()：端末に保存してあった資料の一覧を出す
+//   3. Controller（G003:loadSubjects）で Manager から科目とテストを読む（この端末で初めてなら、前のデータを先に移す）
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Data, Note, Route, Student, Subject, Test } from "../types";
 import { emptyData, loadData, saveData } from "../services/db";
@@ -21,13 +23,14 @@ import { toast } from "../components/toast";
 export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
 interface Ctx {
   account: Student | null; ready: boolean; data: Data; setData: (f: (d: Data) => Data) => void;
+  subjects: Subject[]; tests: Test[]; loaded: boolean; reload: () => Promise<void>;
   route: Route; nav: (r: Route) => void;
   drafts: Record<string, Note>; setDraft: (itemId: string, n: Note | null) => void;
   tmp: Record<string, unknown>; setTmp: (p: Record<string, unknown>) => void;
   enter: (a: Student) => void; leave: () => void;
   ask: (msg: string, buttons: Btn[]) => Promise<string>;
   askName: (title: string, initial?: string) => Promise<string | null>;
-  guard: () => Promise<boolean>; save: (itemId: string) => void;
+  guard: () => Promise<boolean>; save: (itemId: string) => Promise<boolean>;
   go: (r: Route) => Promise<void>; logout: () => Promise<void>;
 }
 const C = createContext<Ctx | null>(null);
@@ -39,31 +42,15 @@ export function Redirect({ to }: { to: Route }) {
   return null;
 }
 
-/**
- * 画面のデータを、Manager から読んだデータ（db）にそろえる（移行中のつなぎ）。
- * ・科目・学習項目・前提項目・ノートは db のとおりにする（別の端末で作った分は増え、消した分は消える）
- * ・ただし読み込んでいる間に画面で作った科目・学習項目（before になかったもの）は残す
- * ・テストも db のとおりにする。消えた学習項目の資料とテストは画面から外す
- */
-export function applyDbSubjects(d: Data, db: Subject[], before: Set<string>, dbTests: Test[] = []): Data {
-  const subjects = db.map(s => {
-    const cur = d.subjects.find(x => x.id === s.id);
-    const added = (cur?.items ?? []).filter(i => !before.has(i.id) && !s.items.some(x => x.id === i.id));
-    return { ...s, items: [...s.items, ...added] };
-  });
-  subjects.push(...d.subjects.filter(s => !before.has(s.id) && !db.some(x => x.id === s.id)));
-  const ids = new Set(subjects.flatMap(s => s.items.map(i => i.id)));
-  // テストも db のとおりにする（読み込んでいる間に作ったテストは残す）
-  const tests = [...dbTests, ...d.tests.filter(t => !before.has(t.id) && !dbTests.some(x => x.id === t.id))];
-  return { ...d, subjects, materials: d.materials.filter(m => ids.has(m.itemId)), tests: tests.filter(t => ids.has(t.itemId)) };
-}
-
 /** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
 const SAVE_DELAY = 400;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Student | null>(null), [ready, setReady] = useState(false);
   const [data, setD] = useState<Data>(emptyData());
+  const [subjects, setSubjects] = useState<Subject[]>([]), [tests, setTests] = useState<Test[]>([]), [loaded, setLoaded] = useState(false);
+  const legacy = useRef({ subjects: "[]", tests: "[]" }); // 前のデータ（localStorage）。この端末で初めて読むときに Manager へ移す
+  const seq = useRef(0); // reload が重なったとき、最後に頼んだ分だけを画面に出す
   const [route, setRoute] = useState<Route>({ s: "G001" });
   const [drafts, setDrafts] = useState<Record<string, Note>>({});
   const [tmp, setT] = useState<Record<string, unknown>>({});
@@ -95,18 +82,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return n;
   }), [flush]);
 
+  /** 科目とテストを Manager から読み直す（Controller → G003:loadSubjects）。追加・保存などのあとに呼ぶ */
+  const reload = useCallback(async () => {
+    const a = aRef.current; if (!a) return;
+    const n = ++seq.current;
+    const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: legacy.current.subjects, localTests: legacy.current.tests });
+    if (r.error) { toast(r.error); return; }
+    const db = r.data as { subjects: Subject[]; tests: Test[] } | undefined;
+    if (!db || n !== seq.current || aRef.current?.id !== a.id) return; // 古い結果・ほかの学生の結果は出さない
+    setSubjects(db.subjects); setTests(db.tests); setLoaded(true);
+  }, []);
   const open = useCallback((a: Student) => {
     const local = loadData(a.id);
-    flush(); setAccount(a); setD(local); setDrafts({}); setRoute({ s: "G003" });
-    // 11/12：画面のデータを Manager のデータ（アカウントから受け取った分）にそろえる（移行中のつなぎ）。
-    // この端末で初めてなら、先に前のデータを Manager に移す（Controller の migrateOnce）
-    const before = new Set([...local.subjects.flatMap(s => [s.id, ...s.items.map(i => i.id)]), ...local.tests.map(t => t.id)]);
-    void controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: JSON.stringify(local.subjects), localTests: JSON.stringify(local.tests) }).then(r => {
-      const db = r.data as { subjects: Subject[]; tests: Test[] } | undefined;
-      if (db && aRef.current?.id === a.id) setData(d => applyDbSubjects(d, db.subjects, before, db.tests));
-    });
-  }, [flush]); // eslint-disable-line react-hooks/exhaustive-deps
-  const close = useCallback(() => { flush(); setAccount(null); setD(emptyData()); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
+    legacy.current = { subjects: JSON.stringify(local.subjects), tests: JSON.stringify(local.tests) };
+    flush(); aRef.current = a; setAccount(a); setD(local); setSubjects([]); setTests([]); setLoaded(false); setDrafts({}); setRoute({ s: "G003" });
+    void reload();
+  }, [flush, reload]);
+  const close = useCallback(() => { flush(); aRef.current = null; setAccount(null); setD(emptyData()); setSubjects([]); setTests([]); setLoaded(false); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
   useEffect(() => { // 前回ログインしたまま（Google から戻ってきたときも）なら、その学生のデータを開く
     let live = true;
     controller.accountManager.getCurrentStudent().then(a => { if (!live) return; if (a) open(a); setReady(true); });
@@ -115,20 +107,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const ask = useCallback((msg: string, buttons: Btn[]) => new Promise<string>(res => setDlg({ msg, buttons, res })), []);
   const askName = useCallback((title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res })), []);
-  const save = useCallback((itemId: string) => {
-    const dr = dRef.current[itemId]; if (!dr) return;
-    setData(d => ({ ...d, subjects: d.subjects.map(s => ({ ...s, items: s.items.map(i => i.id === itemId ? { ...i, note: { ...dr, savedAt: Date.now() } } : i) })) }));
-    setDrafts(p => { const n = { ...p }; delete n[itemId]; return n; });
-    // 11/12：Controller → NoteManager でも保存して、アカウントに送る（失敗しても画面の保存は済んでいる）
-    const sid = aRef.current?.id; if (!sid) return;
-    void controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, els: JSON.stringify(dr.els) }).then(r => { if (r.error) toast(r.error); });
-  }, [setData]);
+  /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
+  const save = useCallback(async (itemId: string) => {
+    const dr = dRef.current[itemId], sid = aRef.current?.id; if (!dr || !sid) return false;
+    const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, els: JSON.stringify(dr.els) });
+    if (r.error) { toast(r.error); return false; } // 保存できなかったときは下書きを残す
+    await reload();
+    setDrafts(p => { if (p[itemId] !== dr) return p; const n = { ...p }; delete n[itemId]; return n; }); // 保存中にさらに書いた分は残す
+    return true;
+  }, [reload]);
   /** 保存していないノートがあれば確認する（D04）。移ってよければ true */
   const guard = useCallback(async () => {
     const ids = Object.keys(dRef.current); if (!ids.length) return true;
     const v = await ask("保存していない変更があります", [{ label: "保存して移る", value: "save", primary: true }, { label: "保存せずに移る", value: "drop" }, { label: "キャンセル", value: "cancel" }]);
     if (v === "cancel") return false;
-    if (v === "save") { ids.forEach(save); toast("保存したよ"); } else setDrafts({});
+    if (v === "save") { const ok = await Promise.all(ids.map(save)); if (ok.includes(false)) return false; toast("保存したよ"); } else setDrafts({});
     return true;
   }, [ask, save]);
   const nav = useCallback((r: Route) => setRoute(r), []);
@@ -142,11 +135,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
   const logout = useCallback(async () => { if (await guard()) { await controller.handleRequest(rRef.current.s, "logoutButton"); close(); } }, [guard, close]);
 
-  // 関数はすべて同じものを使い回すので、memo した部品は data などが変わったときだけ描き直る
+  // 関数はすべて同じものを使い回すので、memo した部品は data・subjects などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({
-    account, ready, data, setData, route, nav, drafts, setDraft, tmp, setTmp,
+    account, ready, data, setData, subjects, tests, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
     enter: open, leave, ask, askName, guard, save, go, logout,
-  }), [account, ready, data, setData, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
+  }), [account, ready, data, setData, subjects, tests, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
 
   const submitPop = () => {
     if (!pop) return; const v = pop.val.trim();

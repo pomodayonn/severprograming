@@ -5,8 +5,9 @@
 // 前からある保存場所です（Manager が使う dao/idb.ts とは別）。
 // ・localStorage：画面のデータ（科目・テストなど）を JSON にして「runndesu.data.学生ID」に保存する
 // ・IndexedDB の "runndesu"：資料のファイルの中身（画像・PDF・文字起こし）を保存する
-// 11/12 からは、科目〜テストは Manager（dao/idb.ts の "runndesu-data"）が本当の保存場所で、
-// ここの localStorage は画面の表示用の写しとして使っている（ログイン時に Manager のデータにそろえる）
+// 11/12 からは、科目〜テストは Manager（dao/idb.ts の "runndesu-data"）が本当の保存場所。
+// 11/21 からは、画面はここの localStorage の科目・テストを見ない（この端末で初めてログインしたときに Manager へ移すためだけに読む）。
+// いま localStorage で使っているのは、資料の一覧（materials）だけ（MaterialManager ができたら Controller 経由にする）
 import type { Data, LocalAccount } from "../types";
 const A = "runndesu.local-accounts", D = (id: string) => `runndesu.data.${id}`;
 export async function sha(s: string): Promise<string> {
