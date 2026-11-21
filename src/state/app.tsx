@@ -108,7 +108,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ログアウトは Controller → AccountManager → NeonAuthClient の順に呼ぶ
   const leave = useCallback(() => { void controller.handleRequest(rRef.current.s, "logoutButton"); close(); }, [close]);
   const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
-  const logout = useCallback(async () => { if (await guard()) { await controller.handleRequest(rRef.current.s, "logoutButton"); close(); } }, [guard, close]);
+  /**
+   * ヘッダーの「ログアウト」（11/21：この端末のデータも消せるようにした）
+   * 1. 保存していないノートがあれば確認（guard）
+   * 2. 「消さずにログアウト」「この端末のデータも消してログアウト」「キャンセル」を選んでもらう
+   * 3. 消すときに、アカウントに送れていない変更があれば、もう一度確認してから消す
+   */
+  const logout = useCallback(async () => {
+    if (!(await guard())) return;
+    const v = await ask("ログアウトします。この端末に保存したデータも消しますか（学校のPCなど、ほかの人も使う端末なら消すのがおすすめです。資料と文字起こしはこの端末にしかないので、消すと戻せません）",
+      [{ label: "消さずにログアウト", value: "keep", primary: true }, { label: "この端末のデータも消してログアウト", value: "clear", danger: true }, { label: "キャンセル", value: "cancel" }]);
+    if (v === "cancel") return;
+    const s = rRef.current.s;
+    let r = await controller.handleRequest(s, "logoutButton", { clearLocal: v === "clear" });
+    if ((r.data as { unsent?: boolean } | undefined)?.unsent) {
+      const w = await ask("まだアカウントに送れていない変更があります（オフライン・お試しログインなど）。消すと、その変更は戻せません。消してログアウトしますか",
+        [{ label: "消してログアウト", value: "force", danger: true }, { label: "やめる", value: "cancel" }]);
+      if (w !== "force") return;
+      r = await controller.handleRequest(s, "logoutButton", { clearLocal: true, force: true });
+    }
+    if (r.error) { toast(r.error); return; }
+    if (v === "clear") toast("この端末のデータを消してログアウトしたよ");
+    close();
+  }, [guard, ask, close]);
 
   // 関数はすべて同じものを使い回すので、memo した部品は subjects・materials などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({

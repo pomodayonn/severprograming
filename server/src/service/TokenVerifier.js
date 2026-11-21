@@ -28,15 +28,15 @@ export class TokenVerifier {
    * @returns {Promise<string | null>}
    */
   async verify(authHeader) {
-        if (!this.jwks || !this.origin || !authHeader?.startsWith("Bearer ")) return null;
-          // 署名と期限（exp）に加えて、「誰が出したか（iss）」「誰あてか（aud）」「どの方式で署名したか」も確かめる
+    if (!this.jwks || !this.origin || !authHeader?.startsWith("Bearer ")) return null;
+    const token = authHeader.slice("Bearer ".length).trim(); // 「Bearer 」の後ろが JWT
+    try {
+      // 署名と期限（exp）に加えて、「誰が出したか（iss）」「誰あてか（aud）」「どの方式で署名したか」も確かめる
       const { payload } = await jwtVerify(token, this.jwks, {
         issuer: this.origin,
         audience: this.origin,
         algorithms: ["EdDSA"],
       });
-    try {
-      const { payload } = await jwtVerify(token, this.jwks); // 署名と期限（exp）を確かめる
       return typeof payload.sub === "string" ? payload.sub : null;
     } catch {
       return null; // 偽物・期限切れ・形がおかしい、のどれか

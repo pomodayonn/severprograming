@@ -85,6 +85,30 @@ export async function del(store: StoreName, key: IDBValidKey | IDBKeyRange): Pro
   tx.objectStore(store).delete(key); return done(tx);
 }
 
+/**
+ * この端末にある、その学生のデータを全部消す（ログアウトのときに「この端末のデータも消す」を選んだとき。11/21）
+ * ・科目・学習項目・前提項目・ノート・テスト・まだ送っていない削除の記録・前回同期した日時
+ * ・資料と中身（資料には学生IDの欄がないので、その学生の学習項目から探す）
+ * ほかの学生のデータは消さない。Neon（アカウント）のデータも消さない（次にログインすれば受け取れる）
+ */
+export async function clearStudentData(studentId: string): Promise<void> {
+  // 資料は学習項目IDでまとまっているので、学習項目を消す前に、その学生の学習項目IDを集めておく
+  const itemIds = (await getAllBy<{ itemId: string }>("learningItems", "studentId", studentId)).map(i => i.itemId);
+  for (const itemId of itemIds) {
+    for (const m of await getAllBy<{ materialId: string }>("materials", "itemId", itemId)) {
+      await del("materials", m.materialId);
+      await del("materialContents", m.materialId);
+    }
+  }
+  // 学生IDの索引がある入れ物は、その学生の分をまとめて消す（キーの種類は入れ物ごとに違うので getAllKeys で取る）
+  const db = await openDb();
+  for (const store of ["subjects", "learningItems", "prerequisites", "notes", "tests", "deletions"] as const) {
+    const keys = await wrap(db.transaction(store).objectStore(store).index("studentId").getAllKeys(studentId));
+    for (const key of keys) await del(store, key);
+  }
+  await del("meta", `lastSyncedAt:${studentId}`);
+}
+
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */
 export interface Deletion { table: string; key: string; studentId: string; at: string }
 export async function recordDeletion(table: string, key: string, studentId: string): Promise<void> {
