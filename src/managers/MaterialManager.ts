@@ -1,5 +1,5 @@
 // MaterialManager（Entity Manager／フロントエンド）：講義資料と文字起こしを管理する
-// 担当：福山（11/21）。資料と文字起こしは端末（IndexedDB）だけに保存し、Neon には送らない（同期しない）
+// 担当：（11/21）。資料と文字起こしは端末（IndexedDB）だけに保存し、Neon には送らない（同期しない）
 //
 // 【このファイルで何が起きているか】
 // 資料の「追加・文字起こし・見る・直す・消す」の確認係です（Manager）。
@@ -10,14 +10,13 @@
 //   3. 画像・PDF なら文字を読み取り（services/ocr.ts）、「資料名.txt」として保存（同じ名前があれば「資料名(2).txt」）
 //   4. 進み具合は ProgressListener の onProgress(パーセント) で画面に知らせる
 // テキストファイルは .txt を作らず、そのまま文字起こしとして使う
-// 最後の toScreenMaterial は、画面の形（types.ts の MaterialMeta）への変換（移行中のつなぎ）
+// 11/21 道B：画面も beans の Material をそのまま使うので、画面の形への変換（toScreenMaterial）はなくした
 import { Material } from "../beans/Material";
 import { now } from "../beans/DateTime";
 import type { MaterialDAO } from "../dao/MaterialDAO";
 import type { ProgressListener } from "../interfaces/ProgressListener";
 import { transcribe as readText, type OcrResult } from "../services/ocr";
 import { MAX_FILE, txtName } from "../lib/logic";
-import type { MaterialMeta as ScreenMaterial } from "../types";
 import { AppError, newId } from "./common";
 
 /** 画面に出す文を持ったエラー */
@@ -123,15 +122,5 @@ export class MaterialManager {
     if (file.type === "application/pdf" || ext === "pdf") return "pdf";
     if (file.type.startsWith("text/") || ext === "txt") return "text";
     return null;
-  }
-
-  // ---------- 移行中のつなぎ ----------
-
-  /** beans の Material を画面の形（types.ts の MaterialMeta）にする */
-  toScreenMaterial(m: Material): ScreenMaterial {
-    return {
-      id: m.materialId, itemId: m.itemId, name: m.fileName, type: m.fileType as FileType, size: m.fileSize,
-      srcId: m.sourceMaterialId ?? undefined, at: Date.parse(m.addedAt) || 0,
-    };
   }
 }

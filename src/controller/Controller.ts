@@ -14,8 +14,10 @@
 //   前はすべて文字列だったので、配列は JSON にしたりカンマでつないだり、数は String() で文字にしたりしていた。
 //   いまは配列・数・true/false をそのまま渡せて、イベントIDや名前を打ち間違えると型チェック（npm run build）で分かる。
 //   Java でいうと、メソッドの引数に型を書いておくのと同じ
-import type { El, FrameType, MaterialMeta as ScreenMaterial, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
-import type { Proposal } from "../services/ai";
+// 11/21 道B：画面も beans（Subject・LearningItem・Note・NotePart・Test・Question・Attempt・Material・Suggestion）をそのまま使うようにした。
+//   前は「画面用の形」と「保存用の形（beans）」が別々にあり、ここで行き来のたびに変換していた（toScreenTest・toElements など）。
+//   今は Manager が返した beans をそのまま画面に返す。画面が問題ID・受験IDを持っているので、探し直しもしない
+import type { FrameType, Screen, Student } from "../types";
 import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountManager } from "../managers/AccountManager";
@@ -37,9 +39,14 @@ import { MaterialDAO } from "../dao/MaterialDAO";
 import { NoteDAO } from "../dao/NoteDAO";
 import { TestDAO } from "../dao/TestDAO";
 import { SendContent } from "../beans/SendContent";
-import { Suggestion } from "../beans/Suggestion";
+import type { Suggestion } from "../beans/Suggestion";
 import { Note } from "../beans/Note";
-import { textToWords, wordsToText } from "../lib/words";
+import type { NotePart } from "../beans/NotePart";
+import type { Subject } from "../beans/Subject";
+import type { LearningItem } from "../beans/LearningItem";
+import type { Prerequisite } from "../beans/Prerequisite";
+import type { Test } from "../beans/Test";
+import type { Material } from "../beans/Material";
 
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
 /** data は Manager が返したもの（作った科目など）。画面はこれを使って表示を変える */
@@ -55,8 +62,13 @@ export interface ControllerExtra { file?: File; listener?: ProgressListener }
 type NoParams = Record<string, never>;
 /** ログアウトのとき（どちらも省略したら false） */
 type LogoutParams = { clearLocal?: boolean; force?: boolean };
-/** G010 で1問を指定するとき（index は画面の問題番号。0から） */
-type QuestionAt = { testId: string; index: number };
+/** G010 で1問を指定するとき（問題ID） */
+type QuestionOf = { testId: string; questionId: string };
+
+/** G003:loadSubjects で返すもの：その学生のデータを、beans のまま種類ごとに並べたもの */
+export interface StudentData {
+  subjects: Subject[]; items: LearningItem[]; prerequisites: Prerequisite[]; notes: Note[]; tests: Test[]; materials: Material[];
+}
 
 /**
  * 「画面ID:イベントID」ごとに、params に入れるものを決めた表。
@@ -85,19 +97,19 @@ export type RequestParams = {
   "G007:getContent": { materialId: string };
   "G005:deleteMaterial": { materialId: string; withTranscript: boolean };
   "G006:correctTranscript": { materialId: string; text: string };
-  "G004:saveNote": { studentId: string; itemId: string; els: El[] };
-  "G007:summarize": { studentId: string; itemId: string; text: string; frameTypes: FrameType[]; els: El[] };
-  "G007:approve": { studentId: string; itemId: string; els: El[]; proposals: Proposal[] };
-  "G008:createWordTest": { studentId: string; itemId: string; kind: TestKind; count: number; partIds?: string[] };
+  "G004:saveNote": { studentId: string; itemId: string; parts: readonly NotePart[] };
+  "G007:summarize": { studentId: string; itemId: string; text: string; frameTypes: FrameType[]; parts: readonly NotePart[] };
+  "G007:approve": { studentId: string; itemId: string; parts: readonly NotePart[]; suggestions: Suggestion[] };
+  "G008:createWordTest": { studentId: string; itemId: string; testType: TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING; count: number; partIds?: string[] };
   "G008:createEssayTest": { studentId: string; itemId: string; text: string; count: number };
   "G009:submit": { testId: string; answers: string[] };
-  "G010:explain": QuestionAt;
+  "G010:explain": QuestionOf;
   "G010:getAttempts": { testId: string };
-  "G010:editQuestion": QuestionAt & { question: string; modelAnswer: string };
-  "G010:regenerateQuestion": QuestionAt & { extra: string };
-  "G010:editAnswer": QuestionAt & { attemptNo: number; answer: string };
-  "G010:editExplanation": QuestionAt & { explanation: string };
-  "G010:regenerateExplanation": QuestionAt & { extra: string };
+  "G010:editQuestion": QuestionOf & { question: string; modelAnswer: string };
+  "G010:regenerateQuestion": QuestionOf & { extra: string };
+  "G010:editAnswer": QuestionOf & { attemptId: string; answer: string };
+  "G010:editExplanation": QuestionOf & { explanation: string };
+  "G010:regenerateExplanation": QuestionOf & { extra: string };
 } & {
   // ログアウトはヘッダーのボタンなので、どの画面からでも。clearLocal：この端末のデータも消すか、force：送れていない変更があっても消すか
   [S in Screen as `${S}:logoutButton`]: LogoutParams;
@@ -193,11 +205,10 @@ export class Controller {
         // ---- G004 学習画面（資料）・G005 資料表示・G006 文字起こし修正（11/21 福山：MaterialManager） ----
         case "G004:uploadMaterial": { // 「＋ 資料の追加」：ファイルは extra.file。保存した資料を返す（文字起こしは続けて G004:transcribe）
           if (!extra.file) return { error: "ファイルを選んでください" };
-          return { data: this.materialManager.toScreenMaterial(await this.materialManager.upload(p("G004:uploadMaterial").itemId, extra.file)) };
+          return { data: await this.materialManager.upload(p("G004:uploadMaterial").itemId, extra.file) };
         }
         case "G004:transcribe": { // 文字起こし：進み具合は extra.listener に知らせる。できた .txt と、読み取れなかったページを返す
-          const r = await this.materialManager.transcribe(p("G004:transcribe").materialId, extra.listener ?? { onProgress: () => {} });
-          return { data: { transcript: this.materialManager.toScreenMaterial(r.transcript), failedPages: r.failedPages } };
+          return { data: await this.materialManager.transcribe(p("G004:transcribe").materialId, extra.listener ?? { onProgress: () => {} }) };
         }
         case "G004:getContent": // 資料の中身（学習画面の「資料と並べる」・資料表示・文字起こし修正・AIに送る内容で使う）
         case "G005:getContent":
@@ -214,76 +225,68 @@ export class Controller {
           await this.materialManager.correctTranscript(materialId, text);
           return {};
         }
-        case "G004:saveNote": { // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。els は画面の部品
-          const { studentId, itemId, els } = p("G004:saveNote");
-          await this.noteManager.saveElements(studentId, itemId, els);
+        case "G004:saveNote": { // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。parts は下書きの部品
+          const { studentId, itemId, parts } = p("G004:saveNote");
+          await this.noteManager.saveParts(studentId, itemId, parts);
           return {};
         }
         // ---- G008 テスト作成 ----
         case "G008:createWordTest": { // 単語テスト（AIを使わない）。partIds は「枠を選ぶ」のときだけ
-          const { studentId, itemId, kind, count, partIds } = p("G008:createWordTest");
-          const type = TestManager.typeOf(kind) as TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING;
-          const r = await this.testManager.createWordTest(itemId, studentId, type, count, partIds);
-          return { data: { test: this.testManager.toScreenTest(r.test), shortage: r.shortage } };
+          const { studentId, itemId, testType, count, partIds } = p("G008:createWordTest");
+          return { data: await this.testManager.createWordTest(itemId, studentId, testType, count, partIds) }; // { test, shortage }
         }
         // ---- G007 送信内容・提案確認（AIまとめ） ----
-        case "G007:summarize": { // 送信：AIに送って提案をもらう。els は今のノート（下書き）
-          const { studentId, itemId, text, frameTypes, els } = p("G007:summarize");
-          const note = await this.screenNote(studentId, itemId, els);
-          const list = await this.aiSummaryManager.summarize(sendContentOf(text), note, frameTypes);
-          return { data: list.map((s, i) => toProposal(s, i)) };
+        case "G007:summarize": { // 送信：AIに送って提案（Suggestion）をもらう。parts は今のノート（下書き）
+          const { studentId, itemId, text, frameTypes, parts } = p("G007:summarize");
+          return { data: await this.aiSummaryManager.summarize(sendContentOf(text), await this.draftNote(studentId, itemId, parts), frameTypes) };
         }
-        case "G007:approve": { // 承認：選んだ提案を入れたノートを返す（保存はしない。学習画面の「保存」で保存する）
-          const { studentId, itemId, els, proposals } = p("G007:approve");
-          const note = await this.screenNote(studentId, itemId, els);
-          return { data: this.noteManager.toElements(this.aiSummaryManager.mergeApproved(note, proposals.map(fromProposal))) };
+        case "G007:approve": { // 承認：選んだ提案を入れたノートの部品を返す（保存はしない。学習画面の「保存」で保存する）
+          const { studentId, itemId, parts, suggestions } = p("G007:approve");
+          return { data: this.aiSummaryManager.mergeApproved(await this.draftNote(studentId, itemId, parts), suggestions).parts };
         }
         case "G008:createEssayTest": { // 記述テスト（AIで作る）。text は G007 で決めた送る内容
           const { studentId, itemId, text, count } = p("G008:createEssayTest");
-          return { data: this.testManager.toScreenTest(await this.testManager.createEssayTest(itemId, studentId, sendContentOf(text), count)) };
+          return { data: await this.testManager.createEssayTest(itemId, studentId, sendContentOf(text), count) };
         }
         // ---- G009 テスト解答 ----
         case "G009:submit": { // 解答：初回も解き直しも、新しい受験として保存して採点する
           const { testId, answers } = p("G009:submit");
-          await this.testManager.submitAnswers(testId, answers);
-          return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
+          return { data: await this.testManager.submitAnswers(testId, answers) }; // 保存した受験（Attempt）
         }
         // ---- G010 テスト結果 ----
-        case "G010:explain": { // 解説（AI）
-          const { testId, index } = p("G010:explain");
-          return { data: await this.testManager.explain(testId, await this.testManager.questionIdAt(testId, index)) };
+        case "G010:explain": { // 解説（AI）。すでにあれば保存してある解説を返す
+          const { testId, questionId } = p("G010:explain");
+          return { data: await this.testManager.explain(testId, questionId) };
         }
         case "G010:getAttempts": // 過去の受験の一覧（1回目から順に）
-          return { data: this.testManager.toScreenAttempts(await this.testManager.getTest(p("G010:getAttempts").testId)) };
+          return { data: await this.testManager.getAttempts(p("G010:getAttempts").testId) };
         // ---- G010 テストを直す ----
         case "G010:editQuestion": { // 問題と模範解答を手で直す（記述テストだけ）
-          const { question, modelAnswer, ...at } = p("G010:editQuestion");
-          return this.fixQuestion(at, (testId, questionId) => this.testManager.editQuestion(testId, questionId, question, modelAnswer));
+          const { testId, questionId, question, modelAnswer } = p("G010:editQuestion");
+          await this.testManager.editQuestion(testId, questionId, question, modelAnswer);
+          return {};
         }
-        case "G010:regenerateQuestion": { // 問題と模範解答をAIで作り直す（記述テストだけ・1回分）。extra は追加の指示
-          const { extra: ins, ...at } = p("G010:regenerateQuestion");
-          return this.fixQuestion(at, (testId, questionId) => this.testManager.regenerateQuestion(testId, questionId, ins));
+        case "G010:regenerateQuestion": { // 問題と模範解答をAIで作り直す（記述テストだけ・1回分）。extra は追加の指示。作り直した問題を返す
+          const { testId, questionId, extra: ins } = p("G010:regenerateQuestion");
+          return { data: await this.testManager.regenerateQuestion(testId, questionId, ins) };
         }
-        case "G010:editAnswer": { // 自分の解答を直す（「意味→用語」以外）。attemptNo は何回目の受験か
-          const { testId, index, attemptNo, answer } = p("G010:editAnswer");
-          await this.testManager.editAnswer(testId, await this.testManager.attemptIdOf(testId, attemptNo), await this.testManager.questionIdAt(testId, index), answer);
-          const test = await this.testManager.getTest(testId);
-          return { data: { test: this.testManager.toScreenTest(test), attempts: this.testManager.toScreenAttempts(test) } };
+        case "G010:editAnswer": { // 自分の解答を直す（「意味→用語」以外）。attemptId はどの回の受験か
+          const { testId, attemptId, questionId, answer } = p("G010:editAnswer");
+          await this.testManager.editAnswer(testId, attemptId, questionId, answer);
+          return {};
         }
         case "G010:editExplanation": { // 解説を手で直す
-          const { explanation, ...at } = p("G010:editExplanation");
-          return this.fixQuestion(at, (testId, questionId) => this.testManager.editExplanation(testId, questionId, explanation));
+          const { testId, questionId, explanation } = p("G010:editExplanation");
+          await this.testManager.editExplanation(testId, questionId, explanation);
+          return {};
         }
-        case "G010:regenerateExplanation": { // 解説をAIで作り直す（1回分）。extra は追加の指示
-          const { extra: ins, ...at } = p("G010:regenerateExplanation");
-          return this.fixQuestion(at, (testId, questionId) => this.testManager.regenerateExplanation(testId, questionId, ins));
+        case "G010:regenerateExplanation": { // 解説をAIで作り直す（1回分）。extra は追加の指示。作り直した解説を返す
+          const { testId, questionId, extra: ins } = p("G010:regenerateExplanation");
+          return { data: await this.testManager.regenerateExplanation(testId, questionId, ins) };
         }
-        // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
-        case "G003:loadSubjects": {
-          const subjects = await this.loadScreenSubjects(p("G003:loadSubjects").studentId);
-          const [tests, materials] = await Promise.all([this.loadScreenTests(subjects), this.loadScreenMaterials(subjects)]);
-          return { data: { subjects, tests, materials } };
-        }
+        // ---- ログインした直後・保存したあと：端末のデータベース（アカウントから受け取った分）を beans のまま返す ----
+        case "G003:loadSubjects":
+          return { data: await this.loadStudentData(p("G003:loadSubjects").studentId) };
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       // 送れていない変更があって消すのを止めたときは、ログアウトせずに data で unsent を返す（画面が確認を出す）
@@ -304,77 +307,40 @@ export class Controller {
   // handleRequest は async（結果を待つ）なので、ドラッグ中や描画中には使いにくい。
   // そこでこの2つだけは、待たずに結果を返すメソッドにしてある。中身は NoteManager に任せる（画面 → Controller → Manager の順は同じ）
 
-  /** G004 ノート：id の部品が大きくなって下の部品と重なりそうなら、下の部品をずらした部品を返す（保存はしない） */
-  adjustNoteElements(els: El[], id: string): El[] {
-    return this.noteManager.adjustElements(els, id);
+  /** G004 ノート：partId の部品が大きくなって下の部品と重なりそうなら、下の部品をずらした部品を返す（保存はしない） */
+  adjustNoteParts(parts: readonly NotePart[], partId: string): NotePart[] {
+    return this.noteManager.adjustOverlap(new Note({ parts: [...parts] }), partId).parts;
   }
 
   /** G004 右サイドバーの目次：見出しと枠を上から順に返す */
-  tableOfContents(els: El[]): TocEntry[] {
-    return this.noteManager.getTableOfContents(new Note({ parts: this.noteManager.toParts(els, "", "") }));
+  tableOfContents(parts: readonly NotePart[]): TocEntry[] {
+    return this.noteManager.getTableOfContents(new Note({ parts: [...parts] }));
+  }
+
+  /** 保存してあるノートの中身を、画面の下書きの部品に入れ替えたノート（保存はしない。AIまとめで「今のノート」として使う） */
+  private async draftNote(studentId: string, itemId: string, parts: readonly NotePart[]): Promise<Note> {
+    return new Note({ ...await this.noteManager.getNote(itemId, studentId), parts: [...parts] });
   }
 
   /**
-   * G010 の「直す」で共通の流れ：画面の問題番号から問題IDを探して fix で直し、直したあとのテストを画面の形で返す
-   * （editQuestion・regenerateQuestion・editExplanation・regenerateExplanation が使う）
+   * その学生の科目・学習項目・前提項目・ノート・テスト・資料を、Manager から beans のまま読む。
+   * 別の端末で作った分も、ログインしたときに画面に出せるようにするため。科目ごと・学習項目ごとに並べて（Promise.all で同時に）読む
    */
-  private async fixQuestion({ testId, index }: QuestionAt, fix: (testId: string, questionId: string) => Promise<unknown>): Promise<ControllerResult> {
-    await fix(testId, await this.testManager.questionIdAt(testId, index));
-    return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
-  }
-
-  /** 移行中のつなぎ：画面の部品から、その学習項目のノート（beans の Note）を作る。保存はしない */
-  private async screenNote(studentId: string, itemId: string, els: El[]): Promise<Note> {
-    const base = await this.noteManager.getNote(itemId, studentId);
-    return new Note({ ...base, parts: this.noteManager.toParts(els, base.noteId, studentId) });
-  }
-
-  /** 移行中のつなぎ：画面に出している学習項目の資料（ストレージ）を、画面の形にして返す（学習項目ごとに並べて読む） */
-  private async loadScreenMaterials(subjects: ScreenSubject[]): Promise<ScreenMaterial[]> {
-    const lists = await Promise.all(subjects.flatMap(s => s.items).map(i => this.materialManager.getMaterials(i.id)));
-    return lists.flat().map(m => this.materialManager.toScreenMaterial(m));
-  }
-
-  /** 移行中のつなぎ：画面に出している学習項目のテストを、画面の形にして返す（学習項目ごとに並べて読む） */
-  private async loadScreenTests(subjects: ScreenSubject[]): Promise<ScreenTest[]> {
-    const lists = await Promise.all(subjects.flatMap(s => s.items).map(i => this.testManager.getTests(i.id)));
-    return lists.flat().map(t => this.testManager.toScreenTest(t));
-  }
-
-  /**
-   * 移行中のつなぎ：科目・学習項目・前提項目・ノートを Manager から読み、画面の形（types.ts の Subject）にする。
-   * 別の端末で作った分も、ログインしたときに画面に出せるようにするため。
-   * 11/21：前は1つずつ順番に読んでいたが、科目ごと・学習項目ごとに並べて（Promise.all で同時に）読むようにした
-   */
-  private async loadScreenSubjects(studentId: string): Promise<ScreenSubject[]> {
-    return Promise.all((await this.subjectManager.getSubjects(studentId)).map(async sub => {
-      const { items, prerequisites } = await this.itemManager.getRelationMap(sub.subjectId);
-      const its = await Promise.all(items.map(async it => {
-        const note = await this.noteManager.getNote(it.itemId, studentId);
-        return {
-          id: it.itemId, name: it.itemName,
-          prereqs: prerequisites.filter(p => p.itemId === it.itemId).map(p => p.prereqItemId),
-          note: { els: this.noteManager.toElements(note), savedAt: note.lastSavedAt ? Date.parse(note.lastSavedAt) : 0 },
-        };
-      }));
-      return { id: sub.subjectId, name: sub.subjectName, items: its };
-    }));
+  private async loadStudentData(studentId: string): Promise<StudentData> {
+    const subjects = await this.subjectManager.getSubjects(studentId);
+    const maps = await Promise.all(subjects.map(s => this.itemManager.getRelationMap(s.subjectId)));
+    const items = maps.flatMap(m => m.items), prerequisites = maps.flatMap(m => m.prerequisites);
+    const [notes, tests, materials] = await Promise.all([
+      Promise.all(items.map(i => this.noteManager.getNote(i.itemId, studentId))),
+      Promise.all(items.map(i => this.testManager.getTests(i.itemId))).then(l => l.flat()),
+      Promise.all(items.map(i => this.materialManager.getMaterials(i.itemId))).then(l => l.flat()),
+    ]);
+    return { subjects, items, prerequisites, notes, tests, materials };
   }
 }
 
 /** 送る文章から SendContent を作る */
 const sendContentOf = (text: string) => new SendContent({ text, charCount: text.length });
-
-/** 提案（beans の Suggestion）を画面の形（Proposal）にする。単語枠は「用語：意味」の行を words に分ける */
-function toProposal(s: Suggestion, i: number): Proposal {
-  const words = s.frameType === "word" ? textToWords(s.content) : undefined;
-  return { id: `p${i}`, ft: s.frameType as FrameType, targetId: s.targetPartId ?? undefined, text: s.frameType === "word" ? "" : s.content, words };
-}
-/** 画面の提案（Proposal）を beans の Suggestion に戻す（画面で選んだものなので approved = true） */
-function fromProposal(p: Proposal): Suggestion {
-  const content = p.ft === "word" ? wordsToText(p.words ?? []) : p.text;
-  return new Suggestion({ targetPartId: p.targetId ?? null, frameType: p.ft, content, approved: true });
-}
 
 /** アプリ全体で1つだけ使う Controller */
 export const controller = new Controller();

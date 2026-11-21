@@ -6,6 +6,7 @@
 // ・Viewer ：中身の種類（文字・PDF・画像）に合わせて表示する
 // ・G005 の「削除」→ Controller（G005:deleteMaterial）→ MaterialManager.delete
 // ・G006 では「元の文字→直した文字」の形の指示で、文字起こしの文字をまとめて置き換えられる。「確定」→ Controller（G006:correctTranscript）
+// 11/21 道B：資料は beans の Material のまま使う（materialId・fileName・fileType・sourceMaterialId）
 import { useEffect, useState } from "react";
 import { useApp } from "../state/app";
 import { controller } from "../controller/Controller";
@@ -39,27 +40,27 @@ export function Viewer({ type, v }: { type: string; v: ReturnType<typeof useMate
 }
 export function MaterialView() {
   const { materials, reload, route, go, ask, account } = useApp();
-  const m = materials.find(x => x.id === route.materialId);
-  const v = useMaterialContent("G005", m?.id);
+  const m = materials.find(x => x.materialId === route.materialId);
+  const v = useMaterialContent("G005", m?.materialId);
   const back = () => go({ s: "G004", subjectId: route.subjectId, itemId: route.itemId });
   if (!m || !account) return <Shell center={<><p>資料がありません。</p><button className="btn" onClick={back}>戻る</button></>} />;
   const del = async () => {
-    const tx = materials.filter(x => x.srcId === m.id); let both = false;
-    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.name).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
+    const tx = materials.filter(x => x.sourceMaterialId === m.materialId); let both = false;
+    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.fileName).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
     else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
-    const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.id, withTranscript: both });
+    const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.materialId, withTranscript: both });
     if (r.error) return toast(r.error);
     await reload(); toast("資料を削除したよ"); back();
   };
   return <Shell center={<>
-    <div className="row"><span className="sp" /><span className="fname">{m.name}</span><button className="btn sm danger" onClick={del}>削除</button></div>
-    <div className="vbox"><Viewer type={m.type} v={v} /></div>
-    <div className="bar2">{m.type === "transcript" ? <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button> : <span />}<button className="btn" onClick={back}>戻る</button></div></>} />;
+    <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span><button className="btn sm danger" onClick={del}>削除</button></div>
+    <div className="vbox"><Viewer type={m.fileType} v={v} /></div>
+    <div className="bar2">{m.fileType === "transcript" ? <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button> : <span />}<button className="btn" onClick={back}>戻る</button></div></>} />;
 }
 export function TranscriptEdit() {
   const { materials, route, nav, account } = useApp();
-  const m = materials.find(x => x.id === route.materialId), src = materials.find(x => x.id === m?.srcId);
-  const cur = useMaterialContent("G006", m?.id), orig = useMaterialContent("G006", src?.id);
+  const m = materials.find(x => x.materialId === route.materialId), src = materials.find(x => x.materialId === m?.sourceMaterialId);
+  const cur = useMaterialContent("G006", m?.materialId), orig = useMaterialContent("G006", src?.materialId);
   const [text, setText] = useState<string | null>(null), [ins, setIns] = useState(""), [msg, setMsg] = useState("");
   useEffect(() => { if (cur?.text !== undefined) setText(cur.text); }, [cur]);
   if (!m || !account) return null;
@@ -70,11 +71,11 @@ export function TranscriptEdit() {
     setText(replaceText(text ?? "", r)); setMsg(`${n}か所を直しました`); setIns("");
   };
   return <Shell center={<>
-    <div className="row"><span className="sp" /><span className="fname">{m.name}</span></div>
-    <div className="two"><div><h3>元の資料</h3><div className="vbox">{src ? <Viewer type={src.type} v={orig} /> : <p className="mute">元の資料がありません（文字起こしだけ表示しています）</p>}</div></div>
+    <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span></div>
+    <div className="two"><div><h3>元の資料</h3><div className="vbox">{src ? <Viewer type={src.fileType} v={orig} /> : <p className="mute">元の資料がありません（文字起こしだけ表示しています）</p>}</div></div>
       <div><h3>文字起こし</h3><textarea className="tx" style={{ height: 330 }} value={text ?? ""} onChange={e => setText(e.target.value)} /></div></div></>}
     right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" onClick={async () => {
-      const r = await controller.handleRequest("G006", "correctTranscript", { materialId: m.id, text: text ?? "" });
+      const r = await controller.handleRequest("G006", "correctTranscript", { materialId: m.materialId, text: text ?? "" });
       if (r.error) return toast(r.error);
       toast("上書き保存したよ"); back();
     }}>確定</button><button className="btn line" onClick={back}>キャンセル</button></div>
