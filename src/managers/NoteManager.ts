@@ -10,11 +10,8 @@ import { now } from "../beans/DateTime";
 import { FT } from "../lib/logic";
 import { textToWords } from "../lib/words";
 import type { NoteDAO } from "../dao/NoteDAO";
-import { AppError, newId, pushQuietly, type ChangePusher } from "./common";
+import { newId, pushQuietly, type ChangePusher } from "./common";
 import type { SuggestionApplier } from "./AiSummaryManager";
-
-/** 画面に出す文を持ったエラー */
-export class NoteError extends AppError {}
 
 /** 目次の1行（右サイドバー用） */
 export interface TocEntry { partId: string; kind: "heading" | "frame"; level: number; label: string; y: number }
@@ -98,12 +95,6 @@ export class NoteManager implements SuggestionApplier {
       }
     }
     return n;
-  }
-
-  /** 承認したAIの提案を反映して保存する（AiSummaryManager.applyApproved() から呼ばれる） */
-  async applySuggestions(noteId: string, suggestions: Suggestion[]): Promise<void> {
-    const note = await this.noteDAO.findById(noteId); if (!note) throw new NoteError("ノートが見つかりません");
-    await this.saveNote(this.mergeSuggestions(note, suggestions));
   }
 
   /** 単語テスト用に、単語枠から用語と意味が両方入っている単語を取り出す（partIds を渡したら、その枠だけ。TestManager から呼ぶ） */

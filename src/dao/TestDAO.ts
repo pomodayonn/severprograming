@@ -73,8 +73,6 @@ export class TestDAO {
   async updateLastTaken(testId: string, at: string = now()): Promise<void> {
     await this.change(testId, test => { test.lastTakenAt = at; });
   }
-  /** 学習項目を作ったときに、空のテストフォルダを作る。テストは学習項目IDでまとまるので、端末では入れ物を作る必要はない */
-  async createTestFolder(_itemId: string): Promise<void> { /* 何もしない（クラス設計に合わせて用意） */ }
   /** 学習項目を消したときに、テストフォルダを中のテストごと消す（Neon では学習項目と一緒に消える） */
   async deleteTestFolder(itemId: string): Promise<void> {
     for (const t of await getAllBy<Test>("tests", "itemId", itemId)) await del("tests", t.testId);

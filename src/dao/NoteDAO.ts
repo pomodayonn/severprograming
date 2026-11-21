@@ -11,7 +11,7 @@ import { Note } from "../beans/Note";
 import { NotePart } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put } from "./idb";
+import { del, getAllBy, put } from "./idb";
 import { newId } from "../lib/logic";
 
 /** 保存しておいた形から、ノート・部品・単語の beans に戻す */
@@ -21,11 +21,6 @@ export class NoteDAO {
   /** その学習項目のノートを読み込む（なければ null） */
   async findByItem(itemId: string): Promise<Note | null> {
     const [r] = await getAllBy<Note>("notes", "itemId", itemId);
-    return r ? toNote(r) : null;
-  }
-  /** ノートIDでノートを読み込む（なければ null）。AIの提案を反映するときに使う */
-  async findById(noteId: string): Promise<Note | null> {
-    const r = await get<Note>("notes", noteId);
     return r ? toNote(r) : null;
   }
   /** 学習項目を作ったときに、空のノートを作る */

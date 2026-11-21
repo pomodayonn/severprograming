@@ -3,10 +3,11 @@
 // AIへの送信は services/ai.ts（JWT を付けて ApiController に HTTP で頼む）を使う
 //
 // 【このファイルで何が起きているか】
-// 「AIでまとめる」の流れを進める係です（Manager）。G007 の画面で使う予定。
+// 「AIでまとめる」の流れを進める係です（Manager）。G007 の画面で使う。
 // 1. summarize：送る内容をAIに渡し、「この枠にこう書いたら？」という提案（Suggestion）を受け取る
-// 2. 学生が提案を直したり、使う・使わないを選んだりする（editSuggestion・setApproved）
-// 3. applyApproved：使うと決めた提案だけを NoteManager に渡して、ノートに書き込む
+// 2. 学生が画面で提案を直したり、使う・使わないを選んだりする（画面の中だけで行う）
+// 3. mergeApproved：使うと決めた提案だけを NoteManager に渡して、提案を入れたノートを返す。
+//    保存はしない（「ノートは保存ボタンを押したときだけ保存」の決まりのため）
 import { Suggestion } from "../beans/Suggestion";
 import type { SendContent } from "../beans/SendContent";
 import type { Note } from "../beans/Note";
@@ -16,18 +17,14 @@ import { organize } from "../services/ai";
 import { wordsToText } from "../lib/words";
 import type { SendContentManager } from "./SendContentManager";
 
-/** NoteManager のうち、AiSummaryManager が使う部分（W2 で東の NoteManager を渡す） */
+/** NoteManager のうち、AiSummaryManager が使う部分 */
 export interface SuggestionApplier {
-  applySuggestions(noteId: string, suggestions: Suggestion[]): Promise<void>;
   /** 保存せずに、提案を入れたノートを返す */
   mergeSuggestions(note: Note, suggestions: Suggestion[]): Note;
 }
 
 export class AiSummaryManager {
-  constructor(private readonly sendContentManager: SendContentManager, private noteManager: SuggestionApplier | null = null) {}
-
-  /** NoteManager ができたらここで渡す */
-  setNoteManager(nm: SuggestionApplier) { this.noteManager = nm; }
+  constructor(private readonly sendContentManager: SendContentManager, private readonly noteManager: SuggestionApplier) {}
 
   /**
    * AIに送り、枠の種類ごとに振り分けた提案のリストを受け取る。
@@ -48,28 +45,11 @@ export class AiSummaryManager {
     return all;
   }
 
-  /** 送った後、AIの提案の中身を学生が編集する */
-  editSuggestion(suggestion: Suggestion, content: string): Suggestion { return new Suggestion({ ...suggestion, content }); }
-
-  /** 提案ごとに承認するかを決める */
-  setApproved(suggestion: Suggestion, approved: boolean): Suggestion { return new Suggestion({ ...suggestion, approved }); }
-
   /**
    * 承認した提案だけを入れたノートを返す（保存はしない）。G007 の「承認」で使う。
    * 画面ではこれを下書きにして、学習画面の「保存」を押したときに本当に保存する（勝手に保存しないため）
    */
   mergeApproved(note: Note, suggestions: Suggestion[]): Note {
-    if (!this.noteManager) throw new Error("NoteManager がまだつながっていません");
     return this.noteManager.mergeSuggestions(note, suggestions.filter(s => s.approved));
-  }
-
-  /** 承認した提案だけを NoteManager の applySuggestions() でノートに反映し、残りは捨てる。反映した数を返す */
-  async applyApproved(noteId: string, suggestions: Suggestion[]): Promise<number> {
-    const ok = suggestions.filter(s => s.approved);
-    if (ok.length) {
-      if (!this.noteManager) throw new Error("NoteManager がまだつながっていません");
-      await this.noteManager.applySuggestions(noteId, ok);
-    }
-    return ok.length;
   }
 }

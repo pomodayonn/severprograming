@@ -22,9 +22,6 @@ import { AppError, newId } from "./common";
 /** 画面に出す文を持ったエラー */
 export class MaterialError extends AppError {}
 
-/** 資料の種類。transcript は文字起こし（.txt） */
-export type FileType = "image" | "pdf" | "text" | "transcript";
-
 /** 端末に保存する。失敗したら（ほとんどは容量不足）画面に出す文のエラーにする */
 async function saveOrFail(save: () => Promise<void>): Promise<void> {
   try { await save(); } catch { throw new MaterialError("保存容量が足りません"); }

@@ -40,8 +40,6 @@ export class MaterialDAO {
   async delete(materialId: string): Promise<void> {
     await del("materials", materialId); await del("materialContents", materialId);
   }
-  /** 学習項目を作ったときに、空のストレージを作る。資料は学習項目IDでまとまるので、入れ物を作る必要はない */
-  async createStorage(_itemId: string): Promise<void> { /* 何もしない（クラス設計に合わせて用意） */ }
   /** 学習項目を消したときに、ストレージを中の資料ごと消す */
   async deleteStorage(itemId: string): Promise<void> {
     for (const m of await getAllBy<Material>("materials", "itemId", itemId)) await this.delete(m.materialId);

@@ -1,69 +1,14 @@
-// SendContentManager（Entity Manager／フロントエンド）：AIに送る内容を作る専用のクラス
-// 担当：）。ノートまとめと記述テスト作成の両方で使う（どちらも G007 の画面）
+// SendContentManager（Entity Manager／フロントエンド）：AIに送る内容を、1回に送れる量（1万文字）ごとに分ける
+// 担当：）。ノートまとめ（AiSummaryManager）で使う
 //
 // 【このファイルで何が起きているか】
-// AIに送る文章を用意する係です（Manager）。G007 の画面で使う予定（福山さんのサーバーができたらつなぐ）。
-// 1. 選んだ資料（文字起こし）とノートの枠から文章を集める（createContent）
-// 2. 文字数から「何回分のAI利用になるか」を数える（1万文字ごとに1回。countCalls）
-// 3. 今日の残り回数で足りるかを確かめる（canSend）
-// 4. 1万文字を超えたら、なるべく改行の所で分ける（split）
-import { SendContent } from "../beans/SendContent";
-import type { NotePart } from "../beans/NotePart";
-import { PartType } from "../enums/PartType";
-import type { MaterialDAO } from "../dao/MaterialDAO";
-import type { NoteDAO } from "../dao/NoteDAO";
-import { fetchRemaining } from "../services/ai";
-import { wordsToText } from "../lib/words";
+// 1万文字を超えたら、なるべく改行の所で分ける（split）。分けた数だけAIの利用回数を使う
+// 11/21 掃除：前は「送る内容を作る（createContent）」「残り回数で足りるか（canSend）」などもあったが、
+//   どれも画面（G007）とサーバー（429 エラー）が担当していて使われていなかったので消した
+import type { SendContent } from "../beans/SendContent";
 import { SEND_LIMIT } from "./common";
-import { calls } from "../lib/logic";
-
-export { SEND_LIMIT };
-
-/** 枠の中身を文字にする（単語枠は「用語：意味」を1行ずつ） */
-export const partText = (p: NotePart): string =>
-  p.partType === PartType.FRAME && p.frameType === "word" ? wordsToText(p.words) : p.text;
 
 export class SendContentManager {
-  constructor(private readonly materialDAO: MaterialDAO, private readonly noteDAO: NoteDAO) {}
-
-  /**
-   * 選んだ文字起こしとノートの部品をコピーして、送る内容を作る（元のデータは変わらない）。
-   * 部品を探すために、学習項目ID（itemId）も渡す
-   */
-  async createContent(itemId: string, materialIds: string[], partIds: string[]): Promise<SendContent> {
-    const texts: string[] = [];
-    for (const id of materialIds) {
-      const c = await this.materialDAO.findContent(id);
-      if (typeof c === "string" && c.trim()) texts.push(c.trim()); // 文字起こし・テキストだけ（画像・PDF はそのままでは送れない）
-    }
-    const note = await this.noteDAO.findByItem(itemId);
-    for (const id of partIds) {
-      const p = note?.parts.find(x => x.partId === id);
-      if (p && partText(p).trim()) texts.push(partText(p).trim());
-    }
-    return this.editText(new SendContent({ materialIds: [...materialIds], partIds: [...partIds] }), texts.join("\n\n"));
-  }
-
-  /** 送る前に内容を編集・削除する（新しい SendContent を返す） */
-  editText(content: SendContent, text: string): SendContent {
-    return new SendContent({ ...content, text, charCount: [...text].length });
-  }
-
-  /** 1万文字ごとに1回として、何回分の利用になるかを計算する（空でも1回） */
-  countCalls(content: SendContent): number {
-    return calls(content.charCount);
-  }
-
-  /** 今日の残り回数をサーバーに聞く（サーバーがないときは null） */
-  async getRemaining(): Promise<number | null> { return fetchRemaining(); }
-
-  /** 残り回数が足りるかを返す（足りなければ「このまま送信」を選べない）。残りが分からないときは true */
-  async canSend(content: SendContent): Promise<boolean> {
-    if (!content.text.trim()) return false;
-    const r = await this.getRemaining();
-    return r === null || this.countCalls(content) <= r;
-  }
-
   /** 1万文字を超えたときに、内容を1万文字ごとに分ける。なるべく改行の所で切る */
   split(content: SendContent): string[] {
     const chars = [...content.text], out: string[] = [];

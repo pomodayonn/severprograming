@@ -3,7 +3,7 @@
 // 【このファイルで何が起きているか】
 // AIまとめが返してきた「この枠にこう書いたら？」という提案1つを入れておく入れ物です。
 // ・作る：AiSummaryManager.summarize がAIの答えから作る
-// ・使う：画面で承認したもの（approved = true）だけ、NoteManager.applySuggestions でノートに入れる
+// ・使う：画面で承認したもの（approved = true）だけ、NoteManager.mergeSuggestions でノートに入れる（保存は学習画面の「保存」で）
 // ・提案そのものは保存しない
 
 export class Suggestion {
