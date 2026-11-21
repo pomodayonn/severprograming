@@ -7,10 +7,8 @@
 //   1. 名前を確認（空・51文字以上はだめ、同じ名前の科目もだめ）
 //   2. SubjectDAO で端末に保存
 //   3. sync() で Neon に送る（pushQuietly）
-// 後半の importSubjects・isMigrated・setMigrated は、前の保存場所からデータを移すための一時的なもの（移行用）
 import { Subject } from "../beans/Subject";
 import type { SubjectDAO } from "../dao/SubjectDAO";
-import { get, put } from "../dao/idb";
 import { AppError, checkName, newId, pushQuietly, type ChangePusher } from "./common";
 import type { LearningItemManager } from "./LearningItemManager";
 
@@ -55,27 +53,6 @@ export class SubjectManager {
     for (const item of await this.itemManager.getItems(subjectId)) await this.itemManager.deleteItem(item.itemId, false);
     await this.subjectDAO.delete(subjectId);
     await this.sync();
-  }
-
-  /**
-   * 移行用：画面の古い保存場所（localStorage）にある科目のうち、まだ端末のデータベースにないものを、同じIDで入れる。
-   * 画面を全部 Manager 経由に置き換えたら使わなくなる
-   */
-  async importSubjects(studentId: string, subjects: { id: string; name: string }[]): Promise<number> {
-    const have = new Set((await this.getSubjects(studentId)).map(s => s.subjectId));
-    const add = subjects.filter(s => !have.has(s.id));
-    for (const s of add) await this.subjectDAO.insert(new Subject({ subjectId: s.id, studentId, subjectName: s.name.trim().slice(0, 50) || "科目" }));
-    if (add.length) await this.sync();
-    return add.length;
-  }
-
-  /** 移行用：この端末で、この学生の前のデータをもう移したか（what は "" ＝科目〜ノート、"tests" ＝テスト） */
-  async isMigrated(studentId: string, what = ""): Promise<boolean> {
-    return !!(await get<boolean>("meta", `migrated${what ? "-" + what : ""}:${studentId}`));
-  }
-  /** 移行用：この端末で、この学生の前のデータを移し終えた印を付ける（2回目からは移さない） */
-  async setMigrated(studentId: string, what = ""): Promise<void> {
-    await put("meta", true, `migrated${what ? "-" + what : ""}:${studentId}`);
   }
 
   private sync() { return pushQuietly(this.syncManager); }

@@ -161,17 +161,5 @@ export class NoteManager implements SuggestionApplier {
     return this.saveNote(new Note({ ...note, parts: this.toParts(els, note.noteId, studentId) }));
   }
 
-  /**
-   * 移行用：画面の古い保存場所にあるノートを、まだ一度も Manager で保存していなければ入れる。
-   * アカウントから受け取ったノートや、すでに保存したノートは上書きしない
-   */
-  async importNote(studentId: string, itemId: string, els: El[], savedAt: number): Promise<boolean> {
-    if (!savedAt || !els.length) return false;
-    const note = await this.getNote(itemId, studentId);
-    if (note.lastSavedAt || note.parts.length) return false;
-    await this.saveNote(new Note({ ...note, parts: this.toParts(els, note.noteId, studentId) }));
-    return true;
-  }
-
   private sync() { return pushQuietly(this.syncManager); }
 }

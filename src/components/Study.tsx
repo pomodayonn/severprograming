@@ -1,9 +1,8 @@
 // G004 学習画面：左（階層／部品）・真ん中（ノート）・右（関連図／目次）の3列
 // 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
 // 11/12：ノートの「保存」は state/app.tsx の save() から Controller → NoteManager に送る（A）
-// 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
 // 11/21：科目・学習項目・ノートは useApp の subjects（Manager から読んだもの）を見る。成功したら reload() で読み直す。
-// 資料の一覧（data.materials）だけは、MaterialManager ができるまで data のまま
+// 11/21（福山）：資料の追加・文字起こし・表示も Controller → MaterialManager 経由にした。資料の一覧は useApp の materials を見る
 //
 // 【このファイルで何が起きているか】
 // 学習画面（G004）です。いちばん大きな画面で、3列に分かれている。
@@ -15,23 +14,21 @@
 import { useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType, Item, MaterialMeta } from "../types";
-import { FT, MAX_FILE, bottomY, newEl, txtName, uid } from "../lib/logic";
-import { delBlob, putBlob } from "../services/db";
+import { FT, bottomY, newEl } from "../lib/logic";
 import { controller } from "../controller/Controller";
 import type { LearningItem as ItemBean } from "../beans/LearningItem";
-import { transcribe } from "../services/ocr";
 import { NoteCanvas } from "./NoteCanvas";
 import { RelationGraph } from "./RelationGraph";
 import { Tree, Header } from "./Shell";
-import { Viewer, useBlob } from "./Material";
+import { Viewer, useMaterialContent } from "./Material";
 import { toast } from "./toast";
 
 function SideMaterial({ id }: { id: string | null }) {
-  const { data, account } = useApp(); const m = data.materials.find(x => x.id === id); const v = useBlob(m && account ? `${account.id}:${m.id}` : undefined);
+  const { materials } = useApp(); const m = materials.find(x => x.id === id); const v = useMaterialContent("G004", m?.id);
   return <div className="vbox">{m ? <Viewer type={m.type} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
 }
 export function Study() {
-  const { data, setData, subjects, tests, reload, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
+  const { materials, subjects, tests, reload, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
   const subject = subjects.find(s => s.id === route.subjectId);
   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
@@ -40,7 +37,7 @@ export function Study() {
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
   const item: Item | undefined = subject.items.find(i => i.id === route.itemId) ?? subject.items[0];
   const note = item ? (drafts[item.id] ?? item.note) : null;
-  const mats = item ? data.materials.filter(m => m.itemId === item.id) : [];
+  const mats = item ? materials.filter(m => m.itemId === item.id) : [];
   const setEls = (els: NonNullable<typeof note>["els"]) => item && note && setDraft(item.id, { ...note, els });
   const addEl = (k: Parameters<typeof newEl>[0], f?: FrameType) => note && setEls([...note.els, newEl(k, bottomY(note.els), f)]);
   const open = (id: string) => go({ s: "G004", subjectId: subject.id, itemId: id });
@@ -62,8 +59,7 @@ export function Study() {
     if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.id });
     if (r.error) return toast(r.error);
-    mats.forEach(m => delBlob(`${account.id}:${m.id}`)); setDraft(item.id, null);
-    setData(d => ({ ...d, materials: d.materials.filter(m => m.itemId !== item.id) })); // 資料の一覧はまだ data にある
+    setDraft(item.id, null); // 資料（ストレージ）は LearningItemManager.deleteItem が一緒に消す
     await reload();
     nav({ s: "G004", subjectId: subject.id }); toast("学習項目を削除したよ");
   };
@@ -73,24 +69,21 @@ export function Study() {
     if (r.error) return setPreMsg(r.error); // 輪になるときは「前提項目が輪になるため設定できません」
     await reload(); setPre(null); setPreMsg("");
   };
+  // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
   const upload = async (files: FileList | null) => {
-    if (!files || !item) return; setMsg(""); const names = mats.map(m => m.name);
+    if (!files || !item) return; setMsg("");
     for (const f of Array.from(files)) {
-      const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
-      const type = f.type.startsWith("image/") ? "image" : f.type === "application/pdf" || ext === "pdf" ? "pdf" : f.type.startsWith("text/") || ext === "txt" ? "text" : null;
-      if (!type) { setMsg("取り込めない形式です（画像・PDF・テキストだけ）"); continue; }
-      if (f.size > MAX_FILE) { setMsg("ファイルが大きすぎます（1件20MBまで）"); continue; }
-      const id = uid(); try { await putBlob(`${account.id}:${id}`, type === "text" ? await f.text() : f); } catch { setMsg("保存容量が足りません"); continue; }
-      names.push(f.name); const add: MaterialMeta[] = [{ id, itemId: item.id, name: f.name, type, size: f.size, at: Date.now() }];
-      if (type !== "text") { // 文字起こし：進み具合を小さく表示。失敗しても画面は移らない
-        try {
-          setProg(0); const r = await transcribe(f, type, setProg); const tid = uid(), tn = txtName(f.name.replace(/\.[^.]+$/, ""), names); names.push(tn);
-          await putBlob(`${account.id}:${tid}`, r.text); add.push({ id: tid, itemId: item.id, name: tn, type: "transcript", size: r.text.length, srcId: id, at: Date.now() });
-          if (r.failedPages.length) setMsg(`読み取れなかったページがあります（${r.failedPages.join("、")}）。「修正」で自分で直せます`);
-        } catch { setMsg("文字起こしに失敗しました。自分で文字を入力するか、もう一度アップロードしてください"); }
+      const u = await controller.handleRequest("G004", "uploadMaterial", { itemId: item.id }, { file: f });
+      if (u.error) { setMsg(u.error); continue; } // 形式・大きさ・保存容量のエラー
+      const m = u.data as MaterialMeta;
+      if (m.type !== "text") { // 文字起こし：進み具合を小さく表示。失敗しても画面は移らない（資料は保存済み）
+        setProg(0);
+        const t = await controller.handleRequest("G004", "transcribe", { materialId: m.id }, { listener: { onProgress: setProg } });
+        if (t.error) setMsg(t.error);
+        else { const { failedPages } = t.data as { failedPages: number[] }; if (failedPages.length) setMsg(`読み取れなかったページがあります（${failedPages.join("、")}）。「修正」で自分で直せます`); }
         setProg(null);
       }
-      setData(d => ({ ...d, materials: [...d.materials, ...add] }));
+      await reload(); // 1つ終わるごとに一覧に出す
     }
   };
   const doSave = async () => { if (item && drafts[item.id]) { if (await save(item.id)) toast("保存したよ"); } else toast("変更はありません"); };

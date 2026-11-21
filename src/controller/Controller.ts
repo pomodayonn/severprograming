@@ -9,7 +9,7 @@
 //   → 担当の SubjectManager.createSubject に仕事を渡す
 //   → 結果を { data } で、エラーなら { error: "画面に出す文" } で画面に返す
 // 画面は Manager や DAO を直接さわらず、必ずここを通る（設計書の「画面 → Controller → Manager → DAO」）。。
-import type { El, FrameType, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
+import type { El, FrameType, MaterialMeta as ScreenMaterial, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
 import type { Proposal } from "../services/ai";
 import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
@@ -23,6 +23,8 @@ import { TestType } from "../enums/TestType";
 import { SubjectManager } from "../managers/SubjectManager";
 import { LearningItemManager } from "../managers/LearningItemManager";
 import { NoteManager } from "../managers/NoteManager";
+import { MaterialManager } from "../managers/MaterialManager";
+import type { ProgressListener } from "../interfaces/ProgressListener";
 import { SubjectDAO } from "../dao/SubjectDAO";
 import { LearningItemDAO } from "../dao/LearningItemDAO";
 import { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
@@ -36,6 +38,12 @@ import { Note } from "../beans/Note";
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
 /** data は Manager が返したもの（作った科目など）。画面はこれを使って表示を変える */
 export interface ControllerResult { next?: Screen; student?: Student | null; error?: string; data?: unknown }
+/**
+ * 文字列では渡せないもの（handleRequest の4つ目の引数）。資料の追加と文字起こしで使う
+ * ・file    ：追加するファイル（G004:uploadMaterial）
+ * ・listener：文字起こしの進み具合を受け取る係（G004:transcribe。Java の ActionListener と同じ考え方）
+ */
+export interface ControllerExtra { file?: File; listener?: ProgressListener }
 
 export class Controller {
   readonly syncManager = new SyncManager(neonAuthClient);
@@ -54,7 +62,7 @@ export class Controller {
   readonly itemManager = new LearningItemManager(this.itemDAO, this.prerequisiteDAO, this.noteDAO, this.testDAO, this.materialDAO, this.syncManager);
   readonly subjectManager = new SubjectManager(this.subjectDAO, this.itemManager, this.syncManager);
   readonly noteManager = new NoteManager(this.noteDAO, this.syncManager);
-  // Fさんが足す：materialManager
+  readonly materialManager = new MaterialManager(this.materialDAO); // 11/21（福山）：資料と文字起こし
 
   constructor() {
     this.aiSummaryManager.setNoteManager(this.noteManager); // 承認したAIの提案を NoteManager でノートに反映する
@@ -66,7 +74,7 @@ export class Controller {
    * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。
    * 例：G001 の login → AccountManager.login()
    */
-  async handleRequest(screenId: Screen, eventId: string, params: Record<string, string> = {}): Promise<ControllerResult> {
+  async handleRequest(screenId: Screen, eventId: string, params: Record<string, string> = {}, extra: ControllerExtra = {}): Promise<ControllerResult> {
     try {
       switch (`${screenId}:${eventId}`) {
         // ---- G001 ログイン画面 ----
@@ -103,6 +111,26 @@ export class Controller {
           return {};
         case "G004:setPrerequisites": // 前提項目の設定の「確定」。prereqIds はカンマ区切り
           await this.itemManager.setPrerequisites(params.itemId ?? "", (params.prereqIds ?? "").split(",").filter(Boolean));
+          return {};
+        // ---- G004 学習画面（資料）・G005 資料表示・G006 文字起こし修正（11/21 福山：MaterialManager） ----
+        case "G004:uploadMaterial": { // 「＋ 資料の追加」：ファイルは extra.file。保存した資料を返す（文字起こしは続けて G004:transcribe）
+          if (!extra.file) return { error: "ファイルを選んでください" };
+          return { data: this.materialManager.toScreenMaterial(await this.materialManager.upload(params.itemId ?? "", extra.file)) };
+        }
+        case "G004:transcribe": { // 文字起こし：進み具合は extra.listener に知らせる。できた .txt と、読み取れなかったページを返す
+          const r = await this.materialManager.transcribe(params.materialId ?? "", extra.listener ?? { onProgress: () => {} });
+          return { data: { transcript: this.materialManager.toScreenMaterial(r.transcript), failedPages: r.failedPages } };
+        }
+        case "G004:getContent": // 資料の中身（学習画面の「資料と並べる」・資料表示・文字起こし修正・AIに送る内容で使う）
+        case "G005:getContent":
+        case "G006:getContent":
+        case "G007:getContent":
+          return { data: await this.materialManager.getContent(params.materialId ?? "") };
+        case "G005:deleteMaterial": // 資料の削除。withTranscript が "true" なら、この資料から作った文字起こしも消す
+          await this.materialManager.delete(params.materialId ?? "", params.withTranscript === "true");
+          return {};
+        case "G006:correctTranscript": // 文字起こし修正の「確定」
+          await this.materialManager.correctTranscript(params.materialId ?? "", params.text ?? "");
           return {};
         case "G004:saveNote": // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。els は画面の部品の JSON
           await this.noteManager.saveElements(params.studentId ?? "", params.itemId ?? "", JSON.parse(params.els ?? "[]") as El[]);
@@ -169,12 +197,10 @@ export class Controller {
           return { data: this.testManager.toScreenTest(await this.testManager.getTest(testId)) };
         }
         // ---- ログインした直後：端末のデータベース（アカウントから受け取った分）を、画面の形にして返す ----
-        // この端末で初めてなら、前の保存場所（local）のデータを先に Manager に移す（1回だけ）
         case "G003:loadSubjects": {
           const sid = params.studentId ?? "";
-          await this.migrateOnce(sid, JSON.parse(params.local ?? "[]") as ScreenSubject[], JSON.parse(params.localTests ?? "[]") as ScreenTest[]);
           const subjects = await this.loadScreenSubjects(sid);
-          return { data: { subjects, tests: await this.loadScreenTests(subjects) } };
+          return { data: { subjects, tests: await this.loadScreenTests(subjects), materials: await this.loadScreenMaterials(subjects) } };
         }
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
@@ -187,36 +213,17 @@ export class Controller {
     }
   }
 
-  /**
-   * 移行中のつなぎ：画面の前の保存場所（localStorage）にある科目・学習項目・前提項目・保存済みのノートを、
-   * この端末・この学生で1回だけ Manager に移す。2回目からは移さない
-   * （移し直すと、別の端末で消したものが戻ってきてしまうため）
-   */
-  private async migrateOnce(studentId: string, local: ScreenSubject[], localTests: ScreenTest[]): Promise<void> {
-    if (!studentId) return;
-    if (!(await this.subjectManager.isMigrated(studentId))) {
-      await this.subjectManager.importSubjects(studentId, local.map(s => ({ id: s.id, name: s.name })));
-      for (const s of local) {
-        await this.itemManager.importItems(studentId, s.id, s.items.map(i => ({ id: i.id, name: i.name, prereqs: i.prereqs })));
-        for (const i of s.items) await this.noteManager.importNote(studentId, i.id, i.note.els, i.note.savedAt);
-      }
-      await this.subjectManager.setMigrated(studentId);
-    }
-    // テストは 11/12 の後から移すので、印を分けてある。学習項目がある分だけ移す
-    if (!(await this.subjectManager.isMigrated(studentId, "tests"))) {
-      const itemIds = new Set<string>();
-      for (const s of await this.subjectManager.getSubjects(studentId)) for (const i of await this.itemManager.getItems(s.subjectId)) itemIds.add(i.itemId);
-      let added = 0;
-      for (const t of localTests) if (itemIds.has(t.itemId) && await this.testManager.importScreenTest(studentId, t)) added++;
-      if (added) await this.testManager.syncNow();
-      await this.subjectManager.setMigrated(studentId, "tests");
-    }
-  }
-
   /** 移行中のつなぎ：画面の部品（JSON）から、その学習項目のノート（beans の Note）を作る。保存はしない */
   private async screenNote(studentId: string, itemId: string, els?: string): Promise<Note> {
     const base = await this.noteManager.getNote(itemId, studentId);
     return new Note({ ...base, parts: this.noteManager.toParts(JSON.parse(els ?? "[]") as El[], base.noteId, studentId) });
+  }
+
+  /** 移行中のつなぎ：画面に出している学習項目の資料（ストレージ）を、画面の形にして返す */
+  private async loadScreenMaterials(subjects: ScreenSubject[]): Promise<ScreenMaterial[]> {
+    const out: ScreenMaterial[] = [];
+    for (const s of subjects) for (const i of s.items) for (const m of await this.materialManager.getMaterials(i.id)) out.push(this.materialManager.toScreenMaterial(m));
+    return out;
   }
 
   /** 移行中のつなぎ：画面に出している学習項目のテストを、画面の形にして返す */
