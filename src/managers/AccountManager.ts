@@ -21,10 +21,7 @@ const nfkc = (s: string) => s.normalize("NFKC").trim(); // 全角英数で打っ
 const emailOk = (v: string) => v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
 export class AccountManager {
-  constructor(private readonly authClient: NeonAuthClient, private syncManager: PullOnLogin | null = null) {}
-
-  /** あとから SyncManager を渡すとき用（Controller ではコンストラクタで渡している） */
-  setSyncManager(sync: PullOnLogin) { this.syncManager = sync; }
+  constructor(private readonly authClient: NeonAuthClient, private readonly syncManager: PullOnLogin | null = null) {}
 
   /** お試しログインのときだけ true（画面に見本アカウントを出す・Google ボタンを隠す） */
   get isTrial(): boolean { return !this.authClient.neon; }

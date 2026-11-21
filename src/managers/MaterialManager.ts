@@ -26,6 +26,11 @@ export class MaterialError extends AppError {}
 /** 資料の種類。transcript は文字起こし（.txt） */
 export type FileType = "image" | "pdf" | "text" | "transcript";
 
+/** 端末に保存する。失敗したら（ほとんどは容量不足）画面に出す文のエラーにする */
+async function saveOrFail(save: () => Promise<void>): Promise<void> {
+  try { await save(); } catch { throw new MaterialError("保存容量が足りません"); }
+}
+
 /** 文字起こしの結果。transcript は文字起こし（.txt）の資料、failedPages は読み取れなかったページの番号 */
 export interface TranscribeResult { transcript: Material; failedPages: number[] }
 
@@ -53,11 +58,8 @@ export class MaterialManager {
     if (!fileType) throw new MaterialError("取り込めない形式です（画像・PDF・テキストだけ）");
     if (file.size > MAX_FILE) throw new MaterialError("ファイルが大きすぎます（1件20MBまで）");
     const material = new Material({ materialId: newId(), itemId, fileName: file.name, fileType, fileSize: file.size, sourceMaterialId: null, addedAt: now() });
-    try {
-      await this.materialDAO.insert(material, fileType === "text" ? await file.text() : file);
-    } catch {
-      throw new MaterialError("保存容量が足りません");
-    }
+    const content = fileType === "text" ? await file.text() : file;
+    await saveOrFail(() => this.materialDAO.insert(material, content));
     return material;
   }
 
@@ -84,11 +86,7 @@ export class MaterialManager {
       materialId: newId(), itemId: src.itemId, fileName: txtName(src.fileName.replace(/\.[^.]+$/, ""), names),
       fileType: "transcript", fileSize: 0, sourceMaterialId: src.materialId, addedAt: now(),
     });
-    try {
-      await this.materialDAO.insert(transcript, result.text); // fileSize は DAO が中身から数える
-    } catch {
-      throw new MaterialError("保存容量が足りません");
-    }
+    await saveOrFail(() => this.materialDAO.insert(transcript, result.text)); // fileSize は DAO が中身から数える
     return { transcript: (await this.materialDAO.findById(transcript.materialId)) ?? transcript, failedPages: result.failedPages };
   }
 
@@ -102,11 +100,7 @@ export class MaterialManager {
     const m = await this.materialDAO.findById(materialId);
     if (!m) throw new MaterialError("資料が見つかりません");
     if (m.fileType !== "transcript" && m.fileType !== "text") throw new MaterialError("直せるのは文字起こしだけです");
-    try {
-      await this.materialDAO.updateText(materialId, text);
-    } catch {
-      throw new MaterialError("保存容量が足りません");
-    }
+    await saveOrFail(() => this.materialDAO.updateText(materialId, text));
   }
 
   /**

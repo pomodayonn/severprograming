@@ -85,7 +85,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
   const save = useCallback(async (itemId: string) => {
     const dr = dRef.current[itemId], sid = aRef.current?.id; if (!dr || !sid) return false;
-    const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, els: JSON.stringify(dr.els) });
+    const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, els: dr.els });
     if (r.error) { toast(r.error); return false; } // 保存できなかったときは下書きを残す
     await reload();
     setDrafts(p => { if (p[itemId] !== dr) return p; const n = { ...p }; delete n[itemId]; return n; }); // 保存中にさらに書いた分は残す

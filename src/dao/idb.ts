@@ -7,7 +7,7 @@
 //   deletions：Neon にまだ伝えていない削除（SyncManager.pushChanges で送る）
 //   meta：前回同期した日時など
 
-// 名前を "runndesu" にすると、資料の中身用（services/db.ts）の古いデータベースとぶつかるので分ける
+// 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
 const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
 

@@ -13,6 +13,7 @@ import type { Note } from "../beans/Note";
 import { PartType } from "../enums/PartType";
 import type { FrameType } from "../types";
 import { organize } from "../services/ai";
+import { wordsToText } from "../lib/words";
 import type { SendContentManager } from "./SendContentManager";
 
 /** NoteManager のうち、AiSummaryManager が使う部分（W2 で東の NoteManager を渡す） */
@@ -38,7 +39,7 @@ export class AiSummaryManager {
     for (const chunk of this.sendContentManager.split(content)) {
       const proposals = await organize(chunk, frameTypes, frames);
       for (const p of proposals) {
-        const text = p.ft === "word" ? (p.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : p.text;
+        const text = p.ft === "word" ? wordsToText(p.words ?? []) : p.text;
         const same = all.find(s => s.frameType === p.ft && s.targetPartId === (p.targetId ?? null));
         if (same) same.content = `${same.content}\n${text}`; // 分けて送ったときは、同じ枠への提案を1つにまとめる
         else all.push(new Suggestion({ targetPartId: p.targetId ?? null, frameType: p.ft, content: text, approved: true }));

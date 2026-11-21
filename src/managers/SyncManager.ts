@@ -126,9 +126,11 @@ export class SyncManager {
       const ids = note.parts.map(p => p.partId);
       await this.request("DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
       await this.upsert("note_part", note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel })));
-      for (const p of note.parts) {
-        const wids = p.words.map(w => w.wordId);
-        await this.request("DELETE", `/word?part_id=eq.${enc(p.partId)}${wids.length ? `&word_id=not.in.(${wids.map(quote).join(",")})` : ""}`);
+      // 消した単語を Neon からも消す。11/21：前は部品1つごとに1回送っていたが、部品20個ずつまとめて1回で送るようにした
+      // （全部を1回にしないのは、URL が長くなりすぎてサーバーに断られないようにするため）
+      for (const group of chunk(note.parts, 20)) {
+        const wids = group.flatMap(p => p.words.map(w => w.wordId));
+        await this.request("DELETE", `/word?part_id=in.(${group.map(p => quote(p.partId)).join(",")})${wids.length ? `&word_id=not.in.(${wids.map(quote).join(",")})` : ""}`);
       }
       await this.upsert("word", note.parts.flatMap(p => p.words.map(w => ({ word_id: w.wordId, part_id: p.partId, term: w.term, meaning: w.meaning }))));
     }
@@ -187,4 +189,6 @@ const quote = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
 const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const n = (v: unknown) => (v === null || v === undefined ? null : String(v));
 const num = (v: unknown) => Number(v ?? 0);
+/** 配列を size 個ずつに分ける */
+const chunk = <T>(a: T[], size: number): T[][] => Array.from({ length: Math.ceil(a.length / size) }, (_, i) => a.slice(i * size, (i + 1) * size));
 const group = (rows: Row[], key: string) => rows.reduce<Record<string, Row[]>>((m, r) => { (m[s(r[key])] ??= []).push(r); return m; }, {});

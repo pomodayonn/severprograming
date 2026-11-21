@@ -14,8 +14,9 @@ export async function sha(s: string): Promise<string> {
   catch { let h = 5381; for (const c of s) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return "f" + (h >>> 0).toString(16) + s.length; }
 }
 // localStorage が使えない環境（ブロックされている等）でも、そのままメモリで動くようにする
+// 11/21：NeonAuthClient（お試しログインのセッション）も、自分で同じものを書かずにこれを使う
 const mem = new Map<string, string>();
-const ls = {
+export const ls = {
   get: (k: string) => { try { return localStorage.getItem(k) ?? mem.get(k) ?? null; } catch { return mem.get(k) ?? null; } },
   set: (k: string, v: string) => { mem.set(k, v); try { localStorage.setItem(k, v); } catch { /* メモリには残る */ } },
   del: (k: string) => { mem.delete(k); try { localStorage.removeItem(k); } catch { /* 無視 */ } },

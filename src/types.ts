@@ -16,6 +16,8 @@ export interface Subject { id: string; name: string; items: Item[] }
 export interface MaterialMeta { id: string; itemId: string; name: string; type: "image" | "pdf" | "text" | "transcript"; size: number; srcId?: string; at: number }
 export interface Question { q: string; a: string; expl?: string }
 export type TestKind = "w-m2t" | "w-t2m" | "essay";
+/** 画面に出す1回分の受験（何回目・日時・解答・正誤） */
+export interface TestAttempt { no: number; at: number; ans: string[]; ok?: boolean[] }
 export interface Test { id: string; itemId: string; kind: TestKind; created: number; last?: number; qs: Question[]; ans?: string[]; ok?: boolean[] }
 export type Screen = "G001" | "G002" | "G003" | "G004" | "G005" | "G006" | "G007" | "G008" | "G009" | "G010" | "G011";
 export interface Route {
