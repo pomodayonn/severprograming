@@ -17,6 +17,7 @@ import type { Test, TestKind } from "../types";
 import { fmt, shuffle } from "../lib/logic";
 import { addLocalUsage, useAiRemaining } from "../services/ai";
 import { controller } from "../controller/Controller";
+import { AiWait, useOnline } from "./AiWait";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
@@ -25,6 +26,7 @@ const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${
 
 export function TestCreate() {
   const { data, setData, route, nav, go, tmp, setTmp, account } = useApp();
+  const online = useOnline();
   const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
   const { remaining, limit, refresh } = useAiRemaining(data.usage);
@@ -41,6 +43,7 @@ export function TestCreate() {
       if (d.shortage > 0) toast(`単語が少ないので、ある分（${t.qs.length}問）だけ出題します`);
     } else {
       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
+      if (!online) return setMsg("インターネットにつながっていません。記述テストはAIで作るので、つながってから試してください");
       const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
       setBusy(true);
       const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.id ?? "", itemId: item.id, text: send, count: String(n) });
@@ -59,8 +62,9 @@ export function TestCreate() {
         <div><b>テストの種類</b>{(Object.keys(KIND) as TestKind[]).map(k => <label key={k} className="ck"><input type="radio" checked={kind === k} onChange={() => setKind(k)} />{KIND[k]}</label>)}
           <b>問題数（5〜20問）</b><input className="inp" type="number" min={5} max={20} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 100 }} />
           {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
+      <AiWait busy={busy && essay} what="AIが問題を作っています" />
       {msg && <div className="err">{msg}</div>}</div>
-    <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy} onClick={make}>{busy ? "作成中…" : "作成"}</button>
+    <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy || (essay && !online)} onClick={make}>{busy ? "作成中…" : "作成"}</button>
       <button className="btn line" disabled={!essay} onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "essay" })}>内容編集</button></span>
       <button className="btn line" onClick={() => go({ s: "G004", subjectId: subject.id, itemId: item.id })}>戻る</button></div></>} />;
 }
@@ -140,6 +144,8 @@ export function TestResult() {
   const [atts, setAtts] = useState<Att[]>([]), [no, setNo] = useState(0);
   // 直す（G010）：直す対象・書き直し欄・追加の指示
   const [fix, setFix] = useState<Fix | null>(null), [f1, setF1] = useState(""), [f2, setF2] = useState(""), [extra, setExtra] = useState(""), [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(""); // AIを待っている間に出す文（空なら AiWait は出さない）
+  const online = useOnline();
   useEffect(() => {
     if (!test) return;
     void controller.handleRequest("G010", "getAttempts", { testId: test.id }).then(r => {
@@ -154,8 +160,11 @@ export function TestResult() {
   const mirror = (t: Test) => setData(d => ({ ...d, tests: d.tests.map(x => x.id === t.id ? t : x) }));
   const useAi = () => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1) })); void refresh(); };
   const expl = async () => {
-    if (q.expl) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
+    if (q.expl || busy) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
+    if (!online) return setMsg("インターネットにつながっていません。解説はAIで作るので、つながってから試してください");
+    setBusy(true); setWait("AIが解説を書いています");
     const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: String(idx) }); void refresh();
+    setBusy(false);
     if (r.error) return setMsg(r.error);
     const e = r.data as string;
     setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg("");
@@ -167,7 +176,7 @@ export function TestResult() {
   };
   const close = () => { setFix(null); setMsg(""); };
   const saveFix = async () => {
-    if (!fix) return; setBusy(true);
+    if (!fix) return; setBusy(true); setWait(""); // 手で直すのはAIを使わないので、待ちの表示は出さない
     const p = { testId: test.id, index: String(idx) };
     const r = fix === "question" ? await controller.handleRequest("G010", "editQuestion", { ...p, question: f1, modelAnswer: f2 })
       : fix === "answer" ? await controller.handleRequest("G010", "editAnswer", { ...p, attemptNo: String(no), answer: f1 })
@@ -180,7 +189,8 @@ export function TestResult() {
   const aiFix = async () => {
     if (fix !== "question" && fix !== "expl") return;
     if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
-    setBusy(true);
+    if (!online) return setMsg("インターネットにつながっていません。AIで直すのは、つながってから試してください");
+    setBusy(true); setWait("AIが直しています");
     const r = await controller.handleRequest("G010", fix === "question" ? "regenerateQuestion" : "regenerateExplanation", { testId: test.id, index: String(idx), extra });
     setBusy(false);
     if (r.error) { void refresh(); return setMsg(r.error); }
@@ -189,7 +199,7 @@ export function TestResult() {
     setMsg(""); toast("AIで直して保存したよ");
   };
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{ans || list ? q.a : "（解答するとここに表示されます）"}</div></div>
-      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn ai" onClick={expl}>解説</button></span>
+      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn ai" disabled={busy} onClick={expl}>解説</button></span>
       {q.expl && <div className="pop" style={{ whiteSpace: "pre-wrap" }}>{q.expl}</div>}
       {fix && <div className="pop">
         <b>直す内容</b>
@@ -202,6 +212,7 @@ export function TestResult() {
         {fix !== "answer" && <><div className="mute">AIへの追加の指示（空なら最初から作り直す）</div><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} placeholder="例：もっと短く" /></>}
         <span className="row"><button className="btn pri" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn ai" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
       </div>}
+      <AiWait busy={busy && !!wait} what={wait} />
       {msg && <div className="err">{msg}</div>}</>}
     center={<>
       <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{ok && <b>{ok.filter(Boolean).length} / {test.qs.length} 問正解</b>}<span className="mute">{KIND[test.kind]}{att ? `　第${att.no}回　${fmt(att.at)}` : list ? `　最後に解いた日時 ${fmt(test.last)}` : ""}</span>

@@ -87,3 +87,6 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 /* テスト解答：前・次の問題のボタン */
 .qnav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px;padding-top:12px;border-top:1px dashed var(--line);flex-wrap:wrap}
 .qnav .mute{flex:1;text-align:center}
+/* AIの返事を待っている間（AiWait）とオフラインの帯 */
+.aiwait{display:flex;gap:12px;align-items:center;background:#eef6f3;border:1px solid #b9dccf;border-radius:14px;padding:10px 14px;margin:8px 0}
+.offline{background:#fff4d6;border-bottom:1px solid #e8c66a;color:#6b4e00;font-size:13px;font-weight:700;text-align:center;padding:6px 12px}

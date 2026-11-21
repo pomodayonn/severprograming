@@ -16,7 +16,11 @@ import { organize } from "../services/ai";
 import type { SendContentManager } from "./SendContentManager";
 
 /** NoteManager のうち、AiSummaryManager が使う部分（W2 で東の NoteManager を渡す） */
-export interface SuggestionApplier { applySuggestions(noteId: string, suggestions: Suggestion[]): Promise<void> }
+export interface SuggestionApplier {
+  applySuggestions(noteId: string, suggestions: Suggestion[]): Promise<void>;
+  /** 保存せずに、提案を入れたノートを返す */
+  mergeSuggestions(note: Note, suggestions: Suggestion[]): Note;
+}
 
 export class AiSummaryManager {
   constructor(private readonly sendContentManager: SendContentManager, private noteManager: SuggestionApplier | null = null) {}
@@ -48,6 +52,15 @@ export class AiSummaryManager {
 
   /** 提案ごとに承認するかを決める */
   setApproved(suggestion: Suggestion, approved: boolean): Suggestion { return new Suggestion({ ...suggestion, approved }); }
+
+  /**
+   * 承認した提案だけを入れたノートを返す（保存はしない）。G007 の「承認」で使う。
+   * 画面ではこれを下書きにして、学習画面の「保存」を押したときに本当に保存する（勝手に保存しないため）
+   */
+  mergeApproved(note: Note, suggestions: Suggestion[]): Note {
+    if (!this.noteManager) throw new Error("NoteManager がまだつながっていません");
+    return this.noteManager.mergeSuggestions(note, suggestions.filter(s => s.approved));
+  }
 
   /** 承認した提案だけを NoteManager の applySuggestions() でノートに反映し、残りは捨てる。反映した数を返す */
   async applyApproved(noteId: string, suggestions: Suggestion[]): Promise<number> {

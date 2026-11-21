@@ -11,9 +11,11 @@ import { neonAuthClient } from "../boundary/NeonAuthClient";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
 export const SERVER = !!API_URL;
+/** AIの返事を待つ長さ（ミリ秒） */
+const TIMEOUT_MS = 90_000;
 
 /** サーバーから返るエラーの種類（画面に出す文言はここで決める） */
-export type ApiErrorCode = "UNAUTHORIZED" | "LIMIT_EXCEEDED" | "TOO_LONG" | "AI_UNAVAILABLE" | "BAD_REQUEST" | "NETWORK" | "SERVER";
+export type ApiErrorCode = "UNAUTHORIZED" | "LIMIT_EXCEEDED" | "TOO_LONG" | "AI_UNAVAILABLE" | "BAD_REQUEST" | "NETWORK" | "SERVER" | "OFFLINE" | "TIMEOUT";
 const TEXT: Record<ApiErrorCode, string> = {
   UNAUTHORIZED: "ログインの期限が切れました。もう一度ログインしてください",
   LIMIT_EXCEEDED: "今日はこれ以上使えません",
@@ -22,6 +24,8 @@ const TEXT: Record<ApiErrorCode, string> = {
   BAD_REQUEST: "送る内容に問題がありました。見直してください",
   NETWORK: "サーバーとつながりません。インターネットの接続を確認してください",
   SERVER: "サーバーでエラーが起きました。時間をおいて試してください",
+  OFFLINE: "インターネットにつながっていません。つながってから、もう一度試してください（ノートの保存は端末にできます）",
+  TIMEOUT: "AIの返事が来ませんでした（90秒）。時間をおいて、もう一度試してください。利用回数は減っていません",
 };
 export class ApiError extends Error {
   constructor(public code: ApiErrorCode, public status = 0) { super(TEXT[code]); }
@@ -33,15 +37,21 @@ const byStatus = (s: number): ApiErrorCode => s === 401 ? "UNAUTHORIZED" : s ===
 
 export async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   if (!API_URL) throw new ApiError("SERVER");
+  // 11/17：オフラインなら送らずにすぐ知らせる
+  if (typeof navigator !== "undefined" && navigator.onLine === false) throw new ApiError("OFFLINE");
   const token = await neonAuthClient.getAccessToken();
   let res: Response;
+  // 11/17：90秒たっても返事がなければあきらめる（Render が寝ていると最初の1回は30秒ほどかかるので、それより長くしてある）
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
     res = await fetch(API_URL + path, {
       method,
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctl.signal,
     });
-  } catch { throw new ApiError("NETWORK"); }
+  } catch { throw new ApiError(ctl.signal.aborted ? "TIMEOUT" : navigator.onLine === false ? "OFFLINE" : "NETWORK"); }
+  finally { clearTimeout(timer); }
   if (!res.ok) {
     let code: ApiErrorCode | undefined;
     try { code = ((await res.json()) as { error?: { code?: ApiErrorCode } }).error?.code; } catch { /* 本文なし */ }

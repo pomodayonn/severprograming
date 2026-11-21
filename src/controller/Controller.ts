@@ -9,7 +9,8 @@
 //   → 担当の SubjectManager.createSubject に仕事を渡す
 //   → 結果を { data } で、エラーなら { error: "画面に出す文" } で画面に返す
 // 画面は Manager や DAO を直接さわらず、必ずここを通る（設計書の「画面 → Controller → Manager → DAO」）。。
-import type { El, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
+import type { El, FrameType, Screen, Student, Subject as ScreenSubject, Test as ScreenTest, TestKind } from "../types";
+import type { Proposal } from "../services/ai";
 import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountManager } from "../managers/AccountManager";
@@ -29,6 +30,8 @@ import { MaterialDAO } from "../dao/MaterialDAO";
 import { NoteDAO } from "../dao/NoteDAO";
 import { TestDAO } from "../dao/TestDAO";
 import { SendContent } from "../beans/SendContent";
+import { Suggestion } from "../beans/Suggestion";
+import { Note } from "../beans/Note";
 
 /** handleRequest の結果。next があれば画面を移る。error は画面に出す文 */
 /** data は Manager が返したもの（作った科目など）。画面はこれを使って表示を変える */
@@ -55,6 +58,8 @@ export class Controller {
 
   constructor() {
     this.aiSummaryManager.setNoteManager(this.noteManager); // 承認したAIの提案を NoteManager でノートに反映する
+    // 11/17：オフラインから戻ったら、その間に保存した分をアカウント（Neon）に送る
+    if (typeof window !== "undefined") window.addEventListener("online", () => { void this.syncManager.pushChanges().catch(() => {}); });
   }
 
   /**
@@ -108,6 +113,18 @@ export class Controller {
           const partIds = params.partIds ? params.partIds.split(",").filter(Boolean) : undefined;
           const r = await this.testManager.createWordTest(params.itemId ?? "", params.studentId ?? "", type, Number(params.count), partIds);
           return { data: { test: this.testManager.toScreenTest(r.test), shortage: r.shortage } };
+        }
+        // ---- G007 送信内容・提案確認（AIまとめ） ----
+        case "G007:summarize": { // 送信：AIに送って提案をもらう。els は今のノート（下書き）、frameTypes はカンマ区切り
+          const note = await this.screenNote(params.studentId ?? "", params.itemId ?? "", params.els);
+          const text = params.text ?? "";
+          const list = await this.aiSummaryManager.summarize(new SendContent({ text, charCount: text.length }), note, (params.frameTypes ?? "").split(",").filter(Boolean) as FrameType[]);
+          return { data: list.map((s, i) => toProposal(s, i)) };
+        }
+        case "G007:approve": { // 承認：選んだ提案を入れたノートを返す（保存はしない。学習画面の「保存」で保存する）
+          const note = await this.screenNote(params.studentId ?? "", params.itemId ?? "", params.els);
+          const picked = (JSON.parse(params.proposals ?? "[]") as Proposal[]).map(fromProposal);
+          return { data: this.noteManager.toElements(this.aiSummaryManager.mergeApproved(note, picked)) };
         }
         case "G008:createEssayTest": // 記述テスト（AIで作る）。text は G007 で決めた送る内容
           return { data: this.testManager.toScreenTest(await this.testManager.createEssayTest(params.itemId ?? "", params.studentId ?? "", new SendContent({ text: params.text ?? "", charCount: (params.text ?? "").length }), Number(params.count))) };
@@ -196,6 +213,12 @@ export class Controller {
     }
   }
 
+  /** 移行中のつなぎ：画面の部品（JSON）から、その学習項目のノート（beans の Note）を作る。保存はしない */
+  private async screenNote(studentId: string, itemId: string, els?: string): Promise<Note> {
+    const base = await this.noteManager.getNote(itemId, studentId);
+    return new Note({ ...base, parts: this.noteManager.toParts(JSON.parse(els ?? "[]") as El[], base.noteId, studentId) });
+  }
+
   /** 移行中のつなぎ：画面に出している学習項目のテストを、画面の形にして返す */
   private async loadScreenTests(subjects: ScreenSubject[]): Promise<ScreenTest[]> {
     const out: ScreenTest[] = [];
@@ -224,6 +247,17 @@ export class Controller {
     }
     return out;
   }
+}
+
+/** 提案（beans の Suggestion）を画面の形（Proposal）にする。単語枠は「用語：意味」の行を words に分ける */
+function toProposal(s: Suggestion, i: number): Proposal {
+  const words = s.frameType === "word" ? s.content.split("\n").filter(l => l.trim()).map(l => { const [a, ...b] = l.split(/：|:/); return { term: a.trim(), meaning: b.join("：").trim() }; }) : undefined;
+  return { id: `p${i}`, ft: s.frameType as FrameType, targetId: s.targetPartId ?? undefined, text: s.frameType === "word" ? "" : s.content, words };
+}
+/** 画面の提案（Proposal）を beans の Suggestion に戻す（画面で選んだものなので approved = true） */
+function fromProposal(p: Proposal): Suggestion {
+  const content = p.ft === "word" ? (p.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : p.text;
+  return new Suggestion({ targetPartId: p.targetId ?? null, frameType: p.ft, content, approved: true });
 }
 
 /** アプリ全体で1つだけ使う Controller */
