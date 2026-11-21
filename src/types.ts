@@ -17,7 +17,6 @@ export interface MaterialMeta { id: string; itemId: string; name: string; type: 
 export interface Question { q: string; a: string; expl?: string }
 export type TestKind = "w-m2t" | "w-t2m" | "essay";
 export interface Test { id: string; itemId: string; kind: TestKind; created: number; last?: number; qs: Question[]; ans?: string[]; ok?: boolean[] }
-export interface Data { subjects: Subject[]; materials: MaterialMeta[]; tests: Test[]; usage: Record<string, number> }
 export type Screen = "G001" | "G002" | "G003" | "G004" | "G005" | "G006" | "G007" | "G008" | "G009" | "G010" | "G011";
 export interface Route {
   s: Screen; subjectId?: string; itemId?: string; materialId?: string; testId?: string;

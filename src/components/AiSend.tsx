@@ -15,14 +15,13 @@ import { FT, calls, chunkText } from "../lib/logic";
 import { addLocalUsage, useAiRemaining, type Proposal } from "../services/ai";
 import { controller } from "../controller/Controller";
 import { AiWait, useOnline } from "./AiWait";
-import { getBlob } from "../services/db";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
 interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
 const frameText = (e: El) => e.ft === "word" ? (e.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : e.text;
 export function AiSend() {
-  const { data, subjects, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
+  const { materials, subjects, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
   const online = useOnline();
   const subject = subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const essay = route.purpose === "essay";
@@ -37,8 +36,8 @@ export function AiSend() {
     if (!item || !account) return; let live = true;
     (async () => {
       const ps: Part[] = [];
-      for (const m of data.materials.filter(x => x.itemId === item.id && (x.type === "text" || x.type === "transcript"))) {
-        const b = await getBlob(`${account.id}:${m.id}`); if (typeof b === "string") chunkText(b).forEach((c, n) => ps.push({ id: `${m.id}:${n}`, label: `${m.name}　p.${n + 1}`, text: c, kind: "mat" }));
+      for (const m of materials.filter(x => x.itemId === item.id && (x.type === "text" || x.type === "transcript"))) {
+        const b = (await controller.handleRequest("G007", "getContent", { materialId: m.id })).data; if (typeof b === "string") chunkText(b).forEach((c, n) => ps.push({ id: `${m.id}:${n}`, label: `${m.name}　p.${n + 1}`, text: c, kind: "mat" }));
       }
       frames.forEach(e => { const t = frameText(e); if (t.trim()) ps.push({ id: e.id, label: `${FT[e.ft!].n}　${t.slice(0, 16)}`, text: t, kind: "frame" }); });
       if (live) setParts(ps);

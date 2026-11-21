@@ -198,23 +198,6 @@ export class TestManager {
     if (!q) throw new TestError("問題が見つかりません"); return q.questionId;
   }
 
-  /** 移行用：画面の古い保存場所にあるテストを、同じIDで入れる（解いたことがあれば、その解答も1回目の受験として入れる） */
-  async importScreenTest(studentId: string, t: ScreenTest): Promise<boolean> {
-    if (await this.testDAO.findById(t.id) || !t.qs.length) return false;
-    const type = TestManager.typeOf(t.kind), created = new Date(t.created || Date.now()).toISOString();
-    const questions = t.qs.map((q, i) => new Question({ questionId: newId(), testId: t.id, studentId, number: i + 1, questionText: q.q, modelAnswer: q.a, explanation: q.expl ?? null }));
-    await this.testDAO.insert(new Test({ testId: t.id, studentId, itemId: t.itemId, testType: type, questionCount: questions.length, createdAt: created, questions }));
-    if (t.ans) {
-      const attemptId = newId(), at = new Date(t.last || t.created || Date.now()).toISOString();
-      await this.testDAO.insertAttempt(new Attempt({
-        attemptId, testId: t.id, studentId, attemptNo: 1, takenAt: at,
-        answers: questions.map((q, i) => new Answer({ answerId: newId(), attemptId, questionId: q.questionId, studentId, studentAnswer: t.ans?.[i] ?? "", answeredAt: at, correct: type === TestType.MEANING_TO_TERM ? !!t.ok?.[i] : null })),
-      }));
-      await this.testDAO.updateLastTaken(t.id, at);
-    }
-    return true;
-  }
-
   // ---------- private ----------
 
   /** 単語テストの「意味→用語」のときだけ使う。全角半角・大文字小文字・前後の空白を区別せず、完全一致で正誤を判定する */
@@ -235,8 +218,6 @@ export class TestManager {
     const q = (await this.getTest(testId)).questions.find(x => x.questionId === questionId);
     if (!q) throw new TestError("問題が見つかりません"); return q;
   }
-  /** 移行のあとにまとめて送る */
-  syncNow() { return this.sync(); }
   private sync() { return pushQuietly(this.syncManager); }
 }
 

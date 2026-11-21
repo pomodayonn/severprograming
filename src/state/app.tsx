@@ -6,24 +6,27 @@
 // ・subjects・tests：科目（学習項目・ノート入り）とテスト。Controller（G003:loadSubjects）で Manager から読む
 //   11/21：前は data.subjects・data.tests（localStorage の写し）を画面が読んでいたが、Manager のデータだけを見るようにした。
 //   追加・保存などのあとは reload() で読み直す（写しを手で同じように書き換えることはしない）
-// ・data   ：資料の一覧（data.materials）だけを使う（MaterialManager ができたら、これも Controller 経由にする）
+// ・materials：資料の一覧。11/21（福山）から科目・テストと同じく Controller（G003:loadSubjects）で MaterialManager から読む
+//   前は data.materials（localStorage の写し）だった
 // ・route  ：今どの画面か（例：{ s: "G004", subjectId: "...", itemId: "..." }）
 // ・drafts ：まだ「保存」していないノートの下書き
 // ログインからの流れ
 //   1. ページを開く → getCurrentStudent で、前のログインが続いているか確かめる
-//   2. 続いていれば open()：端末に保存してあった資料の一覧を出す
-//   3. Controller（G003:loadSubjects）で Manager から科目とテストを読む（この端末で初めてなら、前のデータを先に移す）
+//   2. 続いていれば open()
+//   3. Controller（G003:loadSubjects）で Manager から科目・テスト・資料を読む
+// 11/21（福山）：前の保存場所（localStorage・IndexedDB "runndesu"）からの引っ越しはやめた（チームでデータは消えてよいと決めた）。
+//   残っている前のデータは、ページを開いたときに removeOldData() で消す
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Data, Note, Route, Student, Subject, Test } from "../types";
-import { emptyData, loadData, saveData } from "../services/db";
+import type { MaterialMeta, Note, Route, Student, Subject, Test } from "../types";
+import { removeOldData } from "../services/db";
 import { controller } from "../controller/Controller";
 import { toast } from "../components/toast";
 
 /** 確認ダイアログのボタン。primary＝主な操作（紺）、danger＝消す操作（赤） */
 export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
 interface Ctx {
-  account: Student | null; ready: boolean; data: Data; setData: (f: (d: Data) => Data) => void;
-  subjects: Subject[]; tests: Test[]; loaded: boolean; reload: () => Promise<void>;
+  account: Student | null; ready: boolean;
+  subjects: Subject[]; tests: Test[]; materials: MaterialMeta[]; loaded: boolean; reload: () => Promise<void>;
   route: Route; nav: (r: Route) => void;
   drafts: Record<string, Note>; setDraft: (itemId: string, n: Note | null) => void;
   tmp: Record<string, unknown>; setTmp: (p: Record<string, unknown>) => void;
@@ -42,14 +45,9 @@ export function Redirect({ to }: { to: Route }) {
   return null;
 }
 
-/** 端末への保存は、続けて変更があっても最後の1回にまとめる（毎回 JSON を書くと重い） */
-const SAVE_DELAY = 400;
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Student | null>(null), [ready, setReady] = useState(false);
-  const [data, setD] = useState<Data>(emptyData());
-  const [subjects, setSubjects] = useState<Subject[]>([]), [tests, setTests] = useState<Test[]>([]), [loaded, setLoaded] = useState(false);
-  const legacy = useRef({ subjects: "[]", tests: "[]" }); // 前のデータ（localStorage）。この端末で初めて読むときに Manager へ移す
+  const [subjects, setSubjects] = useState<Subject[]>([]), [tests, setTests] = useState<Test[]>([]), [materials, setMaterials] = useState<MaterialMeta[]>([]), [loaded, setLoaded] = useState(false);
   const seq = useRef(0); // reload が重なったとき、最後に頼んだ分だけを画面に出す
   const [route, setRoute] = useState<Route>({ s: "G001" });
   const [drafts, setDrafts] = useState<Record<string, Note>>({});
@@ -60,46 +58,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const aRef = useRef(account); aRef.current = account;
   const rRef = useRef(route); rRef.current = route; // ログアウトのとき、いまの画面IDを Controller に渡す
 
-  // ---- 保存（まとめて書く） ----
-  const pending = useRef<{ id: string; data: Data } | null>(null), timer = useRef(0);
-  const flush = useCallback(() => {
-    clearTimeout(timer.current);
-    const p = pending.current; pending.current = null;
-    if (p) saveData(p.id, p.data);
-  }, []);
-  useEffect(() => { // タブを閉じる・裏に回るときは、待たずに書き込む
-    const onHide = () => flush();
-    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
-    window.addEventListener("pagehide", onHide); document.addEventListener("visibilitychange", onVis);
-    return () => { window.removeEventListener("pagehide", onHide); document.removeEventListener("visibilitychange", onVis); flush(); };
-  }, [flush]);
-  const setData = useCallback((f: (d: Data) => Data) => setD(prev => {
-    const n = f(prev), a = aRef.current;
-    if (a) { // ここでは予約だけ（StrictMode で2回呼ばれても書き込みは1回）
-      pending.current = { id: a.id, data: n };
-      clearTimeout(timer.current); timer.current = window.setTimeout(flush, SAVE_DELAY);
-    }
-    return n;
-  }), [flush]);
-
-  /** 科目とテストを Manager から読み直す（Controller → G003:loadSubjects）。追加・保存などのあとに呼ぶ */
+  /** 科目・テスト・資料を Manager から読み直す（Controller → G003:loadSubjects）。追加・保存などのあとに呼ぶ */
   const reload = useCallback(async () => {
     const a = aRef.current; if (!a) return;
     const n = ++seq.current;
-    const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.id, local: legacy.current.subjects, localTests: legacy.current.tests });
+    const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.id });
     if (r.error) { toast(r.error); return; }
-    const db = r.data as { subjects: Subject[]; tests: Test[] } | undefined;
+    const db = r.data as { subjects: Subject[]; tests: Test[]; materials: MaterialMeta[] } | undefined;
     if (!db || n !== seq.current || aRef.current?.id !== a.id) return; // 古い結果・ほかの学生の結果は出さない
-    setSubjects(db.subjects); setTests(db.tests); setLoaded(true);
+    setSubjects(db.subjects); setTests(db.tests); setMaterials(db.materials); setLoaded(true);
   }, []);
   const open = useCallback((a: Student) => {
-    const local = loadData(a.id);
-    legacy.current = { subjects: JSON.stringify(local.subjects), tests: JSON.stringify(local.tests) };
-    flush(); aRef.current = a; setAccount(a); setD(local); setSubjects([]); setTests([]); setLoaded(false); setDrafts({}); setRoute({ s: "G003" });
+    aRef.current = a; setAccount(a); setSubjects([]); setTests([]); setMaterials([]); setLoaded(false); setDrafts({}); setRoute({ s: "G003" });
     void reload();
-  }, [flush, reload]);
-  const close = useCallback(() => { flush(); aRef.current = null; setAccount(null); setD(emptyData()); setSubjects([]); setTests([]); setLoaded(false); setDrafts({}); setRoute({ s: "G001" }); }, [flush]); // 端末のデータは消さない
+  }, [reload]);
+  const close = useCallback(() => { aRef.current = null; setAccount(null); setSubjects([]); setTests([]); setMaterials([]); setLoaded(false); setDrafts({}); setRoute({ s: "G001" }); }, []); // 端末のデータは消さない
   useEffect(() => { // 前回ログインしたまま（Google から戻ってきたときも）なら、その学生のデータを開く
+    void removeOldData(); // 前の保存場所に残っているデータを消す（もう使わない）
     let live = true;
     controller.accountManager.getCurrentStudent().then(a => { if (!live) return; if (a) open(a); setReady(true); });
     return () => { live = false; };
@@ -135,11 +110,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
   const logout = useCallback(async () => { if (await guard()) { await controller.handleRequest(rRef.current.s, "logoutButton"); close(); } }, [guard, close]);
 
-  // 関数はすべて同じものを使い回すので、memo した部品は data・subjects などが変わったときだけ描き直る
+  // 関数はすべて同じものを使い回すので、memo した部品は subjects・materials などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({
-    account, ready, data, setData, subjects, tests, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
+    account, ready, subjects, tests, materials, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
     enter: open, leave, ask, askName, guard, save, go, logout,
-  }), [account, ready, data, setData, subjects, tests, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
+  }), [account, ready, subjects, tests, materials, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
 
   const submitPop = () => {
     if (!pop) return; const v = pop.val.trim();

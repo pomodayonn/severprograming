@@ -1,7 +1,6 @@
 // G003 科目一覧画面：左に科目の階層、中央で科目の作成・名前の編集・削除
 // 11/11：作成・名前の編集・削除を Controller → SubjectManager 経由にした（A）。
 // 11/21：成功したら reload() で Manager から読み直す（前は data.subjects を手で同じように書き換えていた）
-// 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
 //
 // 【このファイルで何が起きているか】
 // 科目一覧画面（G003）です。科目の追加・名前の編集・削除と、科目を開くボタンがある。
@@ -14,7 +13,7 @@ import { Shell } from "./Shell";
 import { toast } from "./toast";
 
 export function SubjectList() {
-  const { account, subjects, loaded, reload, setData, route, nav, go, ask, askName } = useApp();
+  const { account, subjects, loaded, reload, route, nav, go, ask, askName } = useApp();
   const cur = subjects.find(s => s.id === route.subjectId);
   const sid = account?.id ?? "";
 
@@ -37,9 +36,7 @@ export function SubjectList() {
     if (!cur || await ask("科目の中の学習項目・ノート・資料・テストもすべて削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G003", "deleteSubject", { subjectId: cur.id });
     if (r.error) return toast(r.error);
-    const ids = cur.items.map(i => i.id);
-    setData(d => ({ ...d, materials: d.materials.filter(m => !ids.includes(m.itemId)) })); // 資料の一覧はまだ data にある（MaterialManager ができるまで）
-    await reload();
+    await reload(); // 資料（ストレージ）も SubjectManager → LearningItemManager.deleteItem が一緒に消す
     nav({ s: "G003" }); toast("科目を削除したよ");
   };
   return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
