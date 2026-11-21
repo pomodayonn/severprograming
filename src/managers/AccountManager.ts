@@ -10,12 +10,16 @@
 import type { Student } from "../types";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
 import { AppError } from "./common";
+import { clearStudentData } from "../dao/idb";
 
 /** 画面に出す文を持ったエラー。Controller がそのまま画面に渡す */
 export class AccountError extends AppError {}
 
-/** SyncManager のうち AccountManager が使う部分 */
-export interface PullOnLogin { pullAll(): Promise<void> }
+/** SyncManager のうち AccountManager が使う部分（ログインで受け取る・ログアウトの前に送る） */
+export interface PullOnLogin { pullAll(): Promise<void>; sendAll(): Promise<boolean> }
+
+/** logout() の結果。done＝ログアウトした、unsent＝アカウントに送れていない変更があるので、消さずに止めた */
+export type LogoutResult = "done" | "unsent";
 
 const nfkc = (s: string) => s.normalize("NFKC").trim(); // 全角英数で打っても同じ文字として扱う
 const emailOk = (v: string) => v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
@@ -50,8 +54,25 @@ export class AccountManager {
   /** Google でログインする。ページが移動するので、戻ってきた後は getCurrentStudent() で分かる */
   async loginWithGoogle(): Promise<void> { await this.authClient.signInWithGoogle(); }
 
-  /** ログアウトする。端末のデータは消さない */
-  async logout(): Promise<void> { await this.authClient.signOut(); }
+  /**
+   * ログアウトする。ふだんは端末のデータは消さない。
+   * clearLocal が true なら、この端末にあるこの学生のデータも消す（学校のPCなど、ほかの人も使う端末のため）。
+   *   1. まだアカウントに送っていない変更を先に送る
+   *   2. 送れなかったら、消さずに "unsent" を返す（画面が「消すと戻せません」と確認する）
+   *   3. 確認して force を true にして呼び直したら、送れなくても消す
+   */
+  async logout(clearLocal = false, force = false): Promise<LogoutResult> {
+    if (clearLocal) {
+      const s = await this.authClient.getSession();
+      if (s) {
+        const sent = (await this.syncManager?.sendAll()) ?? false;
+        if (!sent && !force) return "unsent";
+        await clearStudentData(s.id);
+      }
+    }
+    await this.authClient.signOut();
+    return "done";
+  }
 
   /** ログイン中の学生（画面を開き直したとき・Google から戻ったときの確認にも使う） */
   async getCurrentStudent(): Promise<Student | null> {

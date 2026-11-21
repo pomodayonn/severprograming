@@ -53,6 +53,8 @@ export interface ControllerExtra { file?: File; listener?: ProgressListener }
 
 /** 何も渡さないイベント */
 type NoParams = Record<string, never>;
+/** ログアウトのとき（どちらも省略したら false） */
+type LogoutParams = { clearLocal?: boolean; force?: boolean };
 /** G010 で1問を指定するとき（index は画面の問題番号。0から） */
 type QuestionAt = { testId: string; index: number };
 
@@ -97,8 +99,8 @@ export type RequestParams = {
   "G010:editExplanation": QuestionAt & { explanation: string };
   "G010:regenerateExplanation": QuestionAt & { extra: string };
 } & {
-  // ログアウトはヘッダーのボタンなので、どの画面からでも
-  [S in Screen as `${S}:logoutButton`]: NoParams;
+  // ログアウトはヘッダーのボタンなので、どの画面からでも。clearLocal：この端末のデータも消すか、force：送れていない変更があっても消すか
+  [S in Screen as `${S}:logoutButton`]: LogoutParams;
 };
 type RequestKey = keyof RequestParams;
 /** 画面 S で使えるイベントID */
@@ -284,7 +286,12 @@ export class Controller {
         }
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
-      if (eventId === "logoutButton") { await this.accountManager.logout(); return { next: "G001", student: null }; }
+      // 送れていない変更があって消すのを止めたときは、ログアウトせずに data で unsent を返す（画面が確認を出す）
+      if (eventId === "logoutButton") {
+        const { clearLocal = false, force = false } = (params ?? {}) as LogoutParams;
+        if (await this.accountManager.logout(clearLocal, force) === "unsent") return { data: { unsent: true } };
+        return { next: "G001", student: null };
+      }
       return { error: `まだ作っていない操作です（${key}）` };
     } catch (e) {
       // Manager のエラー（AppError）は文をそのまま画面に出す

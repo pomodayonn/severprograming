@@ -97,6 +97,16 @@ export class SyncManager {
     return run;
   }
 
+  /**
+   * まだ送っていない変更をアカウントに送り、端末のデータが全部アカウントにもある状態か返す（11/21）。
+   * ログアウトで端末のデータを消す前に、AccountManager が呼ぶ。
+   * 同期できない設定（お試しログイン・Data API の URL がない）や、通信できずに送れなかったときは false
+   */
+  async sendAll(): Promise<boolean> {
+    if (!this.enabled) return false;
+    try { await this.pushChanges(); return true; } catch { return false; }
+  }
+
   // ======================= ここから private =======================
   private async push(): Promise<void> {
     const student = await this.authClient.getSession(); if (!student) return;
