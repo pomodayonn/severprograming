@@ -18,20 +18,20 @@ export function Header({ plain = false }: { plain?: boolean }) {
 }
 /** 左サイドバーの階層：科目（▼▶）の下に学習項目（●）。extra で選択中の項目の下に足せる */
 export function Tree({ heading, extra }: { heading: string; extra?: (itemId: string) => ReactNode }) {
-  const { data, route, go } = useApp();
+  const { subjects, loaded, route, go } = useApp();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const isOpen = (id: string) => open[id] ?? id === route.subjectId;
   return (<><div className="th">{heading}</div>
-    {data.subjects.map(s => (<div key={s.id}>
+    {subjects.map(s => (<div key={s.id}>
       <div className={"ts" + (route.s === "G003" && route.subjectId === s.id ? " on" : "")} onClick={() => { setOpen({ ...open, [s.id]: !isOpen(s.id) }); if (route.s === "G003") go({ s: "G003", subjectId: s.id }); }}>{isOpen(s.id) ? "▼" : "▶"} {s.name}</div>
       {isOpen(s.id) && s.items.map(i => { const cur = route.s !== "G003" && route.itemId === i.id && route.subjectId === s.id;
         return (<div key={i.id}><div className={"ti" + (cur ? " on" : "")} onClick={() => go({ s: "G004", subjectId: s.id, itemId: i.id })}><i className="dot" />{i.name}</div>{extra && cur && extra(i.id)}</div>); })}
     </div>))}
-    {!data.subjects.length && <p className="mute">科目がまだありません</p>}</>);
+    {loaded && !subjects.length && <p className="mute">科目がまだありません</p>}</>);
 }
 export function GraphPane() {
-  const { data, route, go } = useApp();
-  const s = data.subjects.find(x => x.id === route.subjectId);
+  const { subjects, route, go } = useApp();
+  const s = subjects.find(x => x.id === route.subjectId);
   return s ? <RelationGraph s={s} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.id, itemId: id })} /> : null;
 }
 export function Shell({ heading = "科目一覧", left, center, right, cls = "" }: { heading?: string; left?: ReactNode; center: ReactNode; right?: ReactNode; cls?: string }) {
