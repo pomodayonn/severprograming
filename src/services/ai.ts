@@ -74,14 +74,16 @@ export const regenerateQuestion = impl.regenerateQuestion;
 export const frameLabel = (t: FrameType) => FT[t].n;
 
 /**
- * 今日の残り利用回数。サーバーがあればサーバーに聞き、なければ端末の記録（usage）から数える。
+ * 今日の残り利用回数。サーバーがあればサーバーに聞き、なければ端末の記録から数える。
  * remaining が null の間は読み込み中。AIを使った後は refresh() を呼ぶ。
+ * 11/21：前は画面から data.usage を渡していたが、端末の記録はこのファイルの中だけで持つようにした（画面は data を見ない）
  */
-export function useAiRemaining(usage: Record<string, number>) {
-  const [srv, setSrv] = useState<number | null>(null);
+export function useAiRemaining() {
+  const [srv, setSrv] = useState<number | null>(null), [used, setUsed] = useState(localUsed);
   const refresh = useCallback(async () => { if (SERVER) { try { setSrv(await server.remaining()); } catch { setSrv(null); } } }, []);
   useEffect(() => { void refresh(); }, [refresh]);
-  const remaining = SERVER ? srv : Math.max(0, AI_LIMIT - (usage[dayKey()] ?? 0));
+  useEffect(() => { const on = () => setUsed(localUsed()); listeners.add(on); return () => { listeners.delete(on); }; }, []);
+  const remaining = SERVER ? srv : Math.max(0, AI_LIMIT - used);
   return { remaining, limit: AI_LIMIT, refresh };
 }
 
@@ -91,6 +93,15 @@ export async function fetchRemaining(): Promise<number | null> {
   try { return await server.remaining(); } catch { return null; }
 }
 
+// ---- 仮の動き（サーバーがないとき）の利用回数：端末に「日付→回数」で記録する ----
+const USAGE_KEY = "runndesu-ai-usage";
+const listeners = new Set<() => void>();
+function localUsed(): number {
+  try { return (JSON.parse(localStorage.getItem(USAGE_KEY) ?? "{}") as Record<string, number>)[dayKey()] ?? 0; } catch { return 0; }
+}
 /** 仮の動きのときだけ、端末で利用回数を足す（サーバーがあるときはサーバーが数えるので何もしない） */
-export const addLocalUsage = (usage: Record<string, number>, n: number): Record<string, number> =>
-  SERVER ? usage : { ...usage, [dayKey()]: (usage[dayKey()] ?? 0) + n };
+export function addLocalUsage(n: number): void {
+  if (SERVER) return;
+  try { localStorage.setItem(USAGE_KEY, JSON.stringify({ [dayKey()]: localUsed() + n })); } catch { /* 保存できなくても続ける */ }
+  listeners.forEach(f => f());
+}

@@ -2,7 +2,7 @@
 // 11/12：テストの作成・解答（採点と保存）・解説を Controller → TestManager 経由にした（A）。
 // 解き直しも毎回「受験」として保存する（要件定義書 UC-023・UC-027）。
 // 11/12：G010 に「直す」（問題と模範解答・自分の解答・解説、AIで直す）と、過去の受験を選ぶ機能を追加（UC-026・UC-028）。
-// ほかの画面がまだ data.tests を使っているので、Manager で成功したら data.tests にも同じ変更を入れる（移行中のつなぎ）
+// 11/21：テストと科目は useApp の tests・subjects（Manager から読んだもの）を見る。成功したら reload() で読み直す
 //
 // 【このファイルで何が起きているか】
 // テストの4画面がこのファイルに入っている。
@@ -25,11 +25,11 @@ const KIND: Record<TestKind, string> = { "w-m2t": "単語テスト（意味→�
 const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; };
 
 export function TestCreate() {
-  const { data, setData, route, nav, go, tmp, setTmp, account } = useApp();
+  const { subjects, reload, route, nav, go, tmp, setTmp, account } = useApp();
   const online = useOnline();
-  const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
+  const subject = subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
-  const { remaining, limit, refresh } = useAiRemaining(data.usage);
+  const { remaining, limit, refresh } = useAiRemaining();
   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
   const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
@@ -50,9 +50,9 @@ export function TestCreate() {
       setBusy(false); void refresh();
       if (r.error) return setMsg(r.error);
       t = r.data as Test;
-      setData(d => ({ ...d, usage: addLocalUsage(d.usage, c) })); setTmp({ send: "", sendCalls: 1 });
+      addLocalUsage(c); setTmp({ send: "", sendCalls: 1 });
     }
-    setData(d => ({ ...d, tests: [...d.tests, t] }));
+    await reload();
     nav({ s: "G009", subjectId: subject.id, itemId: item.id, testId: t.id, mode: "new" }); // 問題だけを表示（模範解答・解説は出さない）
   };
   return <Shell center={<>
@@ -70,8 +70,8 @@ export function TestCreate() {
 }
 
 export function TestAnswer() {
-  const { data, setData, route, nav, ask } = useApp();
-  const test = data.tests.find(t => t.id === route.testId), retry = route.mode === "retry";
+  const { tests, reload, route, nav, ask } = useApp();
+  const test = tests.find(t => t.id === route.testId), retry = route.mode === "retry";
   const [busy, setBusy] = useState(false);
   const keys = useRef<{ next: () => void; prev: () => void; choose: (n: number) => void; essay: boolean } | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -101,7 +101,7 @@ export function TestAnswer() {
     setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.id, answers: JSON.stringify(ans) }); setBusy(false);
     if (r.error) return toast(r.error);
     const saved = r.data as Test;
-    setData(d => ({ ...d, tests: d.tests.map(t => t.id === test.id ? saved : t) }));
+    await reload();
     nav({ s: "G010", ...base, testId: test.id, mode: retry ? "retry" : "new", ans: saved.ans, ok: saved.ok });
   };
   // 11/17：前は「保存」ボタンがあったが、途中の答えは保存されないのに「保存したよ」と出て紛らわしかったので、
@@ -137,9 +137,9 @@ interface Att { no: number; at: number; ans: string[]; ok?: boolean[] }
 type Fix = "question" | "answer" | "expl";
 
 export function TestResult() {
-  const { data, setData, route, go } = useApp();
-  const test = data.tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
-  const { remaining, refresh } = useAiRemaining(data.usage);
+  const { tests, reload, route, go } = useApp();
+  const test = tests.find(t => t.id === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
+  const { remaining, refresh } = useAiRemaining();
   // 過去の受験（1回目から順に）と、いま表示している回
   const [atts, setAtts] = useState<Att[]>([]), [no, setNo] = useState(0);
   // 直す（G010）：直す対象・書き直し欄・追加の指示
@@ -157,8 +157,7 @@ export function TestResult() {
   const att = atts.find(a => a.no === no);
   const ans = att?.ans ?? (list ? test.ans : route.ans), ok = att ? att.ok : (list ? test.ok : route.ok);
   const essay = test.kind === "essay", canAnswer = test.kind !== "w-m2t" && !!att;
-  const mirror = (t: Test) => setData(d => ({ ...d, tests: d.tests.map(x => x.id === t.id ? t : x) }));
-  const useAi = () => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1) })); void refresh(); };
+  const useAi = () => { addLocalUsage(1); void refresh(); };
   const expl = async () => {
     if (q.expl || busy) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
     if (!online) return setMsg("インターネットにつながっていません。解説はAIで作るので、つながってから試してください");
@@ -166,8 +165,7 @@ export function TestResult() {
     const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: String(idx) }); void refresh();
     setBusy(false);
     if (r.error) return setMsg(r.error);
-    const e = r.data as string;
-    setData(d => ({ ...d, usage: addLocalUsage(d.usage, 1), tests: d.tests.map(t => t.id === test.id ? { ...t, qs: t.qs.map((x, i) => i === idx ? { ...x, expl: e } : x) } : t) })); setMsg("");
+    useAi(); await reload(); setMsg("");
   };
   // 「直す」：対象を選ぶと、いまの内容を書き直し欄に入れる
   const open = (f: Fix) => {
@@ -183,7 +181,8 @@ export function TestResult() {
       : await controller.handleRequest("G010", "editExplanation", { ...p, explanation: f1 });
     setBusy(false);
     if (r.error) return setMsg(r.error);
-    if (fix === "answer") { const d = r.data as { test: Test; attempts: Att[] }; mirror(d.test); setAtts(d.attempts); } else mirror(r.data as Test);
+    if (fix === "answer") setAtts((r.data as { test: Test; attempts: Att[] }).attempts);
+    await reload();
     close(); toast("直したよ");
   };
   const aiFix = async () => {
@@ -194,7 +193,7 @@ export function TestResult() {
     const r = await controller.handleRequest("G010", fix === "question" ? "regenerateQuestion" : "regenerateExplanation", { testId: test.id, index: String(idx), extra });
     setBusy(false);
     if (r.error) { void refresh(); return setMsg(r.error); }
-    useAi(); const t = r.data as Test; mirror(t);
+    useAi(); const t = r.data as Test; await reload();
     if (fix === "question") { setF1(t.qs[idx].q); setF2(t.qs[idx].a); } else setF1(t.qs[idx].expl ?? "");
     setMsg(""); toast("AIで直して保存したよ");
   };
@@ -224,13 +223,13 @@ export function TestResult() {
 }
 
 export function TestList() {
-  const { data, route, nav } = useApp();
-  const [sid, setSid] = useState(route.subjectId ?? data.subjects[0]?.id), [sel, setSel] = useState<string | null>(null);
-  const subject = data.subjects.find(s => s.id === sid);
-  const rows = (subject?.items ?? []).flatMap(i => data.tests.filter(t => t.itemId === i.id).map(t => ({ t, i }))).sort((a, b) => b.t.created - a.t.created);
+  const { subjects, tests, route, nav } = useApp();
+  const [sid, setSid] = useState(route.subjectId ?? subjects[0]?.id), [sel, setSel] = useState<string | null>(null);
+  const subject = subjects.find(s => s.id === sid);
+  const rows = (subject?.items ?? []).flatMap(i => tests.filter(t => t.itemId === i.id).map(t => ({ t, i }))).sort((a, b) => b.t.created - a.t.created);
   const base = (t?: Test) => ({ subjectId: sid, itemId: t?.itemId ?? route.itemId });
   return <Shell center={<>
-    <div className="folders">{data.subjects.map(s => <div key={s.id} className={"folder" + (s.id === sid ? " on" : "")} onClick={() => { setSid(s.id); setSel(null); }}><i />{s.name}</div>)}</div>
+    <div className="folders">{subjects.map(s => <div key={s.id} className={"folder" + (s.id === sid ? " on" : "")} onClick={() => { setSid(s.id); setSel(null); }}><i />{s.name}</div>)}</div>
     <div className="vbox" style={{ minHeight: 220 }}>{rows.length === 0 && <p className="mute">テストがまだありません。</p>}
       {rows.map(({ t, i }) => <div key={t.id} className={"trow" + (sel === t.id ? " on" : "")} onClick={() => setSel(t.id)}><i className="dot" /><span>{i.name}-{ymd(t.created)}</span><span className="mute">{KIND[t.kind]}／{t.qs.length}問／最後に解いた日時 {fmt(t.last)}</span></div>)}</div>
     <div className="bar2"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(rows.find(r => r.t.id === sel)?.t), testId: sel!, mode: "list" })}>結果表示</button>

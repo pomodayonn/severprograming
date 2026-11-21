@@ -2,7 +2,8 @@
 // 11/12：学習項目の追加・名前の編集・削除・前提項目の設定を Controller → LearningItemManager 経由にした（A）。
 // 11/12：ノートの「保存」は state/app.tsx の save() から Controller → NoteManager に送る（A）
 // 前のデータの移行は、ログインしたときに1回だけ行う（state/app.tsx → Controller の migrateOnce）
-// ほかの画面がまだ data.subjects を使っているので、Manager で成功したら data.subjects にも同じ変更を入れる（移行中のつなぎ）
+// 11/21：科目・学習項目・ノートは useApp の subjects（Manager から読んだもの）を見る。成功したら reload() で読み直す。
+// 資料の一覧（data.materials）だけは、MaterialManager ができるまで data のまま
 //
 // 【このファイルで何が起きているか】
 // 学習画面（G004）です。いちばん大きな画面で、3列に分かれている。
@@ -30,8 +31,8 @@ function SideMaterial({ id }: { id: string | null }) {
   return <div className="vbox">{m ? <Viewer type={m.type} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
 }
 export function Study() {
-  const { data, setData, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
-  const subject = data.subjects.find(s => s.id === route.subjectId);
+  const { data, setData, subjects, tests, reload, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
+  const subject = subjects.find(s => s.id === route.subjectId);
   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
@@ -42,37 +43,35 @@ export function Study() {
   const mats = item ? data.materials.filter(m => m.itemId === item.id) : [];
   const setEls = (els: NonNullable<typeof note>["els"]) => item && note && setDraft(item.id, { ...note, els });
   const addEl = (k: Parameters<typeof newEl>[0], f?: FrameType) => note && setEls([...note.els, newEl(k, bottomY(note.els), f)]);
-  const patchItems = (f: (items: Item[]) => Item[]) => setData(d => ({ ...d, subjects: d.subjects.map(s => s.id === subject.id ? { ...s, items: f(s.items) } : s) }));
   const open = (id: string) => go({ s: "G004", subjectId: subject.id, itemId: id });
   const addItem = async () => {
     const n = await askName("学習項目の追加"); if (!n) return;
     const r = await controller.handleRequest("G004", "addItem", { studentId: sid, subjectId: subject.id, name: n });
     if (r.error) return toast(r.error);
     const b = r.data as ItemBean;
-    const it: Item = { id: b.itemId, name: b.itemName, prereqs: [], note: { els: [], savedAt: 0 } };
-    patchItems(a => [...a, it]); nav({ s: "G004", subjectId: subject.id, itemId: it.id });
+    await reload(); nav({ s: "G004", subjectId: subject.id, itemId: b.itemId });
   };
   const rename = async () => {
     if (!item) return;
     const n = await askName("学習項目名の編集", item.name); if (!n) return;
     const r = await controller.handleRequest("G004", "renameItem", { itemId: item.id, name: n });
     if (r.error) return toast(r.error);
-    patchItems(a => a.map(i => i.id === item.id ? { ...i, name: n.trim() } : i));
+    await reload();
   };
   const del = async () => {
     if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.id });
     if (r.error) return toast(r.error);
     mats.forEach(m => delBlob(`${account.id}:${m.id}`)); setDraft(item.id, null);
-    patchItems(a => a.filter(i => i.id !== item.id).map(i => ({ ...i, prereqs: i.prereqs.filter(p => p !== item.id) })));
-    setData(d => ({ ...d, materials: d.materials.filter(m => m.itemId !== item.id), tests: d.tests.filter(t => t.itemId !== item.id) }));
+    setData(d => ({ ...d, materials: d.materials.filter(m => m.itemId !== item.id) })); // 資料の一覧はまだ data にある
+    await reload();
     nav({ s: "G004", subjectId: subject.id }); toast("学習項目を削除したよ");
   };
   const savePre = async () => {
     if (!item || !pre) return;
     const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.id, prereqIds: pre.join(",") });
     if (r.error) return setPreMsg(r.error); // 輪になるときは「前提項目が輪になるため設定できません」
-    patchItems(a => a.map(i => i.id === item.id ? { ...i, prereqs: pre } : i)); setPre(null); setPreMsg("");
+    await reload(); setPre(null); setPreMsg("");
   };
   const upload = async (files: FileList | null) => {
     if (!files || !item) return; setMsg(""); const names = mats.map(m => m.name);
@@ -94,7 +93,7 @@ export function Study() {
       setData(d => ({ ...d, materials: [...d.materials, ...add] }));
     }
   };
-  const doSave = () => { if (item && drafts[item.id]) { save(item.id); toast("保存したよ"); } else toast("変更はありません"); };
+  const doSave = async () => { if (item && drafts[item.id]) { if (await save(item.id)) toast("保存したよ"); } else toast("変更はありません"); };
   const openMat = (id: string) => go({ s: "G005", subjectId: subject.id, itemId: item?.id, materialId: id });
   const toc = note ? [...note.els].filter(e => (e.kind === "text" && (e.head ?? 0) > 0) || e.kind === "frame").sort((a, b) => a.y - b.y) : [];
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -102,7 +101,7 @@ export function Study() {
   const canvas = note ? <NoteCanvas els={note.els} onChange={setEls} /> : null;
   const extra = (id: string) => id === item?.id ? (<><div className="ind">ノート</div><div className="ind">ストレージ</div>
     {mats.map(m => <div className="ind mat" key={m.id} onClick={() => openMat(m.id)}>{m.name}</div>)}
-    <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.id, itemId: id })}>テスト（{data.tests.filter(t => t.itemId === id).length}）</div></>) : null;
+    <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.id, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
   return (<div className="app"><Header />
     <div className="cols">
       <aside className="lf">

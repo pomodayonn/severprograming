@@ -22,9 +22,9 @@ import { toast } from "./toast";
 interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
 const frameText = (e: El) => e.ft === "word" ? (e.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : e.text;
 export function AiSend() {
-  const { data, setData, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
+  const { data, subjects, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
   const online = useOnline();
-  const subject = data.subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
+  const subject = subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
   const essay = route.purpose === "essay";
   const [parts, setParts] = useState<Part[]>([]), [sel, setSel] = useState<string[]>([]), [text, setText] = useState("");
   const [types, setTypes] = useState<FrameType[]>(Object.keys(FT) as FrameType[]), [tab, setTab] = useState<"src" | "send" | "prop">("src");
@@ -32,7 +32,7 @@ export function AiSend() {
   const [ins, setIns] = useState(""), [ref, setRef] = useState<string | null>(null), [busy, setBusy] = useState(false);
   // 今のノート：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
   const note = item ? (drafts[item.id] ?? item.note) : null;
-  const { remaining, limit, refresh } = useAiRemaining(data.usage), frames = useMemo(() => (note?.els ?? []).filter(e => e.kind === "frame"), [note]);
+  const { remaining, limit, refresh } = useAiRemaining(), frames = useMemo(() => (note?.els ?? []).filter(e => e.kind === "frame"), [note]);
   useEffect(() => { // 元にできる内容：文字起こし済みの資料（ページごと）とノートの枠
     if (!item || !account) return; let live = true;
     (async () => {
@@ -47,7 +47,7 @@ export function AiSend() {
   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
-  const consume = (n: number) => { setData(d => ({ ...d, usage: addLocalUsage(d.usage, n) })); void refresh(); };
+  const consume = (n: number) => { addLocalUsage(n); void refresh(); };
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
   const confirmCalls = async (): Promise<number | null> => {
     if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
