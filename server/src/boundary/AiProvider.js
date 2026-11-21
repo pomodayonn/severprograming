@@ -18,9 +18,9 @@ export class AiProvider {
    * @param {string} o.model     モデル名
    * @param {number} o.maxChars  1回に受け取れる文字数（プロンプト全体）
    * @param {string} o.apiKeyEnv APIキーが入っている環境変数の名前（例："GROQ_API_KEY"）
-   * @param {number} [o.timeoutMs] 何ミリ秒待つか
+   * @param {number} o.timeoutMs 何ミリ秒待つか
    */
-  constructor({ name, baseUrl, model, maxChars, apiKeyEnv, timeoutMs = AI_CONFIG.timeoutMs }) {
+  constructor({ name, baseUrl, model, maxChars, apiKeyEnv, timeoutMs = timeoutMs }) {
     this.name = name;
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.model = model;

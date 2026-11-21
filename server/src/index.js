@@ -28,7 +28,7 @@ app.get("/api/health", (req, res) => {
 //部品を組み立てる（DAO → Manager、Provider → Service、それらを Controller に渡す）
 const aiUsageManager = new AiUsageManager(new AiUsageDAO());
 const aiService = new AiService(defaultProviders());
-const tokenVerifier = new TokenVerifier(process.env.NEON_AUTH_JWKS_URL);
+const tokenVerifier = new TokenVerifier(process.env.NEON_AUTH_JWKS_URL, process.env.NEON_AUTH_URL);
 
 //入口の係（ApiController）を作り、URL ごとに担当のメソッドへつなぐ
 const api = new ApiController(tokenVerifier, aiUsageManager, aiService);

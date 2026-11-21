@@ -9,11 +9,17 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export class TokenVerifier {
-  /** @param {string | undefined} jwksUrl ハンコの見本の場所（NEON_AUTH_JWKS_URL） */
-  constructor(jwksUrl) {
+  /**
+   * @param {string | undefined} jwksUrl ハンコの見本の場所（NEON_AUTH_JWKS_URL）
+   * @param {string | undefined} authUrl Neon Auth の URL（NEON_AUTH_URL）。発行元（issuer）と宛先（audience）の確認に使う
+   */
+  constructor(jwksUrl, authUrl) {
     // 見本は最初に使うときに取りに行き、しばらく覚えておいてくれる
     this.jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
+    // 約束（docs/API.md）：issuer と audience は Neon Auth の URL のオリジン（https://〜 のホスト名まで）
+    this.origin = authUrl ? new URL(authUrl).origin : null;
     if (!this.jwks) console.warn("NEON_AUTH_JWKS_URL がないので、ログインの確認がすべて失敗します");
+    if (!this.origin) console.warn("NEON_AUTH_URL がないので、ログインの確認がすべて失敗します");
   }
 
   /**
@@ -22,8 +28,13 @@ export class TokenVerifier {
    * @returns {Promise<string | null>}
    */
   async verify(authHeader) {
-    if (!this.jwks || !authHeader?.startsWith("Bearer ")) return null;
-    const token = authHeader.slice("Bearer ".length).trim();
+        if (!this.jwks || !this.origin || !authHeader?.startsWith("Bearer ")) return null;
+          // 署名と期限（exp）に加えて、「誰が出したか（iss）」「誰あてか（aud）」「どの方式で署名したか」も確かめる
+      const { payload } = await jwtVerify(token, this.jwks, {
+        issuer: this.origin,
+        audience: this.origin,
+        algorithms: ["EdDSA"],
+      });
     try {
       const { payload } = await jwtVerify(token, this.jwks); // 署名と期限（exp）を確かめる
       return typeof payload.sub === "string" ? payload.sub : null;

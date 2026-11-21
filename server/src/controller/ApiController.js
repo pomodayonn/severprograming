@@ -4,9 +4,9 @@
 // どのメソッドも、だいたい同じ順番で動きます（docs/API.md のとおり）
 // 1. TokenVerifier で JWT を確かめて学生IDを取り出す。だめなら 401
 // 2. 送られた形を確かめる。おかしければ 400、長すぎれば 413
-// 3. 何回分使うかを数え、今日の残りが足りなければ AI を呼ばずに 429
-// 4. AiService で AI を呼ぶ。どの AI もだめなら 503（このときは回数を数えない）
-// 5. 成功したら AiUsageManager で回数を足し、remaining（残り）と limit（20）を付けて返す
+// 3. 何回分使うかを数え、AiUsageManager で先に予約する。今日の残りが足りなければ AI を呼ばずに 429
+// 4. AiService で AI を呼ぶ。どの AI もだめなら予約を戻して 503（＝失敗したときは数えない）
+// 5. 成功したら remaining（予約したあとの残り）と limit（20）を付けて返す
 // エラーは { error: { code: "..." } } の形で返す（フロントの services/api.ts がこれを読む）
 // Java でいうと、サーブレットの doGet / doPost を URL ごとに分けたものです
 import { DAILY_LIMIT } from "../managers/AiUsageManager.js";
@@ -71,12 +71,21 @@ export class ApiController {
     try {
       const { calls, run } = prepare(req.body ?? {});
       if (calls > DAILY_LIMIT) throw new TooLong(`1日の上限（${DAILY_LIMIT}回）を超える長さです`);
-      if (!(await this.aiUsageManager.canUse(studentId, calls))) {
+      // 先に予約する（残りの確認と足し算を DB の1文でやるので、同時に来ても上限を超えない）
+      const reservation = await this.aiUsageManager.reserve(studentId, calls);
+      if (!reservation) {
         return sendError(res, 429, "LIMIT_EXCEEDED", `${calls}回分が必要ですが、今日の残りが足りません`);
       }
-      const result = await run(); // ここで失敗したら回数は数えない
-      const remaining = await this.aiUsageManager.addUsage(studentId, calls); // 足したあとの残りが返ってくる
-      res.json({ ...result, remaining, limit: DAILY_LIMIT });
+      let result;
+      try {
+        result = await run();
+      } catch (e) {
+        // AIが失敗したので予約を戻す（戻すのに失敗しても、AIのエラーのほうを返す）
+        await this.aiUsageManager.release(studentId, reservation.useDate, calls)
+          .catch((err) => console.error("[API] 予約を戻せませんでした:", err));
+        throw e;
+      }
+      res.json({ ...result, remaining: reservation.remaining, limit: DAILY_LIMIT });
     } catch (e) {
       if (e instanceof BadRequest) return sendError(res, 400, "BAD_REQUEST", e.message);
       if (e instanceof TooLong) return sendError(res, 413, "TOO_LONG", e.message);
