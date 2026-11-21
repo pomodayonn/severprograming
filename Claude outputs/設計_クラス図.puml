@@ -1,0 +1,523 @@
+@startuml runndesu_class
+' るんです。クラス図（言語に依存しない形）2026-11-21 版
+' 構成: Controller → Entity Manager → DAO。Manager と DAO は Entity Bean を使う
+' 型: String / int / boolean / DateTime / File / List<T>
+' ログインは Neon Auth（Managed Better Auth）。学生IDは neon_auth.user の id
+' 同期は Neon の Data API（2026-11-10 決定）。ブラウザの SyncManager が Neon を直接読み書きし、RLS で自分の学生IDの行だけに絞る
+' 11/21 の変更：画面も Entity Bean を使う（道B）／使っていないメソッドを削除／ログアウトで端末のデータを消せる／
+'   AIまとめの承認は保存しない mergeApproved に／SendContentManager は split だけ／前提項目は setPrerequisites でまとめて設定
+
+skinparam defaultFontName "Noto Sans CJK JP"
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 60
+skinparam packageStyle rectangle
+skinparam class {
+  BackgroundColor White
+  BorderColor #333333
+  ArrowColor #333333
+}
+skinparam package {
+  BorderColor #999999
+  FontColor #555555
+}
+hide circle
+hide empty members
+
+title るんです。 クラス図（2026-11-21）
+
+' ===================== 画面の受付 =====================
+package "画面の受付" {
+  class "Controller" as Controller <<Controller>> {
+    - accountManager : AccountManager
+    - syncManager : SyncManager
+    - subjectManager : SubjectManager
+    - itemManager : LearningItemManager
+    - materialManager : MaterialManager
+    - noteManager : NoteManager
+    - sendContentManager : SendContentManager
+    - aiSummaryManager : AiSummaryManager
+    - testManager : TestManager
+    + handleRequest(screenId : String, eventId : String, params : Params) : Result
+    + adjustNoteParts(parts : List<NotePart>, partId : String) : List<NotePart>
+    + tableOfContents(parts : List<NotePart>) : List<TocEntry>
+  }
+}
+
+' ===================== アカウント（G001・G002）※ログインは Neon Auth に任せる =====================
+package "アカウント（G001・G002）※ログインは Neon Auth に任せる" {
+  class "AccountManager" as AccountManager <<Entity Manager>> {
+    - authClient : NeonAuthClient
+    - syncManager : SyncManager
+    + register(mail : String, pass : String, passConfirm : String) : Student
+    + login(mail : String, pass : String) : Student
+    + loginWithGoogle() : void
+    + logout(clearLocal : boolean, force : boolean) : String
+    + getCurrentStudent() : Student
+    + isTrial() : boolean
+    + checkPassword(pass : String) : boolean
+  }
+  class "NeonAuthClient" as NeonAuthClient <<Boundary>> {
+    + signUp(mail : String, pass : String) : Student
+    + signIn(mail : String, pass : String) : Student
+    + signInWithGoogle() : void
+    + signOut() : void
+    + getSession() : Student
+    + getAccessToken() : String
+  }
+  class "Student（学生）" as Student <<Entity Bean>> {
+    - studentId : String
+    - mail : String
+    - registeredAt : DateTime
+  }
+}
+
+' ===================== 同期（端末 ⇔ Neon、Neon の Data API を直接呼ぶ） =====================
+package "同期（端末 ⇔ Neon、Neon の Data API を直接呼ぶ）" {
+  class "SyncManager" as SyncManager <<Entity Manager>> {
+    - authClient : NeonAuthClient
+    - lastSyncedAt : DateTime
+    + pullAll() : void
+    + pushChanges() : void
+    + sendAll() : boolean
+  }
+}
+
+' ===================== 科目・学習項目（G003・G004） =====================
+package "科目・学習項目（G003・G004）" {
+  class "SubjectManager" as SubjectManager <<Entity Manager>> {
+    - subjectDAO : SubjectDAO
+    - itemManager : LearningItemManager
+    - syncManager : SyncManager
+    + getSubjects(studentId : String) : List<Subject>
+    + createSubject(studentId : String, name : String) : Subject
+    + renameSubject(studentId : String, subjectId : String, name : String) : void
+    + deleteSubject(subjectId : String) : void
+  }
+  class "LearningItemManager" as LearningItemManager <<Entity Manager>> {
+    - itemDAO : LearningItemDAO
+    - prerequisiteDAO : PrerequisiteDAO
+    - noteDAO : NoteDAO
+    - testDAO : TestDAO
+    - materialDAO : MaterialDAO
+    - syncManager : SyncManager
+    + getItems(subjectId : String) : List<LearningItem>
+    + createItem(studentId : String, subjectId : String, name : String) : LearningItem
+    + renameItem(itemId : String, name : String) : void
+    + deleteItem(itemId : String, sync : boolean) : void
+    + setPrerequisites(itemId : String, prereqItemIds : List<String>) : void
+    + getRelationMap(subjectId : String) : RelationMap
+    - wouldCycle(list : List<Prerequisite>, itemId : String, prereqItemId : String) : boolean
+  }
+  class "Subject（科目）" as Subject <<Entity Bean>> {
+    - subjectId : String
+    - studentId : String
+    - subjectName : String
+    - createdAt : DateTime
+    - updatedAt : DateTime
+  }
+  class "LearningItem（学習項目）" as LearningItem <<Entity Bean>> {
+    - itemId : String
+    - studentId : String
+    - subjectId : String
+    - itemName : String
+    - createdAt : DateTime
+    - updatedAt : DateTime
+  }
+  class "Prerequisite（前提項目）" as Prerequisite <<Entity Bean>> {
+    - studentId : String
+    - itemId : String
+    - prereqItemId : String
+    - updatedAt : DateTime
+  }
+  class "SubjectDAO" as SubjectDAO <<DAO>> {
+    + findByStudent(studentId : String) : List<Subject>
+    + insert(subject : Subject) : void
+    + updateName(subjectId : String, name : String) : void
+    + delete(subjectId : String) : void
+  }
+  class "LearningItemDAO" as LearningItemDAO <<DAO>> {
+    + findBySubject(subjectId : String) : List<LearningItem>
+    + findById(itemId : String) : LearningItem
+    + insert(item : LearningItem) : void
+    + updateName(itemId : String, name : String) : void
+    + delete(itemId : String) : void
+  }
+  class "PrerequisiteDAO" as PrerequisiteDAO <<DAO>> {
+    + findBySubject(subjectId : String) : List<Prerequisite>
+    + insert(p : Prerequisite) : void
+    + delete(itemId : String, prereqItemId : String) : void
+    + deleteByItem(itemId : String) : void
+  }
+}
+
+' ===================== 資料（G005・G006）※端末の中だけに保存 =====================
+package "資料（G005・G006）※端末の中だけに保存" {
+  class "MaterialManager" as MaterialManager <<Entity Manager>> {
+    - materialDAO : MaterialDAO
+    + getMaterials(itemId : String) : List<Material>
+    + upload(itemId : String, file : File) : Material
+    + transcribe(materialId : String, listener : ProgressListener) : TranscribeResult
+    + getContent(materialId : String) : File
+    + correctTranscript(materialId : String, text : String) : void
+    + delete(materialId : String, withTranscript : boolean) : void
+  }
+  class "Material（資料）" as Material <<Entity Bean>> {
+    - materialId : String
+    - itemId : String
+    - fileName : String
+    - fileType : String
+    - fileSize : int
+    - sourceMaterialId : String
+    - addedAt : DateTime
+  }
+  interface "ProgressListener" as ProgressListener <<interface>> {
+    + onProgress(percent : int) : void
+  }
+  class "MaterialDAO" as MaterialDAO <<DAO>> {
+    + findByItem(itemId : String) : List<Material>
+    + findById(materialId : String) : Material
+    + findContent(materialId : String) : File
+    + insert(material : Material, content : File) : void
+    + updateText(materialId : String, text : String) : void
+    + delete(materialId : String) : void
+    + deleteStorage(itemId : String) : void
+  }
+}
+
+' ===================== ノート（G004） =====================
+package "ノート（G004）" {
+  class "NoteManager" as NoteManager <<Entity Manager>> {
+    - noteDAO : NoteDAO
+    - syncManager : SyncManager
+    + getNote(itemId : String, studentId : String) : Note
+    + saveNote(note : Note) : Note
+    + saveParts(studentId : String, itemId : String, parts : List<NotePart>) : Note
+    + adjustOverlap(note : Note, partId : String) : Note
+    + getTableOfContents(note : Note) : List<TocEntry>
+    + mergeSuggestions(note : Note, list : List<Suggestion>) : Note
+    + getWords(itemId : String, partIds : List<String>) : List<Word>
+  }
+  class "Note（ノート）" as Note <<Entity Bean>> {
+    - noteId : String
+    - studentId : String
+    - itemId : String
+    - lastSavedAt : DateTime
+    - parts : List<NotePart>
+    - updatedAt : DateTime
+  }
+  class "NotePart（ノート部品）" as NotePart <<Entity Bean>> {
+    - partId : String
+    - studentId : String
+    - noteId : String
+    - partType : PartType
+    - frameType : String
+    - x : int
+    - y : int
+    - width : int
+    - height : int
+    - color : String
+    - text : String
+    - headingLevel : int
+    - updatedAt : DateTime
+    - words : List<Word>
+    + {static} shapeOf(part : NotePart) : String
+    + {static} shapePatch(shape : String) : NotePart
+  }
+  class "Word（単語）" as Word <<Entity Bean>> {
+    - wordId : String
+    - studentId : String
+    - partId : String
+    - term : String
+    - meaning : String
+    - updatedAt : DateTime
+  }
+  enum "PartType" as PartType <<enumeration>> {
+    FRAME
+    TEXT
+    SHAPE
+    ARROW
+  }
+  class "NoteDAO" as NoteDAO <<DAO>> {
+    + findByItem(itemId : String) : Note
+    + insertEmpty(itemId : String, studentId : String) : Note
+    + save(note : Note) : Note
+    + deleteByItem(itemId : String) : void
+  }
+}
+
+' ===================== AIまとめ（G007） =====================
+package "AIまとめ（G007）" {
+  class "SendContentManager" as SendContentManager <<Entity Manager>> {
+    + split(content : SendContent) : List<String>
+  }
+  class "SendContent（送る内容）" as SendContent <<Bean>> {
+    - text : String
+    - charCount : int
+  }
+  class "AiSummaryManager" as AiSummaryManager <<Entity Manager>> {
+    - sendContentManager : SendContentManager
+    - noteManager : NoteManager
+    + summarize(content : SendContent, note : Note, frameTypes : List<String>) : List<Suggestion>
+    + mergeApproved(note : Note, list : List<Suggestion>) : Note
+  }
+  class "Suggestion（AIの提案）" as Suggestion <<Bean>> {
+    - targetPartId : String
+    - frameType : String
+    - content : String
+    - approved : boolean
+  }
+}
+
+' ===================== 模擬テスト（G008〜G011） =====================
+package "模擬テスト（G008〜G011）" {
+  class "TestManager" as TestManager <<Entity Manager>> {
+    - testDAO : TestDAO
+    - noteManager : NoteManager
+    - syncManager : SyncManager
+    + createWordTest(itemId : String, studentId : String, type : TestType, count : int, partIds : List<String>) : Test
+    + createEssayTest(itemId : String, studentId : String, content : SendContent, count : int) : Test
+    + getTests(itemId : String) : List<Test>
+    + getTest(testId : String) : Test
+    + submitAnswers(testId : String, answers : List<String>) : Attempt
+    + getAttempts(testId : String) : List<Attempt>
+    + explain(testId : String, questionId : String) : String
+    + editQuestion(testId : String, questionId : String, questionText : String, modelAnswer : String) : void
+    + regenerateQuestion(testId : String, questionId : String, extraPrompt : String) : Question
+    + editAnswer(testId : String, attemptId : String, questionId : String, studentAnswer : String) : void
+    + editExplanation(testId : String, questionId : String, text : String) : void
+    + regenerateExplanation(testId : String, questionId : String, extraPrompt : String) : String
+    - canEditAnswer(type : TestType) : boolean
+    - gradeMeaningToTerm(input : String, modelAnswer : String) : boolean
+  }
+  class "Test（テスト）" as Test <<Entity Bean>> {
+    - testId : String
+    - studentId : String
+    - itemId : String
+    - testType : TestType
+    - questionCount : int
+    - createdAt : DateTime
+    - lastTakenAt : DateTime
+    - questions : List<Question>
+    - attempts : List<Attempt>
+    - updatedAt : DateTime
+  }
+  class "Question（問題）" as Question <<Entity Bean>> {
+    - questionId : String
+    - studentId : String
+    - testId : String
+    - number : int
+    - questionText : String
+    - modelAnswer : String
+    - explanation : String
+    - updatedAt : DateTime
+  }
+  class "Attempt（受験）" as Attempt <<Entity Bean>> {
+    - attemptId : String
+    - studentId : String
+    - testId : String
+    - attemptNo : int
+    - takenAt : DateTime
+    - answers : List<Answer>
+    - updatedAt : DateTime
+  }
+  class "Answer（解答）" as Answer <<Entity Bean>> {
+    - answerId : String
+    - studentId : String
+    - attemptId : String
+    - questionId : String
+    - studentAnswer : String
+    - correct : boolean
+    - answeredAt : DateTime
+    - updatedAt : DateTime
+  }
+  enum "TestType" as TestType <<enumeration>> {
+    MEANING_TO_TERM
+    TERM_TO_MEANING
+    ESSAY
+  }
+  class "TestDAO" as TestDAO <<DAO>> {
+    + findByItem(itemId : String) : List<Test>
+    + findById(testId : String) : Test
+    + insert(test : Test) : void
+    + insertAttempt(attempt : Attempt) : void
+    + findAttempts(testId : String) : List<Attempt>
+    + updateExplanation(testId : String, questionId : String, text : String) : void
+    + updateQuestion(testId : String, questionId : String, questionText : String, modelAnswer : String) : void
+    + updateAnswer(testId : String, attemptId : String, questionId : String, studentAnswer : String) : void
+    + updateLastTaken(testId : String, at : DateTime) : void
+    + deleteTestFolder(itemId : String) : void
+  }
+}
+
+' ===================== サーバー（Render）※AIの中継と利用回数の管理だけ =====================
+package "サーバー（Render）※AIの中継と利用回数の管理だけ" {
+  class "ApiController" as ApiController <<Controller>> {
+    - tokenVerifier : TokenVerifier
+    - aiUsageManager : AiUsageManager
+    - aiService : AiService
+    + getRemaining(token : String) : int
+    + organize(token : String, text : String, frameTypes : List<String>) : List<Suggestion>
+    + makeEssayTest(token : String, text : String, count : int) : List<Question>
+    + explain(token : String, question : Question, extraPrompt : String) : String
+    + regenerateQuestion(token : String, question : Question, extraPrompt : String) : Question
+  }
+  class "TokenVerifier" as TokenVerifier <<Service>> {
+    + verify(token : String) : String
+  }
+  class "AiUsageManager" as AiUsageManager <<Entity Manager>> {
+    - aiUsageDAO : AiUsageDAO
+    + getRemaining(studentId : String) : int
+    + reserve(studentId : String, calls : int) : Reservation
+    + release(studentId : String, useDate : DateTime, calls : int) : void
+  }
+  class "AiUsage（AI利用回数）" as AiUsage <<Entity Bean>> {
+    - studentId : String
+    - useDate : DateTime
+    - count : int
+  }
+  class "AiUsageDAO" as AiUsageDAO <<DAO>> {
+    + find(studentId : String, useDate : DateTime) : AiUsage
+    + reserve(studentId : String, useDate : DateTime, calls : int, max : int) : int
+    + release(studentId : String, useDate : DateTime, calls : int) : void
+  }
+  class "AiService" as AiService <<Boundary>> {
+    - providers : List<AiProvider>
+    + send(prompt : String) : String
+  }
+  class "AiProvider" as AiProvider <<Boundary>> {
+    - name : String
+    - model : String
+    - maxChars : int
+    - apiKeyEnv : String
+    - timeoutMs : int
+    + canAccept(charCount : int) : boolean
+    + send(prompt : String) : String
+  }
+}
+
+' ===================== Controller → Manager → DAO =====================
+Controller --> AccountManager
+Controller --> SyncManager : オンラインに戻ったら送る
+Controller --> SubjectManager
+Controller --> LearningItemManager
+Controller --> MaterialManager
+Controller --> NoteManager
+Controller --> SendContentManager
+Controller --> AiSummaryManager
+Controller --> TestManager
+AccountManager --> NeonAuthClient
+AccountManager --> SyncManager : ログインで受け取る・ログアウト前に送る
+SyncManager --> NeonAuthClient : JWTを受け取る
+SubjectManager --> SubjectDAO
+SubjectManager --> LearningItemManager : 科目削除で項目ごとに消す
+SubjectManager --> SyncManager
+LearningItemManager --> LearningItemDAO
+LearningItemManager --> PrerequisiteDAO
+LearningItemManager --> NoteDAO : 空のノートを作る・消す
+LearningItemManager --> MaterialDAO : ストレージを消す
+LearningItemManager --> TestDAO : テストフォルダを消す
+LearningItemManager --> SyncManager
+MaterialManager --> MaterialDAO
+NoteManager --> NoteDAO
+NoteManager --> SyncManager
+AiSummaryManager --> SendContentManager : 1万文字ごとに分ける
+AiSummaryManager --> NoteManager : 承認した提案をノートに入れる
+AiSummaryManager --> ApiController : HTTP
+TestManager --> TestDAO
+TestManager --> NoteManager : 単語を取り出す
+TestManager --> SyncManager
+TestManager --> ApiController : HTTP
+ApiController --> TokenVerifier
+ApiController --> AiUsageManager
+ApiController --> AiService
+AiUsageManager --> AiUsageDAO
+AiService "1" o-- "1..*" AiProvider : 順番に試す
+
+' ===================== use（Bean を使う） =====================
+AccountManager ..> Student : use
+NeonAuthClient ..> Student : use
+SubjectManager ..> Subject : use
+SubjectDAO ..> Subject : use
+LearningItemManager ..> LearningItem : use
+LearningItemManager ..> Prerequisite : use
+LearningItemDAO ..> LearningItem : use
+PrerequisiteDAO ..> Prerequisite : use
+MaterialManager ..> Material : use
+MaterialManager ..> ProgressListener : 進み具合を知らせる
+MaterialDAO ..> Material : use
+NoteManager ..> Note : use
+NoteDAO ..> Note : use
+SendContentManager ..> SendContent : use
+AiSummaryManager ..> SendContent : use
+AiSummaryManager ..> Suggestion : use
+TestManager ..> Test : use
+TestDAO ..> Test : use
+AiUsageManager ..> AiUsage : use
+AiUsageDAO ..> AiUsage : use
+
+' ===================== Bean どうしの関連（ER図の多重度） =====================
+Student "1" -- "0..*" Subject
+Student "1" -- "0..*" AiUsage
+Subject "1" -- "0..*" LearningItem
+LearningItem "1" -- "0..*" Prerequisite : 対象項目
+LearningItem "1" -- "0..*" Prerequisite : 前提項目
+LearningItem "1" -- "1" Note
+LearningItem "1" -- "0..*" Material
+Material "1" -- "0..1" Material : 文字起こし元
+LearningItem "1" -- "0..*" Test
+Note "1" *-- "0..*" NotePart
+NotePart "1" *-- "0..*" Word
+Test "1" *-- "1..*" Question
+Test "1" *-- "0..*" Attempt
+Attempt "1" *-- "1..*" Answer
+Question "1" -- "0..*" Answer
+NotePart ..> PartType
+Test ..> TestType
+
+note bottom of Controller
+  画面のボタンはすべて handleRequest（画面ID, イベントID）を通る
+  adjustNoteParts・tableOfContents は、ドラッグ中・描画中に
+  すぐ結果がほしい計算なので、待たずに返すメソッドにしてある
+  画面も Entity Bean（Note・NotePart・Test など）をそのまま使う
+end note
+
+note bottom of AccountManager
+  logout で clearLocal が true なら、まだ送っていない変更を送ってから
+  この端末にある、その学生のデータを消す。送れなかったら "unsent" を返し、
+  画面が確認してから force = true で呼び直す
+end note
+
+note bottom of SyncManager
+  Neon の Data API を HTTP で直接呼ぶ（Render は通さない）
+  JWT を付けて送り、Neon の RLS が自分の学生IDの行だけ読み書きさせる
+  資料と文字起こしは同期しない
+end note
+
+note bottom of NotePart
+  図形の形（四角・丸）は、まだ専用の列がないので text に入れている
+  画面は text を直接見ずに shapeOf・shapePatch を使う
+  （note_part に shape 列ができたら、この2つの中身だけ直す）
+end note
+
+note bottom of AiSummaryManager
+  mergeApproved は保存しない（ノートは保存ボタンでだけ保存する決まり）
+  提案の編集・選択は画面の中で行う
+end note
+
+note as N5
+  結果をまとめて返すための小さな型（クラス図では中身を省略）
+  RelationMap：学習項目と前提項目のリスト / TocEntry：目次の1行
+  TranscribeResult：文字起こしの .txt と読み取れなかったページ
+  Reservation：予約した日付と残り回数 / Params・Result：handleRequest の引数と結果
+end note
+
+note bottom of ApiController
+  サーバー（Render）の仕事は AI の中継と AI利用回数の管理だけ
+  token は TokenVerifier で確認し、学生IDを取り出す
+  AIを呼ぶ前に回数を予約（reserve）し、AIが失敗したら戻す（release）
+end note
+
+@enduml

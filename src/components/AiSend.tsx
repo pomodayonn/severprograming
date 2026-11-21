@@ -77,7 +77,7 @@ export function AiSend() {
   };
   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId }); };
   const approve = async () => {
-    // 使うことにした提案だけを approved = true にして送る（AiSummaryManager.setApproved と同じ意味）
+    // 使うことにした提案だけを approved = true にして送る
     const ps = props.filter((_, i) => pick.includes(i)).map(p => new Suggestion({ ...p, approved: true }));
     if (ps.length && noteParts) {
       // 11/20：Controller → AiSummaryManager.mergeApproved で、選んだ提案を入れたノートを作ってもらう（枠が大きくなったら下の部品もずらす）

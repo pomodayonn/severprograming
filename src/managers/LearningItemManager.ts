@@ -36,15 +36,13 @@ export class LearningItemManager {
     return this.itemDAO.findBySubject(subjectId);
   }
 
-  /** 学習項目を作り、同時に空のノート1枚・空のストレージ・空のテストフォルダを作る */
+  /** 学習項目を作り、同時に空のノートを1枚作る（資料とテストは学習項目IDでまとまるので、入れ物を作る必要はない） */
   async createItem(studentId: string, subjectId: string, name: string): Promise<LearningItem> {
     const n = checkName(name, "学習項目名", ItemError);
     if ((await this.getItems(subjectId)).some(i => i.itemName === n)) throw new ItemError("同じ名前の学習項目がすでにあります");
     const item = new LearningItem({ itemId: newId(), studentId, subjectId, itemName: n });
     await this.itemDAO.insert(item);
     await this.noteDAO.insertEmpty(item.itemId, studentId);
-    await this.materialDAO.createStorage(item.itemId);
-    await this.testDAO.createTestFolder(item.itemId);
     await this.sync();
     return (await this.itemDAO.findById(item.itemId))!;
   }
@@ -70,33 +68,20 @@ export class LearningItemManager {
     if (sync) await this.sync();
   }
 
-  /** 前提項目を設定する（「itemId の前提は prereqItemId」）。同じ科目の中だけ、自分自身と一周する関係はだめ */
-  async setPrerequisite(itemId: string, prereqItemId: string): Promise<void> {
-    if (itemId === prereqItemId) throw new ItemError("自分自身は前提にできません");
-    const [item, pre] = await Promise.all([this.itemDAO.findById(itemId), this.itemDAO.findById(prereqItemId)]);
-    if (!item || !pre) throw new ItemError("学習項目が見つかりません");
-    if (item.subjectId !== pre.subjectId) throw new ItemError("前提にできるのは同じ科目の学習項目だけです");
-    const list = await this.prerequisiteDAO.findBySubject(item.subjectId);
-    if (list.some(p => p.itemId === itemId && p.prereqItemId === prereqItemId)) return; // もう設定してある
-    if (this.wouldCycle(list, itemId, prereqItemId)) throw new ItemError("前提項目が輪になるため設定できません");
-    await this.prerequisiteDAO.insert(new Prerequisite({ studentId: item.studentId, itemId, prereqItemId }));
-    await this.sync();
-  }
-
-  /** 前提項目を外す */
-  async removePrerequisite(itemId: string, prereqItemId: string): Promise<void> {
-    await this.prerequisiteDAO.delete(itemId, prereqItemId); await this.sync();
-  }
-
-  /** その学習項目の前提をまとめて設定し直す（G004 の前提項目のチェックボックスで「決定」したとき） */
+  /**
+   * その学習項目の前提をまとめて設定し直す（G004 の前提項目のチェックボックスで「決定」したとき）。
+   * 前提にできるのは同じ科目の学習項目だけ。自分自身と、一周する関係はだめ
+   */
   async setPrerequisites(itemId: string, prereqItemIds: string[]): Promise<void> {
     const item = await this.itemDAO.findById(itemId); if (!item) throw new ItemError("学習項目が見つかりません");
     const list = await this.prerequisiteDAO.findBySubject(item.subjectId);
     const now = list.filter(p => p.itemId === itemId).map(p => p.prereqItemId);
     const others = list.filter(p => p.itemId !== itemId);
+    const sameSubject = new Set((await this.getItems(item.subjectId)).map(i => i.itemId));
     // 先に全部の組み合わせで輪にならないかを確認する（途中まで保存されないように）
     for (const pre of prereqItemIds) {
       if (pre === itemId) throw new ItemError("自分自身は前提にできません");
+      if (!sameSubject.has(pre)) throw new ItemError("前提にできるのは同じ科目の学習項目だけです");
       if (this.wouldCycle(others, itemId, pre)) throw new ItemError("前提項目が輪になるため設定できません");
     }
     for (const pre of now.filter(p => !prereqItemIds.includes(p))) await this.prerequisiteDAO.delete(itemId, pre);

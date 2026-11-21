@@ -81,9 +81,6 @@ export class AccountManager {
     return s;
   }
 
-  /** サーバーに送る JWT */
-  async getToken(): Promise<string | null> { return this.authClient.getAccessToken(); }
-
   /** 8〜16文字で、英字と数字を両方含むか（Neon Auth が確認するか分からないので自分たちで確認する） */
   checkPassword(pass: string): boolean { return pass.length >= 8 && pass.length <= 16 && /[A-Za-z]/.test(pass) && /\d/.test(pass); }
 

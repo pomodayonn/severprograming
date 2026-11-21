@@ -98,9 +98,6 @@ export class TestManager {
     return attempt;
   }
 
-  /** 同じ問題をもう一度出す（解いた結果は submitAnswers() で新しい受験として保存される） */
-  async retry(testId: string): Promise<Question[]> { return (await this.getTest(testId)).questions; }
-
   /** そのテストの過去の受験をすべて返す（1回目から順に） */
   async getAttempts(testId: string): Promise<Attempt[]> { return this.testDAO.findAttempts(testId); }
 

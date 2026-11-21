@@ -131,7 +131,7 @@ export class Controller {
   readonly prerequisiteDAO = new PrerequisiteDAO();
   // NoteManager は TestManager（単語テストの単語）と AiSummaryManager（提案の反映）が使うので、先に作る
   readonly noteManager = new NoteManager(this.noteDAO, this.syncManager);
-  readonly sendContentManager = new SendContentManager(this.materialDAO, this.noteDAO);
+  readonly sendContentManager = new SendContentManager();
   readonly aiSummaryManager = new AiSummaryManager(this.sendContentManager, this.noteManager); // 承認したAIの提案を NoteManager でノートに反映する
   readonly testManager = new TestManager(this.testDAO, this.noteManager, this.syncManager);
   readonly itemManager = new LearningItemManager(this.itemDAO, this.prerequisiteDAO, this.noteDAO, this.testDAO, this.materialDAO, this.syncManager);

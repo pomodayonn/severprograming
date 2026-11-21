@@ -89,12 +89,6 @@ export function useAiRemaining() {
   return { remaining, limit: AI_LIMIT, refresh };
 }
 
-/** 今日の残り利用回数をサーバーに聞く（Manager から使う）。サーバーがないときは null（分からない） */
-export async function fetchRemaining(): Promise<number | null> {
-  if (!SERVER) return null;
-  try { return await server.remaining(); } catch { return null; }
-}
-
 // ---- 仮の動き（サーバーがないとき）の利用回数：端末に「日付→回数」で記録する ----
 const USAGE_KEY = "runndesu-ai-usage";
 const listeners = new Set<() => void>();
