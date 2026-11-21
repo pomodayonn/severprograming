@@ -7,13 +7,16 @@
 // ・mock  ：サーバーがまだないとき。AIを使わず、決まった作り方で「それっぽい答え」を返す（画面の確認用）
 // 下の impl = SERVER ? server : mock で、どちらを使うかが決まる。使う側（Manager）はどちらか気にしなくてよい
 import { useCallback, useEffect, useState } from "react";
-import type { FrameType, Question, Word } from "../types";
+import type { FrameType } from "../types";
 import { AI_LIMIT, dayKey, newId } from "../lib/logic";
 import { SERVER, request } from "./api";
-import { lineToWord } from "../lib/words";
+import { lineToWord, type TermMeaning } from "../lib/words";
 
 export { SERVER };
-export interface Proposal { id: string; ft: FrameType; text: string; words?: Word[]; targetId?: string }
+/** AIのサーバーとやり取りする形（AiSummaryManager が beans の Suggestion にする。画面はこの形を見ない） */
+export interface Proposal { id: string; ft: FrameType; text: string; words?: TermMeaning[]; targetId?: string }
+/** AIのサーバーとやり取りする問題の形（TestManager が beans の Question にする） */
+export interface QA { q: string; a: string }
 
 // ---------- サーバー版（docs/API.md） ----------
 type Remaining = { remaining: number; limit: number };
@@ -21,11 +24,11 @@ const server = {
   organize: async (text: string, frameTypes: FrameType[], frames: { id: string; ft?: FrameType }[]) =>
     (await request<{ proposals: Omit<Proposal, "id">[] } & Remaining>("POST", "/api/organize", { text, frameTypes, frames })).proposals.map(p => ({ ...p, id: newId() })),
   makeEssay: async (text: string, count: number) =>
-    (await request<{ questions: Question[] } & Remaining>("POST", "/api/essay-test", { text, count })).questions,
-  explain: async (q: Question, extra = "") =>
+    (await request<{ questions: QA[] } & Remaining>("POST", "/api/essay-test", { text, count })).questions,
+  explain: async (q: QA, extra = "") =>
     (await request<{ explanation: string } & Remaining>("POST", "/api/explain", { question: { q: q.q, a: q.a }, extra })).explanation,
-  regenerateQuestion: async (q: Question, extra = "") =>
-    (await request<{ question: Question } & Remaining>("POST", "/api/regenerate-question", { question: { q: q.q, a: q.a }, extra })).question,
+  regenerateQuestion: async (q: QA, extra = "") =>
+    (await request<{ question: QA } & Remaining>("POST", "/api/regenerate-question", { question: { q: q.q, a: q.a }, extra })).question,
   remaining: async () => (await request<Remaining>("GET", "/api/remaining")).remaining,
 };
 
@@ -47,15 +50,15 @@ const mock = {
       return { id: newId(), ft: t, text: ls.join("\n"), targetId: target };
     });
   },
-  async makeEssay(text: string, count: number): Promise<Question[]> {
+  async makeEssay(text: string, count: number): Promise<QA[]> {
     await wait(800);
     return lines(text).slice(0, count).map(l => ({ q: `次の内容を、自分の言葉で説明しなさい：「${l.slice(0, 24)}${l.length > 24 ? "…" : ""}」`, a: l }));
   },
-  async explain(q: Question, extra = ""): Promise<string> {
+  async explain(q: QA, extra = ""): Promise<string> {
     await wait(600);
     return `「${q.a.slice(0, 40)}」がポイントです。問題文の言葉と模範解答を見比べて、どこが違うかを確かめましょう。${extra ? `（指示：${extra}）` : ""}`;
   },
-  async regenerateQuestion(q: Question, extra = ""): Promise<Question> {
+  async regenerateQuestion(q: QA, extra = ""): Promise<QA> {
     await wait(600);
     return { q: `${extra ? `【${extra}】` : ""}次の内容について説明しなさい：「${q.a.slice(0, 24)}」`, a: q.a };
   },

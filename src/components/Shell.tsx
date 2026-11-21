@@ -4,8 +4,9 @@
 // どの画面にも出る外側の枠です（ヘッダー・左の一覧・真ん中・右の関連図の4か所）。
 // 各画面は <Shell center={...} right={...} /> のように、真ん中と右に出すものだけを渡す
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useApp } from "../state/app";
+import { itemsOf } from "../lib/select";
 import { Mascot } from "./Mascot";
 import { RelationGraph } from "./RelationGraph";
 import { OfflineBar } from "./AiWait";
@@ -18,21 +19,22 @@ export function Header({ plain = false }: { plain?: boolean }) {
 }
 /** 左サイドバーの階層：科目（▼▶）の下に学習項目（●）。extra で選択中の項目の下に足せる */
 export function Tree({ heading, extra }: { heading: string; extra?: (itemId: string) => ReactNode }) {
-  const { subjects, loaded, route, go } = useApp();
+  const { subjects, items, loaded, route, go } = useApp();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const isOpen = (id: string) => open[id] ?? id === route.subjectId;
   return (<><div className="th">{heading}</div>
-    {subjects.map(s => (<div key={s.id}>
-      <div className={"ts" + (route.s === "G003" && route.subjectId === s.id ? " on" : "")} onClick={() => { setOpen({ ...open, [s.id]: !isOpen(s.id) }); if (route.s === "G003") go({ s: "G003", subjectId: s.id }); }}>{isOpen(s.id) ? "▼" : "▶"} {s.name}</div>
-      {isOpen(s.id) && s.items.map(i => { const cur = route.s !== "G003" && route.itemId === i.id && route.subjectId === s.id;
-        return (<div key={i.id}><div className={"ti" + (cur ? " on" : "")} onClick={() => go({ s: "G004", subjectId: s.id, itemId: i.id })}><i className="dot" />{i.name}</div>{extra && cur && extra(i.id)}</div>); })}
+    {subjects.map(s => (<div key={s.subjectId}>
+      <div className={"ts" + (route.s === "G003" && route.subjectId === s.subjectId ? " on" : "")} onClick={() => { setOpen({ ...open, [s.subjectId]: !isOpen(s.subjectId) }); if (route.s === "G003") go({ s: "G003", subjectId: s.subjectId }); }}>{isOpen(s.subjectId) ? "▼" : "▶"} {s.subjectName}</div>
+      {isOpen(s.subjectId) && itemsOf(items, s.subjectId).map(i => { const cur = route.s !== "G003" && route.itemId === i.itemId && route.subjectId === s.subjectId;
+        return (<div key={i.itemId}><div className={"ti" + (cur ? " on" : "")} onClick={() => go({ s: "G004", subjectId: s.subjectId, itemId: i.itemId })}><i className="dot" />{i.itemName}</div>{extra && cur && extra(i.itemId)}</div>); })}
     </div>))}
     {loaded && !subjects.length && <p className="mute">科目がまだありません</p>}</>);
 }
 export function GraphPane() {
-  const { subjects, route, go } = useApp();
-  const s = subjects.find(x => x.id === route.subjectId);
-  return s ? <RelationGraph s={s} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.id, itemId: id })} /> : null;
+  const { subjects, items, prerequisites, route, go } = useApp();
+  const s = subjects.find(x => x.subjectId === route.subjectId);
+  const its = useMemo(() => itemsOf(items, route.subjectId), [items, route.subjectId]); // 同じ間は関連図を描き直さない
+  return s ? <RelationGraph items={its} prerequisites={prerequisites} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.subjectId, itemId: id })} /> : null;
 }
 export function Shell({ heading = "科目一覧", left, center, right, cls = "" }: { heading?: string; left?: ReactNode; center: ReactNode; right?: ReactNode; cls?: string }) {
   return (<div className="app"><Header /><div className={"cols " + cls}>

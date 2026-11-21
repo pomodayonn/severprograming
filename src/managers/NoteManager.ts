@@ -5,7 +5,8 @@ import { NotePart } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import type { Suggestion } from "../beans/Suggestion";
 import { PartType } from "../enums/PartType";
-import type { El, FrameType } from "../types";
+import type { FrameType } from "../types";
+import { now } from "../beans/DateTime";
 import { FT } from "../lib/logic";
 import { textToWords } from "../lib/words";
 import type { NoteDAO } from "../dao/NoteDAO";
@@ -57,7 +58,7 @@ export class NoteManager implements SuggestionApplier {
     const top = Math.min(...below.map(p => p.y));
     const d = bottom + GAP - top;
     if (d <= 0) return note;
-    return new Note({ ...note, parts: note.parts.map(p => p.partId !== partId && p.y >= top ? new NotePart({ ...p, y: p.y + d }) : p) });
+    return new Note({ ...note, parts: note.parts.map(p => p.partId !== partId && p.y >= top ? new NotePart({ ...p, y: p.y + d, updatedAt: now() }) : p) });
   }
 
   /** 右サイドバーの目次用に、見出し（文字の見出し1〜3）と枠を上から順に返す */
@@ -112,49 +113,13 @@ export class NoteManager implements SuggestionApplier {
       .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
   }
 
-  // ======== 移行中のつなぎ：画面の部品（El）とノートの部品（NotePart）を変換する ========
-  // 画面がまだ El の形で描いているので、保存するときは NotePart に、読み込むときは El に直す。
-  // 図形の「四角・丸」は NotePart に入れる列がないので、図形の text に "rect" か "ellipse" を入れておく（図形は文字を持たないため）
-
-  /** 画面の部品を NotePart に直す。部品のIDはそのまま、単語のIDは「部品ID-w番号」にする（保存のたびに変わらないように） */
-  toParts(els: El[], noteId: string, studentId: string): NotePart[] {
-    const type = { frame: PartType.FRAME, text: PartType.TEXT, shape: PartType.SHAPE, arrow: PartType.ARROW } as const;
-    return els.map(e => new NotePart({
-      partId: e.id, studentId, noteId, partType: type[e.kind], frameType: e.kind === "frame" ? (e.ft ?? null) : null,
-      x: e.x, y: e.y, width: e.w, height: e.h, color: e.color,
-      text: e.kind === "shape" ? (e.shape ?? "rect") : e.text, headingLevel: e.kind === "text" ? (e.head ?? 0) : 0,
-      words: (e.words ?? []).map((w, i) => new Word({ wordId: `${e.id}-w${i}`, studentId, partId: e.id, term: w.term, meaning: w.meaning })),
-    }));
-  }
-
-  /** NotePart を画面の部品に直す */
-  toElements(note: Note): El[] {
-    const kind = { [PartType.FRAME]: "frame", [PartType.TEXT]: "text", [PartType.SHAPE]: "shape", [PartType.ARROW]: "arrow" } as const;
-    return note.parts.map(p => {
-      const k = kind[p.partType];
-      return {
-        id: p.partId, kind: k, ft: k === "frame" ? (p.frameType as FrameType) : undefined,
-        x: p.x, y: p.y, w: p.width, h: p.height, color: p.color, text: k === "shape" ? "" : p.text,
-        words: k === "frame" && p.frameType === "word" ? p.words.map(w => ({ term: w.term, meaning: w.meaning })) : undefined,
-        head: (k === "text" ? Math.min(3, Math.max(0, p.headingLevel)) : 0) as El["head"],
-        shape: k === "shape" ? (p.text === "ellipse" ? "ellipse" : "rect") : undefined, at: Date.parse(p.updatedAt) || Date.now(),
-      };
-    });
-  }
-
   /**
-   * 画面の部品で adjustOverlap() を使う：id の部品が大きくなって下の部品と重なりそうなら、下の部品をずらす。
-   * 保存はしない（ノート画面の下書きに使う）。ずらした後の部品を返す
+   * 画面の「保存」ボタン：画面で書いた部品（下書き）でノートの中身を置き換えて保存し、アカウントにも送る。
+   * 11/21 道B：前は画面の形（El）から NotePart に変換していたが、今は画面も NotePart を使うので、そのまま保存する
    */
-  adjustElements(els: El[], id: string): El[] {
-    const parts = this.adjustOverlap(new Note({ parts: this.toParts(els, "", "") }), id).parts;
-    return els.map(e => { const y = parts.find(p => p.partId === e.id)?.y ?? e.y; return y === e.y ? e : { ...e, y, at: Date.now() }; });
-  }
-
-  /** 画面の「保存」ボタン：画面の部品でノートを置き換えて保存し、アカウントにも送る */
-  async saveElements(studentId: string, itemId: string, els: El[]): Promise<Note> {
+  async saveParts(studentId: string, itemId: string, parts: readonly NotePart[]): Promise<Note> {
     const note = await this.getNote(itemId, studentId);
-    return this.saveNote(new Note({ ...note, parts: this.toParts(els, note.noteId, studentId) }));
+    return this.saveNote(new Note({ ...note, parts: [...parts] }));
   }
 
   private sync() { return pushQuietly(this.syncManager); }

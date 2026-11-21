@@ -11,6 +11,9 @@ import type { DateTime } from "./DateTime";
 import type { Word } from "./Word";
 import { PartType } from "../enums/PartType";
 
+/** 図形の形（四角・丸） */
+export type ShapeKind = "rect" | "ellipse";
+
 export class NotePart {
   /** 部品ID */
   partId: string = "";
@@ -43,4 +46,12 @@ export class NotePart {
 
   /** 渡した分だけ値を入れて作る。例：new NotePart({ partId: "..." }) */
   constructor(init?: Partial<NotePart>) { Object.assign(this, init); }
+
+  // ---- 図形の形 ----
+  // NotePart（と Neon の note_part）には図形の形の列がまだないので、図形は text に "rect" か "ellipse" を入れている（図形は文字を持たないため）。
+  // 画面は text を直接見ずに、この2つを使う。DB担当と形の列を決めたら、ここだけ直せば画面は変えなくてよい
+  /** 図形の形を返す（図形でなければ "rect"） */
+  static shapeOf(part: NotePart): ShapeKind { return part.text === "ellipse" ? "ellipse" : "rect"; }
+  /** 図形の形を変えるときに部品へ入れる値（Partial<NotePart> として渡す） */
+  static shapePatch(shape: ShapeKind): Partial<NotePart> { return { text: shape }; }
 }

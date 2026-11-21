@@ -6,38 +6,42 @@
 // layout が「前提が何段あるか」を数えて、前提のない項目を左に、あとで学ぶ項目ほど右に並べる。
 // 丸を押すと、その学習項目のノートに移る
 import { memo, useMemo } from "react";
-import type { Item, Subject } from "../types";
+import type { LearningItem } from "../beans/LearningItem";
+import type { Prerequisite } from "../beans/Prerequisite";
+import { prereqIdsOf } from "../lib/select";
 
-function layout(items: Item[]) {
-  const byId = new Map(items.map(i => [i.id, i])), depth = new Map<string, number>();
+function layout(items: LearningItem[], prerequisites: readonly Prerequisite[]) {
+  const byId = new Map(items.map(i => [i.itemId, i])), depth = new Map<string, number>();
   const d = (id: string, seen: Set<string>): number => { // 前提の段数（輪になっていても止まる）
     const cached = depth.get(id); if (cached !== undefined) return cached;
     if (seen.has(id)) return 0; seen.add(id);
-    const pre = (byId.get(id)?.prereqs ?? []).filter(p => byId.has(p));
+    const pre = prereqIdsOf(prerequisites, id).filter(p => byId.has(p));
     const v = pre.length ? 1 + Math.max(...pre.map(p => d(p, seen))) : 0;
     seen.delete(id); depth.set(id, v); return v;
   };
   const cols = new Map<number, string[]>();
-  for (const i of items) { const c = d(i.id, new Set()); (cols.get(c) ?? cols.set(c, []).get(c)!).push(i.id); }
+  for (const i of items) { const c = d(i.itemId, new Set()); (cols.get(c) ?? cols.set(c, []).get(c)!).push(i.itemId); }
   const pos = new Map<string, [number, number]>();
   let rows = 0;
   cols.forEach((ids, c) => { rows = Math.max(rows, ids.length); ids.forEach((id, r) => pos.set(id, [48 + c * 100, 44 + r * 76])); });
   return { pos, W: 100 + cols.size * 100, H: 90 + rows * 76 };
 }
 
-function Graph({ s, selId, onOpen }: { s: Subject; selId?: string; onOpen: (id: string) => void }) {
-  const g = useMemo(() => layout(s.items), [s.items]);
-  if (!s.items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
+/** items はその科目の学習項目、prerequisites は前提項目（ほかの科目の分が入っていてもよい） */
+interface Props { items: LearningItem[]; prerequisites: readonly Prerequisite[]; selId?: string; onOpen: (id: string) => void }
+function Graph({ items, prerequisites, selId, onOpen }: Props) {
+  const g = useMemo(() => layout(items, prerequisites), [items, prerequisites]);
+  if (!items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
   const at = (id: string) => g.pos.get(id)!;
   return (
     <svg viewBox={`0 0 ${g.W} ${g.H}`} className="graph" role="img" aria-label="関連図">
-      {s.items.flatMap(i => i.prereqs.filter(p => g.pos.has(p)).map(p => <line key={p + i.id} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.id)[0]} y2={at(i.id)[1]} stroke="#cdbfa8" strokeWidth="2" />))}
-      {s.items.map(i => { const [x, y] = at(i.id), on = i.id === selId; return (
-        <g key={i.id} className="node" tabIndex={0} onClick={() => onOpen(i.id)} onKeyDown={e => e.key === "Enter" && onOpen(i.id)}>
+      {items.flatMap(i => prereqIdsOf(prerequisites, i.itemId).filter(p => g.pos.has(p)).map(p => <line key={p + i.itemId} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.itemId)[0]} y2={at(i.itemId)[1]} stroke="#cdbfa8" strokeWidth="2" />))}
+      {items.map(i => { const [x, y] = at(i.itemId), on = i.itemId === selId; return (
+        <g key={i.itemId} className="node" tabIndex={0} onClick={() => onOpen(i.itemId)} onKeyDown={e => e.key === "Enter" && onOpen(i.itemId)}>
           <circle cx={x} cy={y} r="24" fill={on ? "#f6dde2" : "#fffdf8"} stroke={on ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
-          <text x={x} y={y + 4} textAnchor="middle" fontSize="10">{i.name.length > 5 ? i.name.slice(0, 5) + "…" : i.name}</text>
+          <text x={x} y={y + 4} textAnchor="middle" fontSize="10">{i.itemName.length > 5 ? i.itemName.slice(0, 5) + "…" : i.itemName}</text>
         </g>); })}
     </svg>);
 }
 /** onOpen は画面遷移だけを行う関数を渡す前提で、比べない（毎回新しい関数でも描き直さない） */
-export const RelationGraph = memo(Graph, (a, b) => a.s.items === b.s.items && a.selId === b.selId);
+export const RelationGraph = memo(Graph, (a, b) => a.items === b.items && a.prerequisites === b.prerequisites && a.selId === b.selId);
