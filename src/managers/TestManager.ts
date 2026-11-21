@@ -17,35 +17,36 @@ import { Attempt } from "../beans/Attempt";
 import { Answer } from "../beans/Answer";
 import type { SendContent } from "../beans/SendContent";
 import { now } from "../beans/DateTime";
-import { PartType } from "../enums/PartType";
 import { TestType } from "../enums/TestType";
 import type { TestDAO } from "../dao/TestDAO";
-import type { NoteDAO } from "../dao/NoteDAO";
+import type { Word } from "../beans/Word";
 import { explain as aiExplain, makeEssay, regenerateQuestion as aiRegenerate } from "../services/ai";
 import { AppError, SEND_LIMIT, newId, pushQuietly, type ChangePusher } from "./common";
-import type { Test as ScreenTest, TestKind } from "../types";
-
-/** 画面に出す1回分の受験（何回目・日時・解答・正誤） */
-export interface ScreenAttempt { no: number; at: number; ans: string[]; ok?: boolean[] }
+import type { Test as ScreenTest, TestAttempt as ScreenAttempt, TestKind } from "../types";
+import { clampQuestionCount, isCorrect, shuffle } from "../lib/logic";
 
 /** 画面に出す文を持ったエラー */
 export class TestError extends AppError {}
 
-const shuffle = <T>(a: T[]): T[] => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+/** テストの種類：画面の書き方（TestKind）と TestType の対応。行きも帰りもこの表を使う */
+const KIND_TO_TYPE: Record<TestKind, TestType> = { "w-m2t": TestType.MEANING_TO_TERM, "w-t2m": TestType.TERM_TO_MEANING, essay: TestType.ESSAY };
+/** 問題を番号の順に並べたもの */
+const inOrder = (test: Test): Question[] => [...test.questions].sort((a, b) => a.number - b.number);
+
+/** NoteManager のうち、TestManager が使う部分（単語テストの単語を受け取る） */
+export interface WordSource { getWords(itemId: string, partIds?: string[]): Promise<Word[]> }
 
 export class TestManager {
-  constructor(private readonly testDAO: TestDAO, private readonly noteDAO: NoteDAO, private syncManager: ChangePusher | null = null) {}
-
-  setSyncManager(sync: ChangePusher) { this.syncManager = sync; }
+  constructor(private readonly testDAO: TestDAO, private readonly noteManager: WordSource, private readonly syncManager: ChangePusher | null = null) {}
 
   /**
    * AIを使わず単語枠から単語テストを作る。単語が足りなければある分だけ出題する（足りない数は shortage で分かる）。
    * partIds を渡したときは、その枠の単語だけを使う（G008 の「枠を選ぶ」）
    */
   async createWordTest(itemId: string, studentId: string, type: TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING, count: number, partIds?: string[]): Promise<{ test: Test; shortage: number }> {
-    const words = await this.getWords(itemId, partIds);
+    const words = await this.noteManager.getWords(itemId, partIds);
     if (!words.length) throw new TestError("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
-    const n = clampCount(count), picked = shuffle(words).slice(0, n);
+    const n = clampQuestionCount(count), picked = shuffle(words).slice(0, n);
     const testId = newId();
     const questions = picked.map((w, i) => new Question({
       questionId: newId(), testId, studentId, number: i + 1,
@@ -60,7 +61,7 @@ export class TestManager {
   /** G007 で作った送る内容（SendContent）を使い、AIで記述テストを作る */
   async createEssayTest(itemId: string, studentId: string, content: SendContent, count: number): Promise<Test> {
     if (!content.text.trim()) throw new TestError("先に「内容編集」で、送る内容を決めてください");
-    const qs = await makeEssay(content.text, clampCount(count));
+    const qs = await makeEssay(content.text, clampQuestionCount(count));
     if (!qs.length) throw new TestError("問題を作れませんでした。送る内容を見直してください");
     const testId = newId();
     const test = new Test({
@@ -158,13 +159,18 @@ export class TestManager {
 
   /** テストの種類：画面の書き方 → TestType */
   static typeOf(kind: TestKind): TestType {
-    return kind === "w-m2t" ? TestType.MEANING_TO_TERM : kind === "w-t2m" ? TestType.TERM_TO_MEANING : TestType.ESSAY;
+    return KIND_TO_TYPE[kind] ?? TestType.ESSAY;
+  }
+
+  /** テストの種類：TestType → 画面の書き方 */
+  static kindOf(type: TestType): TestKind {
+    return (Object.keys(KIND_TO_TYPE) as TestKind[]).find(k => KIND_TO_TYPE[k] === type) ?? "essay";
   }
 
   /** beans の Test を画面の形にする。解答と正誤は、いちばん新しい受験の分を入れる */
   toScreenTest(test: Test): ScreenTest {
-    const kind: TestKind = test.testType === TestType.MEANING_TO_TERM ? "w-m2t" : test.testType === TestType.TERM_TO_MEANING ? "w-t2m" : "essay";
-    const qs = [...test.questions].sort((a, b) => a.number - b.number);
+    const kind = TestManager.kindOf(test.testType);
+    const qs = inOrder(test);
     const last = [...test.attempts].sort((a, b) => b.attemptNo - a.attemptNo)[0];
     const answerOf = (questionId: string) => last?.answers.find(x => x.questionId === questionId);
     return {
@@ -178,7 +184,7 @@ export class TestManager {
 
   /** 受験の一覧を画面の形にする（1回目から順に）。G010 で過去の受験を選ぶときに使う */
   toScreenAttempts(test: Test): ScreenAttempt[] {
-    const qs = [...test.questions].sort((a, b) => a.number - b.number);
+    const qs = inOrder(test);
     return [...test.attempts].sort((a, b) => a.attemptNo - b.attemptNo).map(a => ({
       no: a.attemptNo, at: Date.parse(a.takenAt) || 0,
       ans: qs.map(q => a.answers.find(x => x.questionId === q.questionId)?.studentAnswer ?? ""),
@@ -194,7 +200,7 @@ export class TestManager {
 
   /** 画面の問題番号（0から）から問題IDを探す */
   async questionIdAt(testId: string, index: number): Promise<string> {
-    const q = [...(await this.getTest(testId)).questions].sort((a, b) => a.number - b.number)[index];
+    const q = inOrder(await this.getTest(testId))[index];
     if (!q) throw new TestError("問題が見つかりません"); return q.questionId;
   }
 
@@ -202,18 +208,11 @@ export class TestManager {
 
   /** 単語テストの「意味→用語」のときだけ使う。全角半角・大文字小文字・前後の空白を区別せず、完全一致で正誤を判定する */
   private gradeMeaningToTerm(input: string, modelAnswer: string): boolean {
-    const norm = (s: string) => s.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
-    return !!input.trim() && norm(input) === norm(modelAnswer);
+    return isCorrect(input, modelAnswer);
   }
   /** 解答を直せる種類か。意味→用語なら false */
   private canEditAnswer(type: TestType): boolean { return type !== TestType.MEANING_TO_TERM; }
 
-  /** 単語枠から、用語と意味が両方入っている単語を取り出す（partIds があればその枠だけ） */
-  private async getWords(itemId: string, partIds?: string[]) {
-    const note = await this.noteDAO.findByItem(itemId);
-    return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word" && (!partIds || partIds.includes(p.partId)))
-      .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
-  }
   private async question(testId: string, questionId: string): Promise<Question> {
     const q = (await this.getTest(testId)).questions.find(x => x.questionId === questionId);
     if (!q) throw new TestError("問題が見つかりません"); return q;
@@ -221,6 +220,4 @@ export class TestManager {
   private sync() { return pushQuietly(this.syncManager); }
 }
 
-/** 問題数は5〜20問 */
-const clampCount = (n: number) => Math.min(20, Math.max(5, Math.round(n) || 10));
 const checkLength = (s: string) => { if ([...s].length > SEND_LIMIT) throw new TestError("追加の指示が長すぎます（問題と合わせて1万文字まで）"); };

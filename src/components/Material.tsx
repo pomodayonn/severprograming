@@ -9,12 +9,12 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../state/app";
 import { controller } from "../controller/Controller";
-import type { Screen } from "../types";
+import { parseReplace, replaceText } from "../lib/logic";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
 /** 資料の中身を読む（screen は呼んでいる画面のID。Controller の「画面ID:getContent」に使う） */
-export function useMaterialContent(screen: Screen, materialId: string | undefined) {
+export function useMaterialContent(screen: "G004" | "G005" | "G006" | "G007", materialId: string | undefined) {
   const [v, setV] = useState<{ url?: string; text?: string; missing?: boolean } | null>(null);
   useEffect(() => {
     let url = ""; let live = true; setV(null);
@@ -47,7 +47,7 @@ export function MaterialView() {
     const tx = materials.filter(x => x.srcId === m.id); let both = false;
     if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.name).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
     else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
-    const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.id, withTranscript: String(both) });
+    const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.id, withTranscript: both });
     if (r.error) return toast(r.error);
     await reload(); toast("資料を削除したよ"); back();
   };
@@ -65,9 +65,9 @@ export function TranscriptEdit() {
   if (!m || !account) return null;
   const back = () => nav({ ...route, s: "G005" });
   const apply = () => { // 修正指示「元→先」で、文字起こしの文字をまとめて置き換える
-    const [a, ...b] = ins.split(/→|->/); if (!a.trim() || !b.length) return setMsg("「元の文字→直した文字」の形で入力してください");
-    const n = (text ?? "").split(a.trim()).length - 1; if (!n) return setMsg("その文字は見つかりませんでした");
-    setText((text ?? "").split(a.trim()).join(b.join("→").trim())); setMsg(`${n}か所を直しました`); setIns("");
+    const r = parseReplace(ins); if (!r) return setMsg("「元の文字→直した文字」の形で入力してください");
+    const n = (text ?? "").split(r.from).length - 1; if (!n) return setMsg("その文字は見つかりませんでした");
+    setText(replaceText(text ?? "", r)); setMsg(`${n}か所を直しました`); setIns("");
   };
   return <Shell center={<>
     <div className="row"><span className="sp" /><span className="fname">{m.name}</span></div>

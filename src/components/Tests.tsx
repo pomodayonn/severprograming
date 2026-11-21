@@ -13,8 +13,8 @@
 // どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
-import type { Test, TestKind } from "../types";
-import { fmt, shuffle } from "../lib/logic";
+import type { Test, TestAttempt as Att, TestKind } from "../types";
+import { clampQuestionCount, fmt, shuffle } from "../lib/logic";
 import { addLocalUsage, useAiRemaining } from "../services/ai";
 import { controller } from "../controller/Controller";
 import { AiWait, useOnline } from "./AiWait";
@@ -32,12 +32,12 @@ export function TestCreate() {
   const { remaining, limit, refresh } = useAiRemaining();
   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
-  const els = scope === "all" ? item.note.els : item.note.els.filter(e => picks.includes(e.id)), essay = kind === "essay";
+  const essay = kind === "essay";
   const make = async () => {
-    setMsg(""); const n = Math.min(20, Math.max(5, Math.round(count) || 10)); let t: Test;
+    setMsg(""); const n = clampQuestionCount(count); let t: Test;
     if (!essay) {
       if (scope === "pick" && !picks.length) return setMsg("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
-      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.id ?? "", itemId: item.id, kind, count: String(n), partIds: scope === "pick" ? picks.join(",") : "" });
+      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.id ?? "", itemId: item.id, kind, count: n, partIds: scope === "pick" ? picks : undefined });
       if (r.error) return setMsg(r.error);
       const d = r.data as { test: Test; shortage: number }; t = d.test;
       if (d.shortage > 0) toast(`単語が少ないので、ある分（${t.qs.length}問）だけ出題します`);
@@ -46,7 +46,7 @@ export function TestCreate() {
       if (!online) return setMsg("インターネットにつながっていません。記述テストはAIで作るので、つながってから試してください");
       const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
       setBusy(true);
-      const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.id ?? "", itemId: item.id, text: send, count: String(n) });
+      const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.id ?? "", itemId: item.id, text: send, count: n });
       setBusy(false); void refresh();
       if (r.error) return setMsg(r.error);
       t = r.data as Test;
@@ -98,7 +98,7 @@ export function TestAnswer() {
     const un = ans.filter(a => !a.trim()).length;
     if (un && await ask("答えていない問題があります。確定しますか", [{ label: "確定", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
     // TestManager が新しい受験として保存し、「意味→用語」なら採点する（解き直しも保存する）
-    setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.id, answers: JSON.stringify(ans) }); setBusy(false);
+    setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.id, answers: ans }); setBusy(false);
     if (r.error) return toast(r.error);
     const saved = r.data as Test;
     await reload();
@@ -131,8 +131,6 @@ export function TestAnswer() {
         {test.kind !== "essay" && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
 
-/** 1回分の受験（何回目・日時・解答・正誤） */
-interface Att { no: number; at: number; ans: string[]; ok?: boolean[] }
 /** 直す対象：問題と模範解答／自分の解答／解説 */
 type Fix = "question" | "answer" | "expl";
 
@@ -162,7 +160,7 @@ export function TestResult() {
     if (q.expl || busy) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
     if (!online) return setMsg("インターネットにつながっていません。解説はAIで作るので、つながってから試してください");
     setBusy(true); setWait("AIが解説を書いています");
-    const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: String(idx) }); void refresh();
+    const r = await controller.handleRequest("G010", "explain", { testId: test.id, index: idx }); void refresh();
     setBusy(false);
     if (r.error) return setMsg(r.error);
     useAi(); await reload(); setMsg("");
@@ -175,9 +173,9 @@ export function TestResult() {
   const close = () => { setFix(null); setMsg(""); };
   const saveFix = async () => {
     if (!fix) return; setBusy(true); setWait(""); // 手で直すのはAIを使わないので、待ちの表示は出さない
-    const p = { testId: test.id, index: String(idx) };
+    const p = { testId: test.id, index: idx };
     const r = fix === "question" ? await controller.handleRequest("G010", "editQuestion", { ...p, question: f1, modelAnswer: f2 })
-      : fix === "answer" ? await controller.handleRequest("G010", "editAnswer", { ...p, attemptNo: String(no), answer: f1 })
+      : fix === "answer" ? await controller.handleRequest("G010", "editAnswer", { ...p, attemptNo: no, answer: f1 })
       : await controller.handleRequest("G010", "editExplanation", { ...p, explanation: f1 });
     setBusy(false);
     if (r.error) return setMsg(r.error);
@@ -190,7 +188,7 @@ export function TestResult() {
     if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
     if (!online) return setMsg("インターネットにつながっていません。AIで直すのは、つながってから試してください");
     setBusy(true); setWait("AIが直しています");
-    const r = await controller.handleRequest("G010", fix === "question" ? "regenerateQuestion" : "regenerateExplanation", { testId: test.id, index: String(idx), extra });
+    const r = await controller.handleRequest("G010", fix === "question" ? "regenerateQuestion" : "regenerateExplanation", { testId: test.id, index: idx, extra });
     setBusy(false);
     if (r.error) { void refresh(); return setMsg(r.error); }
     useAi(); const t = r.data as Test; await reload();

@@ -65,7 +65,7 @@ export function Study() {
   };
   const savePre = async () => {
     if (!item || !pre) return;
-    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.id, prereqIds: pre.join(",") });
+    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.id, prereqIds: pre });
     if (r.error) return setPreMsg(r.error); // 輪になるときは「前提項目が輪になるため設定できません」
     await reload(); setPre(null); setPreMsg("");
   };
@@ -88,7 +88,7 @@ export function Study() {
   };
   const doSave = async () => { if (item && drafts[item.id]) { if (await save(item.id)) toast("保存したよ"); } else toast("変更はありません"); };
   const openMat = (id: string) => go({ s: "G005", subjectId: subject.id, itemId: item?.id, materialId: id });
-  const toc = note ? [...note.els].filter(e => (e.kind === "text" && (e.head ?? 0) > 0) || e.kind === "frame").sort((a, b) => a.y - b.y) : [];
+  const toc = note ? controller.tableOfContents(note.els) : []; // 見出しと枠を上から順に（NoteManager.getTableOfContents）
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const matSelect = <select className="inp" style={{ margin: 0 }} value={ref ?? ""} onChange={e => setRef(e.target.value || null)}><option value="">資料を選ぶ…</option>{mats.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>;
   const canvas = note ? <NoteCanvas els={note.els} onChange={setEls} /> : null;
@@ -133,7 +133,7 @@ export function Study() {
       </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
       <aside className="rt">
         <div className="tabs"><button className={"chip" + (rtab === "graph" ? " on" : "")} onClick={() => setR("graph")}>関連図</button><button className={"chip" + (rtab === "toc" ? " on" : "")} onClick={() => setR("toc")}>目次</button></div>
-        {rtab === "graph" ? <RelationGraph s={subject} selId={item?.id} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.id} className="toc" onClick={() => jump(e.id)}>{e.kind === "frame" ? `${FT[e.ft!].n}　${(e.words?.[0]?.term ?? e.text).slice(0, 12)}` : `見出し${e.head}　${e.text.slice(0, 14)}`}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
+        {rtab === "graph" ? <RelationGraph s={subject} selId={item?.id} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </div>
     {full && note && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.name}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave}>保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>

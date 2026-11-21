@@ -6,7 +6,7 @@
 // ・newId      ：新しいIDを作る（ランダムな文字＋時刻なので、ほぼかぶらない）
 // ・pushQuietly：保存のあとに Neon へ送る。失敗しても保存は成功扱い（端末には残っていて、次にまとめて送る）
 // ・checkName  ：科目名・学習項目名の確認（空はだめ、50文字まで）
-import { SEND_LIMIT } from "../lib/logic";
+import { SEND_LIMIT, newId } from "../lib/logic";
 
 /** 1回に送れる文字数（1万文字。これを超えると分けて送り、その分だけ利用回数を使う） */
 export { SEND_LIMIT };
@@ -20,8 +20,8 @@ export class AppError extends Error {}
 /** SyncManager のうち、保存したあとに呼ぶ部分 */
 export interface ChangePusher { pushChanges(): Promise<void> }
 
-/** 新しいID（科目・学習項目・ノート・テストなど） */
-export const newId = (): string => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+/** 新しいID（科目・学習項目・ノート・テストなど）。作り方は lib/logic.ts の newId 1か所だけ */
+export { newId };
 
 /** 保存したあとにアカウントへ送る。同期の失敗は保存の失敗にしない（端末には保存済みで、次回また送る） */
 export async function pushQuietly(sync: ChangePusher | null): Promise<void> {

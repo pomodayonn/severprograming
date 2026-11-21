@@ -15,7 +15,7 @@ import { controller } from "../controller/Controller";
 /** id の部品が old より高くなっていたら、下の部品をずらす（保存はしない。ノートの下書きを変えるだけ） */
 const grow = (els: El[], id: string, old: number): El[] => {
   const e = els.find(x => x.id === id);
-  return e && e.h > old ? controller.noteManager.adjustElements(els, id) : els;
+  return e && e.h > old ? controller.adjustNoteElements(els, id) : els;
 };
 
 type Mode = "move" | "size";

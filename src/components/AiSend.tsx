@@ -7,19 +7,20 @@
 //     承認した提案は apply() でノートの下書きに入れる（保存は学習画面で「保存」を押したとき）
 // ・記述テスト（purpose = "essay"）：送る内容を決めて、テスト作成画面（G008）に戻る
 // 1万文字を超えると分けて送ることになり、その分AIの利用回数を多く使う（confirmCalls で確認する）
-// ※この画面はまだ AiSummaryManager を通していない（サーバーができたら Controller 経由にする）
+// 送信（G007:summarize）と承認（G007:approve）は Controller → AiSummaryManager を通る
 import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { El, FrameType } from "../types";
-import { FT, calls, chunkText } from "../lib/logic";
+import { FT, calls, chunkText, parseReplace, replaceText } from "../lib/logic";
 import { addLocalUsage, useAiRemaining, type Proposal } from "../services/ai";
 import { controller } from "../controller/Controller";
+import { textToWords, wordsToText } from "../lib/words";
 import { AiWait, useOnline } from "./AiWait";
 import { Shell } from "./Shell";
 import { toast } from "./toast";
 
 interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
-const frameText = (e: El) => e.ft === "word" ? (e.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : e.text;
+const frameText = (e: El) => e.ft === "word" ? wordsToText(e.words ?? []) : e.text;
 export function AiSend() {
   const { materials, subjects, route, nav, go, ask, setDraft, account, setTmp, drafts } = useApp();
   const online = useOnline();
@@ -44,7 +45,6 @@ export function AiSend() {
     })(); return () => { live = false; };
   }, [item?.id]); // eslint-disable-line
   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
-  const back = () => nav({ s: essay ? "G008" : "G004", subjectId: subject.id, itemId: item.id });
   const choose = (ids: string[]) => { setSel(ids); setText(parts.filter(p => ids.includes(p.id)).map(p => p.text).join("\n\n")); setMsg(""); };
   const consume = (n: number) => { addLocalUsage(n); void refresh(); };
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
@@ -60,7 +60,7 @@ export function AiSend() {
     if (!online) return setMsg("インターネットにつながっていません。つながってから送信してください");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
     // 11/20：Controller → AiSummaryManager.summarize でAIに送る（1万文字を超えたら分けて送る）
-    const r = await controller.handleRequest("G007", "summarize", { studentId: account?.id ?? "", itemId: item.id, text, frameTypes: types.join(","), els: JSON.stringify(note?.els ?? []) });
+    const r = await controller.handleRequest("G007", "summarize", { studentId: account?.id ?? "", itemId: item.id, text, frameTypes: types, els: note?.els ?? [] });
     setBusy(false);
     if (r.error) { setMsg(r.error); void refresh(); return; }
     const ps = r.data as Proposal[]; consume(n); setProps(ps); setPick(ps.map(p => p.id)); setTab("prop");
@@ -71,15 +71,15 @@ export function AiSend() {
     const ps = props.filter(p => pick.includes(p.id));
     if (ps.length && note) {
       // 11/20：Controller → AiSummaryManager.mergeApproved で、選んだ提案を入れたノートを作ってもらう（枠が大きくなったら下の部品もずらす）
-      const r = await controller.handleRequest("G007", "approve", { studentId: account?.id ?? "", itemId: item.id, els: JSON.stringify(note.els), proposals: JSON.stringify(ps) });
+      const r = await controller.handleRequest("G007", "approve", { studentId: account?.id ?? "", itemId: item.id, els: note.els, proposals: ps });
       if (r.error) return setMsg(r.error);
       setDraft(item.id, { ...note, els: r.data as El[] }); // 反映するが保存はしない（学習画面の「保存」で保存）
     }
     toast(ps.length ? "提案をノートに反映したよ（保存は学習画面で）" : "提案をすべて捨てたよ"); nav({ s: "G004", subjectId: subject.id, itemId: item.id });
   };
   const replace = () => { // 編集指示「元→先」
-    const [a, ...b] = ins.split(/→|->/); if (!a.trim() || !b.length) return setMsg("「元の文字→直した文字」の形で入力してください");
-    const to = b.join("→").trim(), f = (s: string) => s.split(a.trim()).join(to);
+    const r = parseReplace(ins); if (!r) return setMsg("「元の文字→直した文字」の形で入力してください");
+    const f = (s: string) => replaceText(s, r);
     if (tab === "prop") setProps(props.map(p => ({ ...p, text: f(p.text), words: p.words?.map(w => ({ term: f(w.term), meaning: f(w.meaning) })) }))); else setText(f(text));
     setIns(""); setMsg("直しました");
   };
@@ -97,8 +97,8 @@ export function AiSend() {
       {props.map(p => { const cur = frames.find(e => e.id === p.targetId); return (<div key={p.id} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
         <label className="ck"><input type="checkbox" checked={pick.includes(p.id)} onChange={e => setPick(e.target.checked ? [...pick, p.id] : pick.filter(x => x !== p.id))} /><b>{FT[p.ft].n}</b>　{cur ? "（もとの枠の書き換え）" : "（新しい枠）"}</label>
         <div className={cur ? "two" : ""}>{cur && <div><div className="mute">いまの中身</div><pre className="txt">{frameText(cur)}</pre></div>}
-          <div>{cur && <div className="mute">提案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.ft === "word" ? (p.words ?? []).map(w => `${w.term}：${w.meaning}`).join("\n") : p.text}
-            onChange={e => setProps(props.map(x => x.id !== p.id ? x : p.ft === "word" ? { ...x, words: e.target.value.split("\n").filter(Boolean).map(l => { const [a, ...b] = l.split(/：|:/); return { term: a.trim(), meaning: b.join("：").trim() }; }) } : { ...x, text: e.target.value }))} /></div></div></div>); })}</div>}
+          <div>{cur && <div className="mute">提案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.ft === "word" ? wordsToText(p.words ?? []) : p.text}
+            onChange={e => setProps(props.map(x => x.id !== p.id ? x : p.ft === "word" ? { ...x, words: textToWords(e.target.value) } : { ...x, text: e.target.value }))} /></div></div></div>); })}</div>}
     {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
     {set && essay && <div className="pop">記述テストに使う内容を決めます。AIの利用はテストを作るときです。</div>}
     <AiWait busy={busy} what="AIがまとめています" />

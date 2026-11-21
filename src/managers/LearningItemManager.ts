@@ -28,10 +28,8 @@ export class LearningItemManager {
     private readonly noteDAO: NoteDAO,
     private readonly testDAO: TestDAO,
     private readonly materialDAO: MaterialDAO,
-    private syncManager: ChangePusher | null = null,
+    private readonly syncManager: ChangePusher | null = null,
   ) {}
-
-  setSyncManager(sync: ChangePusher) { this.syncManager = sync; }
 
   /** その科目の学習項目一覧を返す（作った順） */
   async getItems(subjectId: string): Promise<LearningItem[]> {

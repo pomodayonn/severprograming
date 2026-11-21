@@ -11,7 +11,8 @@
 // ログインに成功すると、Neon Auth がブラウザに「ログイン中」の印（セッション）を残す。
 // 次にページを開いたときは getSession でその印を確かめるので、もう一度パスワードを入れなくてよい
 import type { Student } from "../types";
-import { localAccounts, saveLocalAccounts, sha } from "../services/db";
+import { localAccounts, ls, saveLocalAccounts, sha } from "../services/db";
+import { newId } from "../lib/logic";
 
 /** Neon Auth からの結果。失敗したときは画面に出す文を error に入れる */
 export type AuthResult = { ok: true; student: Student } | { ok: false; error: string };
@@ -39,8 +40,6 @@ const toStudent = (u: NeonUser): Student => ({ id: u.id, email: u.email, created
 
 // ---------- お試しログイン用（端末の中だけ） ----------
 const SESSION_KEY = "runndesu.session";
-const getLs = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
-const setLs = (k: string, v: string | null) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* 使えない環境では無視 */ } };
 
 export class NeonAuthClient {
   /** お試しログインの見本アカウント */
@@ -81,13 +80,13 @@ export class NeonAuthClient {
 
   /** ログアウトする */
   async signOut(): Promise<void> {
-    if (!this.neon) { this.memSession = null; setLs(SESSION_KEY, null); return; }
+    if (!this.neon) { this.memSession = null; ls.del(SESSION_KEY); return; }
     try { await (await this.auth()).signOut(); } catch { /* 端末側はログアウト扱いにする */ }
   }
 
   /** 今ログインしている学生を返す。いなければ null */
   async getSession(): Promise<Student | null> {
-    if (!this.neon) { await this.ensureDemo(); const a = localAccounts().find(x => x.id === (this.memSession ?? getLs(SESSION_KEY))); return a ? { id: a.id, email: a.email, createdAt: a.createdAt } : null; }
+    if (!this.neon) { await this.ensureDemo(); const a = localAccounts().find(x => x.id === (this.memSession ?? ls.get(SESSION_KEY))); return a ? { id: a.id, email: a.email, createdAt: a.createdAt } : null; }
     try { const r = await (await this.auth()).getSession(); return r.data?.user ? toStudent(r.data.user) : null; } catch { return null; }
   }
 
@@ -126,15 +125,15 @@ export class NeonAuthClient {
   private async localSignUp(email: string, password: string): Promise<AuthResult> {
     await this.ensureDemo();
     if (localAccounts().some(a => a.email === email)) return { ok: false, error: MSG.taken };
-    const a = { id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36), email, pass: await sha(password), createdAt: Date.now() };
-    saveLocalAccounts([...localAccounts(), a]); this.memSession = a.id; setLs(SESSION_KEY, a.id);
+    const a = { id: newId(), email, pass: await sha(password), createdAt: Date.now() };
+    saveLocalAccounts([...localAccounts(), a]); this.memSession = a.id; ls.set(SESSION_KEY, a.id);
     return { ok: true, student: { id: a.id, email: a.email, createdAt: a.createdAt } };
   }
   private async localSignIn(email: string, password: string): Promise<AuthResult> {
     await this.ensureDemo();
     const h = await sha(password), a = localAccounts().find(x => x.email === email && x.pass === h);
     if (!a) return { ok: false, error: MSG.wrong };
-    this.memSession = a.id; setLs(SESSION_KEY, a.id);
+    this.memSession = a.id; ls.set(SESSION_KEY, a.id);
     return { ok: true, student: { id: a.id, email: a.email, createdAt: a.createdAt } };
   }
 }

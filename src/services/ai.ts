@@ -8,18 +8,18 @@
 // 下の impl = SERVER ? server : mock で、どちらを使うかが決まる。使う側（Manager）はどちらか気にしなくてよい
 import { useCallback, useEffect, useState } from "react";
 import type { FrameType, Question, Word } from "../types";
-import { AI_LIMIT, FT, dayKey } from "../lib/logic";
+import { AI_LIMIT, dayKey, newId } from "../lib/logic";
 import { SERVER, request } from "./api";
+import { lineToWord } from "../lib/words";
 
 export { SERVER };
 export interface Proposal { id: string; ft: FrameType; text: string; words?: Word[]; targetId?: string }
-const pid = () => Math.random().toString(36).slice(2);
 
 // ---------- サーバー版（docs/API.md） ----------
 type Remaining = { remaining: number; limit: number };
 const server = {
   organize: async (text: string, frameTypes: FrameType[], frames: { id: string; ft?: FrameType }[]) =>
-    (await request<{ proposals: Omit<Proposal, "id">[] } & Remaining>("POST", "/api/organize", { text, frameTypes, frames })).proposals.map(p => ({ ...p, id: pid() })),
+    (await request<{ proposals: Omit<Proposal, "id">[] } & Remaining>("POST", "/api/organize", { text, frameTypes, frames })).proposals.map(p => ({ ...p, id: newId() })),
   makeEssay: async (text: string, count: number) =>
     (await request<{ questions: Question[] } & Remaining>("POST", "/api/essay-test", { text, count })).questions,
   explain: async (q: Question, extra = "") =>
@@ -43,8 +43,8 @@ const mock = {
     lines(text).forEach(l => { const t = classify(l); (by[t] ??= []).push(l); });
     return types.filter(t => by[t]?.length).map(t => {
       const ls = by[t]!, target = existing.find(e => e.ft === t)?.id;
-      if (t === "word") return { id: pid(), ft: t, text: "", targetId: target, words: ls.map(l => { const [a, ...b] = l.split(/：|:|とは/); return { term: a.trim(), meaning: (b.join("") || a).trim() }; }) };
-      return { id: pid(), ft: t, text: ls.join("\n"), targetId: target };
+      if (t === "word") return { id: newId(), ft: t, text: "", targetId: target, words: ls.map(lineToWord) };
+      return { id: newId(), ft: t, text: ls.join("\n"), targetId: target };
     });
   },
   async makeEssay(text: string, count: number): Promise<Question[]> {
@@ -71,7 +71,6 @@ export const makeEssay = impl.makeEssay;
 export const explain = impl.explain;
 /** 記述テストの1問を作り直す（W3 のテストを直す機能で使う） */
 export const regenerateQuestion = impl.regenerateQuestion;
-export const frameLabel = (t: FrameType) => FT[t].n;
 
 /**
  * 今日の残り利用回数。サーバーがあればサーバーに聞き、なければ端末の記録から数える。

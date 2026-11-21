@@ -7,6 +7,7 @@ import type { Suggestion } from "../beans/Suggestion";
 import { PartType } from "../enums/PartType";
 import type { El, FrameType } from "../types";
 import { FT } from "../lib/logic";
+import { textToWords } from "../lib/words";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { AppError, newId, pushQuietly, type ChangePusher } from "./common";
 import type { SuggestionApplier } from "./AiSummaryManager";
@@ -24,17 +25,12 @@ const heightFor = (frameType: string, content: string): number => {
   const lines = content.split("\n").filter(l => l.trim()).length || 1;
   return frameType === "word" ? Math.max(150, 90 + lines * 30) : Math.max(110, 50 + lines * 24);
 };
-/** 「用語：意味」の行を単語にする（区切りは「：」「:」「とは」） */
-const toWords = (content: string): Word[] => content.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
-  const [term, ...rest] = l.split(/：|:|とは/);
-  return new Word({ wordId: newId(), term: term.trim(), meaning: (rest.join("") || term).trim() });
-});
+/** 「用語：意味」の行を単語にする（区切り方は lib/words.ts の textToWords） */
+const toWords = (content: string): Word[] => textToWords(content).map(w => new Word({ wordId: newId(), ...w }));
 const frameName = (frameType: string | null) => (frameType && FT[frameType as FrameType]?.n) || "枠";
 
 export class NoteManager implements SuggestionApplier {
-  constructor(private readonly noteDAO: NoteDAO, private syncManager: ChangePusher | null = null) {}
-
-  setSyncManager(sync: ChangePusher) { this.syncManager = sync; }
+  constructor(private readonly noteDAO: NoteDAO, private readonly syncManager: ChangePusher | null = null) {}
 
   /** ノートを中の部品ごと返す。まだなければ空のノートを作る（学習項目を作る前のデータのため） */
   async getNote(itemId: string, studentId: string): Promise<Note> {
@@ -109,10 +105,10 @@ export class NoteManager implements SuggestionApplier {
     await this.saveNote(this.mergeSuggestions(note, suggestions));
   }
 
-  /** 単語テスト用に、単語枠から用語と意味が両方入っている単語を取り出す */
-  async getWords(itemId: string): Promise<Word[]> {
+  /** 単語テスト用に、単語枠から用語と意味が両方入っている単語を取り出す（partIds を渡したら、その枠だけ。TestManager から呼ぶ） */
+  async getWords(itemId: string, partIds?: string[]): Promise<Word[]> {
     const note = await this.noteDAO.findByItem(itemId);
-    return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word")
+    return (note?.parts ?? []).filter(p => p.partType === PartType.FRAME && p.frameType === "word" && (!partIds || partIds.includes(p.partId)))
       .flatMap(p => p.words).filter(w => w.term.trim() && w.meaning.trim());
   }
 

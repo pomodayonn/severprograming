@@ -11,9 +11,8 @@
 import { useState } from "react";
 import { Mascot } from "./Mascot";
 import { useApp } from "../state/app";
-import { controller, type ControllerResult } from "../controller/Controller";
+import { controller, type ControllerResult, type EventOf, type ParamsOf } from "../controller/Controller";
 import { NeonAuthClient } from "../boundary/NeonAuthClient";
-import type { Screen } from "../types";
 import { Header } from "./Shell";
 
 /** 11/17：初めて来た人にも「何をするサイトか」が分かるように、ログイン・登録の上に説明を出す */
@@ -29,10 +28,10 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 }
 
 /** ボタンを Controller に渡し、結果に応じて画面を移るかエラーを出す。送信中は押せなくする */
-function useEvent(screen: Screen) {
+function useEvent<S extends "G001" | "G002">(screen: S) {
   const { enter, nav } = useApp();
   const [busy, setBusy] = useState(false), [err, setErr] = useState("");
-  const send = async (eventId: string, params: Record<string, string> = {}) => {
+  const send = async <E extends EventOf<S>>(eventId: E, params?: ParamsOf<S, E>) => {
     if (busy) return; setErr(""); setBusy(true);
     const r: ControllerResult = await controller.handleRequest(screen, eventId, params); setBusy(false);
     if (r.error) return setErr(r.error);

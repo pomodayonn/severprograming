@@ -19,10 +19,8 @@ export class SubjectManager {
   constructor(
     private readonly subjectDAO: SubjectDAO,
     private readonly itemManager: LearningItemManager,
-    private syncManager: ChangePusher | null = null,
+    private readonly syncManager: ChangePusher | null = null,
   ) {}
-
-  setSyncManager(sync: ChangePusher) { this.syncManager = sync; }
 
   /** その学生の科目一覧を返す（作った順） */
   async getSubjects(studentId: string): Promise<Subject[]> {

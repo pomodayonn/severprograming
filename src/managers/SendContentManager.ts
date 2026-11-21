@@ -13,13 +13,15 @@ import { PartType } from "../enums/PartType";
 import type { MaterialDAO } from "../dao/MaterialDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { fetchRemaining } from "../services/ai";
+import { wordsToText } from "../lib/words";
 import { SEND_LIMIT } from "./common";
+import { calls } from "../lib/logic";
 
 export { SEND_LIMIT };
 
 /** 枠の中身を文字にする（単語枠は「用語：意味」を1行ずつ） */
 export const partText = (p: NotePart): string =>
-  p.partType === PartType.FRAME && p.frameType === "word" ? p.words.map(w => `${w.term}：${w.meaning}`).join("\n") : p.text;
+  p.partType === PartType.FRAME && p.frameType === "word" ? wordsToText(p.words) : p.text;
 
 export class SendContentManager {
   constructor(private readonly materialDAO: MaterialDAO, private readonly noteDAO: NoteDAO) {}
@@ -49,7 +51,7 @@ export class SendContentManager {
 
   /** 1万文字ごとに1回として、何回分の利用になるかを計算する（空でも1回） */
   countCalls(content: SendContent): number {
-    return Math.max(1, Math.ceil(content.charCount / SEND_LIMIT));
+    return calls(content.charCount);
   }
 
   /** 今日の残り回数をサーバーに聞く（サーバーがないときは null） */
