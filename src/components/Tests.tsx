@@ -28,7 +28,9 @@ export function TestCreate() {
   const { subjects, reload, route, nav, go, tmp, setTmp, account } = useApp();
   const online = useOnline();
   const subject = subjects.find(s => s.id === route.subjectId), item = subject?.items.find(i => i.id === route.itemId);
-  const [scope, setScope] = useState<"all" | "pick">("all"), [picks, setPicks] = useState<string[]>([]), [kind, setKind] = useState<TestKind>("w-m2t"), [count, setCount] = useState(10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+  // 11/21：「内容編集」（G007）から戻ったときに選び直さなくてよいように、選んだ範囲・種類・問題数を tmp.g8 に残しておく（同じ学習項目のときだけ使う）
+  const kept = tmp.g8 as G8Choice | undefined, k = kept?.itemId === route.itemId ? kept : undefined;
+  const [scope, setScope] = useState<"all" | "pick">(k?.scope ?? "all"), [picks, setPicks] = useState<string[]>(k?.picks ?? []), [kind, setKind] = useState<TestKind>(k?.kind ?? "w-m2t"), [count, setCount] = useState(k?.count ?? 10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
   const { remaining, limit, refresh } = useAiRemaining();
   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
   const frames = item.note.els.filter(e => e.kind === "frame"), send = (tmp.send as string | undefined) ?? "";
@@ -52,6 +54,7 @@ export function TestCreate() {
       t = r.data as Test;
       addLocalUsage(c); setTmp({ send: "", sendCalls: 1 });
     }
+    setTmp({ g8: undefined }); // 作ったら、次に開いたときは最初の選び方に戻す
     await reload();
     nav({ s: "G009", subjectId: subject.id, itemId: item.id, testId: t.id, mode: "new" }); // 問題だけを表示（模範解答・解説は出さない）
   };
@@ -65,9 +68,12 @@ export function TestCreate() {
       <AiWait busy={busy && essay} what="AIが問題を作っています" />
       {msg && <div className="err">{msg}</div>}</div>
     <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy || (essay && !online)} onClick={make}>{busy ? "作成中…" : "作成"}</button>
-      <button className="btn line" disabled={!essay} onClick={() => go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "essay" })}>内容編集</button></span>
+      <button className="btn line" disabled={!essay} onClick={() => { setTmp({ g8: { itemId: item.id, scope, picks, kind, count } satisfies G8Choice }); void go({ s: "G007", subjectId: subject.id, itemId: item.id, purpose: "essay" }); }}>内容編集</button></span>
       <button className="btn line" onClick={() => go({ s: "G004", subjectId: subject.id, itemId: item.id })}>戻る</button></div></>} />;
 }
+
+/** テスト作成画面（G008）で選んだもの。G007 に行って戻ったときに元に戻すために tmp.g8 に置く */
+interface G8Choice { itemId: string; scope: "all" | "pick"; picks: string[]; kind: TestKind; count: number }
 
 export function TestAnswer() {
   const { tests, reload, route, nav, ask } = useApp();
