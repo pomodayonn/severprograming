@@ -8,8 +8,8 @@
 //
 // 【このファイルで何が起きているか】
 // ・getRemaining：今日あと何回使えるか
-// ・canUse：今日の残りで calls 回使えるか（足りなければ ApiController が 429 を返す）
-// ・addUsage：AIが成功したあとに calls 回足し、足したあとの残り回数を返す（失敗したときは呼ばない＝数えない）
+// ・reserve：AIを呼ぶ前に calls 回分を予約する（先に数える）。残りが足りなければ null（ApiController が 429 を返す）
+// ・release：AIが失敗したとき、予約した分を戻す（＝失敗したときは数えない）
 // 「今日」は日本時間で区切ります。Render のサーバーは UTC で動くので、そのまま new Date() を使うと
 // 朝9時に日付が変わってしまうためです
 
@@ -32,18 +32,21 @@ export class AiUsageManager {
     return Math.max(0, DAILY_LIMIT - usage.count);
   }
 
-  /** 今日の残りで calls 回使えるか */
-  async canUse(studentId, calls) {
-    return (await this.getRemaining(studentId)) >= calls;
+    /**
+   * AIを呼ぶ前に calls 回分を予約する。残りが足りなければ null。
+   * 「残りを確かめる」と「足す」を DB の1文（AiUsageDAO.reserve）でやるので、
+   * 同じ学生のリクエストがほぼ同時に来ても上限を超えない（Java の synchronized の代わりを DB がしてくれる）
+   * @returns {Promise<{ useDate: string, remaining: number } | null>} 予約した日付（release で使う）と、予約したあとの残り回数
+   */
+  async reserve(studentId, calls) {
+    const useDate = todayJst();
+    const count = await this.aiUsageDAO.reserve(studentId, useDate, calls, DAILY_LIMIT);
+    return count === null ? null : { useDate, remaining: Math.max(0, DAILY_LIMIT - count) };
   }
 
-  /**
-   * calls 回足して、足したあとの残り回数を返す。
-   * 「読む → 足す → 書く」を DB の1文（AiUsageDAO.increment）でやるので、
-   * 同じ学生のリクエストがほぼ同時に来ても数え漏れが出ない（Java の synchronized の代わりを DB がしてくれる）
-   */
-  async addUsage(studentId, calls) {
-    const count = await this.aiUsageDAO.increment(studentId, todayJst(), calls, DAILY_LIMIT);
-    return Math.max(0, DAILY_LIMIT - count);
+
+  /** AIが失敗したとき、予約した分を戻す。useDate は reserve が返した日付（夜12時をまたいでも、予約した日の分を戻すため） */
+  async release(studentId, useDate, calls) {
+    await this.aiUsageDAO.release(studentId, useDate, calls);
   }
 }
