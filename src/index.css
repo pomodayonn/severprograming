@@ -90,3 +90,9 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 /* AIの返事を待っている間（AiWait）とオフラインの帯 */
 .aiwait{display:flex;gap:12px;align-items:center;background:#eef6f3;border:1px solid #b9dccf;border-radius:14px;padding:10px 14px;margin:8px 0}
 .offline{background:#fff4d6;border-bottom:1px solid #e8c66a;color:#6b4e00;font-size:13px;font-weight:700;text-align:center;padding:6px 12px}
+
+/* 11/22：データを読み込んでいる間（科目一覧・左の階層）。小さな丸が回る */
+.loading{display:flex;align-items:center;gap:8px}
+.loading::before{content:"";width:14px;height:14px;border:2px solid #d9d2c3;border-top-color:#2e7d6d;border-radius:50%;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.loading::before{animation:none}}
