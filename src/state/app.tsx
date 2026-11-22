@@ -133,7 +133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const s = rRef.current.s;
     let r = await controller.handleRequest(s, "logoutButton", { clearLocal: v === "clear" });
     if ((r.data as { unsent?: boolean } | undefined)?.unsent) {
-      const w = await ask("まだアカウントに送れていない変更があります（オフライン・お試しログインなど）。消すと、その変更は戻せません。消してログアウトしますか",
+      const w = await ask("まだアカウントに送れていない変更があります（オフラインだったときなど）。消すと、その変更は戻せません。消してログアウトしますか",
         [{ label: "消してログアウト", value: "force", danger: true }, { label: "やめる", value: "cancel" }]);
       if (w !== "force") return;
       r = await controller.handleRequest(s, "logoutButton", { clearLocal: true, force: true });

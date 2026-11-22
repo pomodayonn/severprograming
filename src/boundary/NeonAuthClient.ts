@@ -1,20 +1,17 @@
 // NeonAuthClient（Boundary／フロントエンド）：Neon Auth とやり取りする窓口。
-// .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
-// なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
+// .env の VITE_NEON_AUTH_URL の Neon Auth（@neon/neon-js の auth）を使う。
+// 11/22：Neon の準備ができる前に使っていた「お試しログイン」（端末の中だけで動くログイン）はなくした。
+//   VITE_NEON_AUTH_URL が空のときは、ログイン・登録で「ログインの設定がありません」と出る
 // 11/22：Student は types.ts の仮の形（id・email・createdAt）をやめて、src/beans/Student.ts（studentId・mail・registeredAt）を使う
 //
 // 【このファイルで何が起きているか】
 // ログイン・登録・ログアウトを、Neon Auth（ログインの外部サービス）に頼む窓口です。
-// ・VITE_NEON_AUTH_URL がある → 本物の Neon Auth に送る（パスワードは Neon Auth が持ち、アプリは見ない）
-// ・ない                     → 端末の中だけの「お試しログイン」（demo@example.com / demo1234）
+// パスワードは Neon Auth が持ち、アプリは見ない
 // 流れの例（ログイン）：G001 画面 → Controller → AccountManager.login → ここの signIn → Neon Auth
 // ログインに成功すると、Neon Auth がブラウザに「ログイン中」の印（セッション）を残す。
 // 次にページを開いたときは getSession でその印を確かめるので、もう一度パスワードを入れなくてよい
 import { Student } from "../beans/Student";
-import { localAccounts, ls, saveLocalAccounts, sha } from "../services/db";
-import { newId } from "../lib/logic";
 import { now } from "../beans/DateTime";
-import type { LocalAccount } from "../types";
 
 /** Neon Auth からの結果。失敗したときは画面に出す文を error に入れる */
 export type AuthResult = { ok: true; student: Student } | { ok: false; error: string };
@@ -24,6 +21,7 @@ const MSG = {
   taken: "このメールアドレスは登録できません",
   weak: "パスワードは8〜16文字で、英字と数字の両方を含めてください",
   net: "通信できませんでした。時間をおいて試してください",
+  noConfig: "ログインの設定がありません（.env の VITE_NEON_AUTH_URL を入れてください）",
 };
 
 // ---------- Neon Auth の型（@neon/neon-js の auth で使う分だけ） ----------
@@ -39,28 +37,19 @@ interface NeonAuth {
   getSession(): Promise<NeonRes<{ user: NeonUser; session: { token: string } }>>;
 }
 const toStudent = (u: NeonUser): Student => new Student({ studentId: u.id, mail: u.email, registeredAt: u.createdAt ? new Date(u.createdAt).toISOString() : now() });
-/** お試しログインのアカウント（端末に保存した形）を Student にする */
-const localToStudent = (a: LocalAccount): Student => new Student({ studentId: a.id, mail: a.email, registeredAt: new Date(a.createdAt).toISOString() });
-
-// ---------- お試しログイン用（端末の中だけ） ----------
-const SESSION_KEY = "runndesu.session";
 
 export class NeonAuthClient {
-  /** お試しログインの見本アカウント */
-  static readonly DEMO = { email: "demo@example.com", password: "demo1234" };
-
   private client: NeonAuth | null = null;
-  private memSession: string | null = null;
 
-  /** url が空ならお試しログインで動く */
+  /** url は .env の VITE_NEON_AUTH_URL。空だとログインできない */
   constructor(private readonly url?: string) {}
 
-  /** Neon Auth を使っているか（false ならお試しログイン） */
+  /** Neon Auth の URL が設定されているか（false ならログインも同期もできない） */
   get neon(): boolean { return !!this.url; }
 
   /** 登録する */
   async signUp(email: string, password: string): Promise<AuthResult> {
-    if (!this.neon) return this.localSignUp(email, password);
+    if (!this.neon) return { ok: false, error: MSG.noConfig };
     try {
       const r = await (await this.auth()).signUp.email({ name: email.split("@")[0] || "User", email, password });
       return r.error || !r.data ? this.fail(r.error ?? {}, "up") : { ok: true, student: toStudent(r.data.user) };
@@ -69,7 +58,7 @@ export class NeonAuthClient {
 
   /** ログインする */
   async signIn(email: string, password: string): Promise<AuthResult> {
-    if (!this.neon) return this.localSignIn(email, password);
+    if (!this.neon) return { ok: false, error: MSG.noConfig };
     try {
       const r = await (await this.auth()).signIn.email({ email, password });
       return r.error || !r.data ? this.fail(r.error ?? {}, "in") : { ok: true, student: toStudent(r.data.user) };
@@ -78,19 +67,19 @@ export class NeonAuthClient {
 
   /** Google でログインする（Neon の管理画面で Google ログインを有効にしておく）。ページが Google に移動し、戻ってきたら getSession で分かる */
   async signInWithGoogle(): Promise<void> {
-    if (!this.neon) return; // お試しログインでは使えない（画面にボタンを出さない）
+    if (!this.neon) return; // 設定がないときは何もしない
     await (await this.auth()).signIn.social({ provider: "google", callbackURL: window.location.origin + window.location.pathname });
   }
 
   /** ログアウトする */
   async signOut(): Promise<void> {
-    if (!this.neon) { this.memSession = null; ls.del(SESSION_KEY); return; }
+    if (!this.neon) return;
     try { await (await this.auth()).signOut(); } catch { /* 端末側はログアウト扱いにする */ }
   }
 
   /** 今ログインしている学生を返す。いなければ null */
   async getSession(): Promise<Student | null> {
-    if (!this.neon) { await this.ensureDemo(); const a = localAccounts().find(x => x.id === (this.memSession ?? ls.get(SESSION_KEY))); return a ? localToStudent(a) : null; }
+    if (!this.neon) return null;
     try { const r = await (await this.auth()).getSession(); return r.data?.user ? toStudent(r.data.user) : null; } catch { return null; }
   }
 
@@ -121,24 +110,6 @@ export class NeonAuthClient {
     if (kind === "up" && code.includes("PASSWORD")) return { ok: false, error: MSG.weak };
     if (!e.status || e.status >= 500) return { ok: false, error: MSG.net };
     return { ok: false, error: kind === "in" ? MSG.wrong : MSG.taken };
-  }
-  private async ensureDemo() {
-    if (localAccounts().some(a => a.email === NeonAuthClient.DEMO.email)) return;
-    saveLocalAccounts([...localAccounts(), { id: "demo", email: NeonAuthClient.DEMO.email, pass: await sha(NeonAuthClient.DEMO.password), createdAt: Date.now() }]);
-  }
-  private async localSignUp(email: string, password: string): Promise<AuthResult> {
-    await this.ensureDemo();
-    if (localAccounts().some(a => a.email === email)) return { ok: false, error: MSG.taken };
-    const a = { id: newId(), email, pass: await sha(password), createdAt: Date.now() };
-    saveLocalAccounts([...localAccounts(), a]); this.memSession = a.id; ls.set(SESSION_KEY, a.id);
-    return { ok: true, student: localToStudent(a) };
-  }
-  private async localSignIn(email: string, password: string): Promise<AuthResult> {
-    await this.ensureDemo();
-    const h = await sha(password), a = localAccounts().find(x => x.email === email && x.pass === h);
-    if (!a) return { ok: false, error: MSG.wrong };
-    this.memSession = a.id; ls.set(SESSION_KEY, a.id);
-    return { ok: true, student: localToStudent(a) };
   }
 }
 

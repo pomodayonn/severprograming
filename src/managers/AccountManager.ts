@@ -26,9 +26,6 @@ const emailOk = (v: string) => v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.t
 export class AccountManager {
   constructor(private readonly authClient: NeonAuthClient, private readonly syncManager: PullOnLogin | null = null) {}
 
-  /** お試しログインのときだけ true（画面に見本アカウントを出す・Google ボタンを隠す） */
-  get isTrial(): boolean { return !this.authClient.neon; }
-
   /** 登録する。空欄・メールの形・パスワードの条件・再入力との一致を確かめてから Neon Auth に頼む */
   async register(mail: string, pass: string, passConfirm: string): Promise<Student> {
     const m = nfkc(mail).toLowerCase(), p = nfkc(pass);
