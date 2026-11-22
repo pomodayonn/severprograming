@@ -28,6 +28,7 @@ export function Tree({ heading, extra }: { heading: string; extra?: (itemId: str
       {isOpen(s.subjectId) && itemsOf(items, s.subjectId).map(i => { const cur = route.s !== "G003" && route.itemId === i.itemId && route.subjectId === s.subjectId;
         return (<div key={i.itemId}><div className={"ti" + (cur ? " on" : "")} onClick={() => go({ s: "G004", subjectId: s.subjectId, itemId: i.itemId })}><i className="dot" />{i.itemName}</div>{extra && cur && extra(i.itemId)}</div>); })}
     </div>))}
+    {!loaded && <p className="mute loading">読み込み中…</p>}
     {loaded && !subjects.length && <p className="mute">科目がまだありません</p>}</>);
 }
 export function GraphPane() {

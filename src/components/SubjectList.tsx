@@ -42,6 +42,7 @@ export function SubjectList() {
   };
   return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
     <div className="row"><h2>科目</h2><span className="sp" /><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>
+    {!loaded && <p className="mute loading">読み込み中…</p>}{/* 11/22：ログインした直後、端末のデータを読み終わるまで */}
     {loaded && !subjects.length && <p className="mute">科目がまだありません。「科目の追加」から作ってみよう。</p>}
     {subjects.length > 0 && !cur && <p className="mute">左の一覧から科目を選んでください。</p>}
     {cur && <div className="box"><h3>{cur.subjectName}</h3><p className="mute">学習項目 {curItems.length} 件</p>
