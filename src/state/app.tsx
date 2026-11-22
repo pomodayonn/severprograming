@@ -74,11 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const a = aRef.current; if (!a) return;
     const n = ++seq.current;
     const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.studentId });
-<<<<<<< Updated upstream
-    if (r.error) { toast(r.error); return; }
-=======
     if (r.error) { toast(r.error); if (n === seq.current) setLoaded(true); return; } // 失敗しても「読み込み中」のままにしない
->>>>>>> Stashed changes
     const d = r.data as StudentData | undefined;
     if (!d || n !== seq.current || aRef.current?.studentId !== a.studentId) return; // 古い結果・ほかの学生の結果は出さない
     setDb(d); setLoaded(true);
