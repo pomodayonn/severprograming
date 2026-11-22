@@ -5,6 +5,7 @@ import { ApiController, sendError } from "./controller/ApiController.js";
 import { AiUsageDAO } from "./dao/AiUsageDAO.js";
 import { AiUsageManager } from "./managers/AiUsageManager.js";
 import { AiService } from "./boundary/AiService.js";
+import { AI_CONFIG } from "./config.js";
 import { defaultProviders } from "./boundary/AiProvider.js";
 
 const app = express();
@@ -27,7 +28,7 @@ app.get("/api/health", (req, res) => {
 
 //部品を組み立てる（DAO → Manager、Provider → Service、それらを Controller に渡す）
 const aiUsageManager = new AiUsageManager(new AiUsageDAO());
-const aiService = new AiService(defaultProviders());
+const aiService = new AiService(defaultProviders(), AI_CONFIG.groups);
 const tokenVerifier = new TokenVerifier(process.env.NEON_AUTH_JWKS_URL, process.env.NEON_AUTH_URL);
 
 //入口の係（ApiController）を作り、URL ごとに担当のメソッドへつなぐ

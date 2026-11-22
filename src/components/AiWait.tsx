@@ -18,7 +18,7 @@ export function AiWait({ busy, what = "AIが考えています" }: { busy: boole
   return (<div className="aiwait" role="status" aria-live="polite"><Mascot size={44} mood={sec >= 8 ? "sleepy" : "happy"} />
     <div><b>{what}…</b> <span className="mute">{sec}秒</span>
       {sec >= 8 && <div className="mute">サーバーを起こしています。最初の1回は30秒ほどかかることがあります</div>}
-      {sec >= 45 && <div className="mute">もう少し待ってください（90秒たっても返事がなければ、利用回数を減らさずに止めます）</div>}</div></div>);
+      {sec >= 45 && <div className="mute">もう少し待ってください（長い内容は数分かかることがあります。4分たっても返事がなければ、利用回数を減らさずに止めます）</div>}</div></div>);
 }
 
 /** インターネットにつながっているか。つながったり切れたりしたら、画面を描き直す */
