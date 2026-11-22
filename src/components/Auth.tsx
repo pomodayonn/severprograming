@@ -12,7 +12,6 @@ import { useState } from "react";
 import { Mascot } from "./Mascot";
 import { useApp } from "../state/app";
 import { controller, type ControllerResult, type EventOf, type ParamsOf } from "../controller/Controller";
-import { NeonAuthClient } from "../boundary/NeonAuthClient";
 import { Header } from "./Shell";
 
 /** 11/17：初めて来た人にも「何をするサイトか」が分かるように、ログイン・登録の上に説明を出す */
@@ -41,7 +40,6 @@ function useEvent<S extends "G001" | "G002">(screen: S) {
 }
 
 function GoogleButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
-  if (controller.accountManager.isTrial) return null; // お試しログインでは出さない
   return (<><div className="or"><span>または</span></div>
     <div className="row c"><button className="btn wide" disabled={busy} onClick={onClick}>Google でログイン</button></div></>);
 }
@@ -56,8 +54,7 @@ export function Login() {
     {err && <div className="err">{err}</div>}
     <div className="row c"><button className="btn pri lg wide" disabled={busy} onClick={login}>{busy ? "ログイン中…" : "ログイン"}</button></div>
     <div className="row c"><span className="mute">はじめての人は</span><button className="btn line" disabled={busy} onClick={() => send("frastLoginButton")}>新規登録</button></div>
-    <GoogleButton busy={busy} onClick={() => send("googleLogin")} />
-    {controller.accountManager.isTrial && <p className="mute hint">お試しモード（端末の中だけで動きます）：<b>{NeonAuthClient.DEMO.email}</b> ／ <b>{NeonAuthClient.DEMO.password}</b></p>}</Card>);
+    <GoogleButton busy={busy} onClick={() => send("googleLogin")} /></Card>);
 }
 
 export function Register() {

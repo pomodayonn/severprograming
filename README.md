@@ -8,6 +8,11 @@ npm run dev      # 開発
 npm run build    # 型チェック + 本番ビルド
 ```
 
+## ローカルで動かす
+- フロントに必要な値（Neon Auth・Neon Data API・サーバーの URL）は `.env.development` に入っているので、`npm install` → `npm run dev` だけで動く（ログインは Neon のアカウント）
+- 自分だけ値を変えたいときは `.env.example` を `.env.development.local` にコピーして書きかえる（GitHub には上がらない）
+- サーバー（`server` フォルダ）も動かしたい人は、`server/.env` の値をチームの福山に聞く
+
 ## 画面と部品の対応
 | 画面 | ファイル |
 |---|---|
@@ -22,7 +27,7 @@ npm run build    # 型チェック + 本番ビルド
 ## 差し替え口（実装時にここだけ置き換える）
 - `services/ai.ts`：AI（いまは仮実装。サーバー経由で複数のAIサービスを順に試す想定）
 - `services/ocr.ts`：文字起こし（いまは仮実装。実装時は Tesseract.js など、ブラウザの中で処理）
-- `services/db.ts`：端末への保存（データは localStorage、資料の中身は IndexedDB）。サーバー保存はここに足す
+- `services/db.ts`：前の保存場所に残っているデータを消すだけ（保存は Manager → `dao/` の IndexedDB、アカウントへの同期は `SyncManager`）
 - `state/app.tsx`：ログイン中の学生・画面遷移・未保存ノートの確認・ダイアログ
 
 ## 決めごと（打ち合わせ・外部設計書より）

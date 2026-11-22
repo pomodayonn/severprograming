@@ -100,7 +100,7 @@ export class SyncManager {
   /**
    * まだ送っていない変更をアカウントに送り、端末のデータが全部アカウントにもある状態か返す（11/21）。
    * ログアウトで端末のデータを消す前に、AccountManager が呼ぶ。
-   * 同期できない設定（お試しログイン・Data API の URL がない）や、通信できずに送れなかったときは false
+   * 同期できない設定（Neon Auth・Data API の URL がない）や、通信できずに送れなかったときは false
    */
   async sendAll(): Promise<boolean> {
     if (!this.enabled) return false;

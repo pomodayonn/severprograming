@@ -12,7 +12,7 @@ import { neonAuthClient } from "../boundary/NeonAuthClient";
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
 export const SERVER = !!API_URL;
 /** AIの返事を待つ長さ（ミリ秒） */
-const TIMEOUT_MS = 90_000;
+const TIMEOUT_MS = 250_000; // 11/22：90秒 → 250秒。サーバーはAI2つを120秒ずつ（最大240秒）試すので、それより少し長く待つ
 
 /** サーバーから返るエラーの種類（画面に出す文言はここで決める） */
 export type ApiErrorCode = "UNAUTHORIZED" | "LIMIT_EXCEEDED" | "TOO_LONG" | "AI_UNAVAILABLE" | "BAD_REQUEST" | "NETWORK" | "SERVER" | "OFFLINE" | "TIMEOUT";
@@ -25,7 +25,7 @@ const TEXT: Record<ApiErrorCode, string> = {
   NETWORK: "サーバーとつながりません。インターネットの接続を確認してください",
   SERVER: "サーバーでエラーが起きました。時間をおいて試してください",
   OFFLINE: "インターネットにつながっていません。つながってから、もう一度試してください（ノートの保存は端末にできます）",
-  TIMEOUT: "AIの返事が来ませんでした（90秒）。時間をおいて、もう一度試してください。利用回数は減っていません",
+  TIMEOUT: "AIの返事が来ませんでした（4分）。時間をおいて、もう一度試してください。利用回数は減っていません",
 };
 export class ApiError extends Error {
   constructor(public code: ApiErrorCode, public status = 0) { super(TEXT[code]); }
@@ -41,7 +41,7 @@ export async function request<T>(method: "GET" | "POST", path: string, body?: un
   if (typeof navigator !== "undefined" && navigator.onLine === false) throw new ApiError("OFFLINE");
   const token = await neonAuthClient.getAccessToken();
   let res: Response;
-  // 11/17：90秒たっても返事がなければあきらめる（Render が寝ていると最初の1回は30秒ほどかかるので、それより長くしてある）
+  // 11/17：返事がなければあきらめる（11/22 から250秒）（Render が寝ていると最初の1回は30秒ほどかかるので、それより長くしてある）
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
     res = await fetch(API_URL + path, {

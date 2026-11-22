@@ -112,6 +112,6 @@ export async function clearStudentData(studentId: string): Promise<void> {
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */
 export interface Deletion { table: string; key: string; studentId: string; at: string }
 export async function recordDeletion(table: string, key: string, studentId: string): Promise<void> {
-  if (!studentId) return; // 学生IDがない（ログイン前のお試しなど）ときは同期しない
+  if (!studentId) return; // 学生IDがない（ログイン前など）ときは同期しない
   await put("deletions", { table, key, studentId, at: new Date().toISOString() } satisfies Deletion);
 }
