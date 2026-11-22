@@ -55,7 +55,7 @@ export class SyncManager {
     // ---- Neon の形（スネークケース・別々のテーブル）から、端末の形（beans・入れ子）に戻す ----
     const wordsBy = group(words, "part_id"), partsBy = group(parts, "note_id");
     const qBy = group(questions, "test_id"), aBy = group(attempts, "test_id"), ansBy = group(answers, "attempt_id");
-    const sid = student.id;
+    const sid = student.studentId;
     const sub = subjects.map(r => new Subject({ subjectId: s(r.subject_id), studentId: sid, subjectName: s(r.subject_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const its = items.map(r => new LearningItem({ itemId: s(r.item_id), studentId: sid, subjectId: s(r.subject_id), itemName: s(r.item_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const pres = prereqs.map(r => new Prerequisite({ studentId: sid, itemId: s(r.item_id), prereqItemId: s(r.prereq_item_id), updatedAt: s(r.updated_at) }));
@@ -110,7 +110,7 @@ export class SyncManager {
   // ======================= ここから private =======================
   private async push(): Promise<void> {
     const student = await this.authClient.getSession(); if (!student) return;
-    const sid = student.id, since = await this.getLastSynced(sid), started = now();
+    const sid = student.studentId, since = await this.getLastSynced(sid), started = now();
     const newer = <T extends { updatedAt: string; studentId: string }>(rows: T[]) => rows.filter(r => r.studentId === sid && (!since || r.updatedAt > since));
 
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）

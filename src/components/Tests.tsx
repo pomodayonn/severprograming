@@ -49,7 +49,7 @@ export function TestCreate() {
     setMsg(""); const n = clampQuestionCount(count); let t: Test;
     if (kind !== TestType.ESSAY) {
       if (scope === "pick" && !picks.length) return setMsg("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
-      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.id ?? "", itemId: item.itemId, testType: kind, count: n, partIds: scope === "pick" ? picks : undefined });
+      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.studentId ?? "", itemId: item.itemId, testType: kind, count: n, partIds: scope === "pick" ? picks : undefined });
       if (r.error) return setMsg(r.error);
       const d = r.data as { test: Test; shortage: number }; t = d.test;
       if (d.shortage > 0) toast(`単語が少ないので、ある分（${t.questions.length}問）だけ出題します`);
@@ -58,7 +58,7 @@ export function TestCreate() {
       if (!online) return setMsg("インターネットにつながっていません。記述テストはAIで作るので、つながってから試してください");
       const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
       setBusy(true);
-      const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.id ?? "", itemId: item.itemId, text: send, count: n });
+      const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.studentId ?? "", itemId: item.itemId, text: send, count: n });
       setBusy(false); void refresh();
       if (r.error) return setMsg(r.error);
       t = r.data as Test;

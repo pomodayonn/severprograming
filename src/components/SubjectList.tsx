@@ -16,7 +16,7 @@ import { toast } from "./toast";
 export function SubjectList() {
   const { account, subjects, items, loaded, reload, route, nav, go, ask, askName } = useApp();
   const cur = subjects.find(s => s.subjectId === route.subjectId), curItems = itemsOf(items, cur?.subjectId);
-  const sid = account?.id ?? "";
+  const sid = account?.studentId ?? "";
 
   const add = async () => {
     const n = await askName("科目の追加"); if (!n) return;

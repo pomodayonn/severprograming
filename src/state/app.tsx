@@ -16,7 +16,8 @@
 // 11/21（福山）：前の保存場所（localStorage・IndexedDB "runndesu"）からの引っ越しはやめた（チームでデータは消えてよいと決めた）。
 //   残っている前のデータは、ページを開いたときに removeOldData() で消す
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Route, Student } from "../types";
+import type { Route } from "../types";
+import type { Student } from "../beans/Student";
 import type { Subject } from "../beans/Subject";
 import type { LearningItem } from "../beans/LearningItem";
 import type { Prerequisite } from "../beans/Prerequisite";
@@ -72,10 +73,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     const a = aRef.current; if (!a) return;
     const n = ++seq.current;
-    const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.id });
+    const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.studentId });
     if (r.error) { toast(r.error); return; }
     const d = r.data as StudentData | undefined;
-    if (!d || n !== seq.current || aRef.current?.id !== a.id) return; // 古い結果・ほかの学生の結果は出さない
+    if (!d || n !== seq.current || aRef.current?.studentId !== a.studentId) return; // 古い結果・ほかの学生の結果は出さない
     setDb(d); setLoaded(true);
   }, []);
   const open = useCallback((a: Student) => {
@@ -94,7 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const askName = useCallback((title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res })), []);
   /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
   const save = useCallback(async (itemId: string) => {
-    const dr = dRef.current[itemId], sid = aRef.current?.id; if (!dr || !sid) return false;
+    const dr = dRef.current[itemId], sid = aRef.current?.studentId; if (!dr || !sid) return false;
     const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, parts: dr });
     if (r.error) { toast(r.error); return false; } // 保存できなかったときは下書きを残す
     await reload();

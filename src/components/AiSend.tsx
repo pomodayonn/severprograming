@@ -69,7 +69,7 @@ export function AiSend() {
     if (!online) return setMsg("インターネットにつながっていません。つながってから送信してください");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
     // 11/20：Controller → AiSummaryManager.summarize でAIに送る（1万文字を超えたら分けて送る）
-    const r = await controller.handleRequest("G007", "summarize", { studentId: account?.id ?? "", itemId: item.itemId, text, frameTypes: types, parts: noteParts ?? [] });
+    const r = await controller.handleRequest("G007", "summarize", { studentId: account?.studentId ?? "", itemId: item.itemId, text, frameTypes: types, parts: noteParts ?? [] });
     setBusy(false);
     if (r.error) { setMsg(r.error); void refresh(); return; }
     const ps = r.data as Suggestion[]; consume(n); setProps(ps); setPick(ps.map((_, i) => i)); setTab("prop");
@@ -81,7 +81,7 @@ export function AiSend() {
     const ps = props.filter((_, i) => pick.includes(i)).map(p => new Suggestion({ ...p, approved: true }));
     if (ps.length && noteParts) {
       // 11/20：Controller → AiSummaryManager.mergeApproved で、選んだ提案を入れたノートを作ってもらう（枠が大きくなったら下の部品もずらす）
-      const r = await controller.handleRequest("G007", "approve", { studentId: account?.id ?? "", itemId: item.itemId, parts: noteParts, suggestions: ps });
+      const r = await controller.handleRequest("G007", "approve", { studentId: account?.studentId ?? "", itemId: item.itemId, parts: noteParts, suggestions: ps });
       if (r.error) return setMsg(r.error);
       setDraft(item.itemId, r.data as NotePart[]); // 反映するが保存はしない（学習画面の「保存」で保存）
     }

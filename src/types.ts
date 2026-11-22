@@ -2,8 +2,6 @@
 // 11/21 道B：前はここに画面用のデータの形（El・Note・Item・Subject・Test・MaterialMeta など）があり、
 //   保存用の形（beans）と行き来するたびに変換していた。今は画面も beans（src/beans）をそのまま使うので、ここには残していない。
 //   Java でいうと、Form クラスをやめて Entity クラスを画面でも使うようにした形
-/** ログイン中の学生（Neon Auth の user）。学生IDは neon_auth.user の ID */
-export interface Student { id: string; email: string; createdAt: number }
 /** お試しログイン用に端末へ保存するアカウント（Neon Auth を使うときは使わない） */
 export interface LocalAccount { id: string; email: string; pass: string; createdAt: number }
 /** 枠の種類（NotePart.frameType に入る値。最終一覧が決まるまで文字列で持つ） */
