@@ -17,7 +17,8 @@
 // 11/21 道B：画面も beans（Subject・LearningItem・Note・NotePart・Test・Question・Attempt・Material・Suggestion）をそのまま使うようにした。
 //   前は「画面用の形」と「保存用の形（beans）」が別々にあり、ここで行き来のたびに変換していた（toScreenTest・toElements など）。
 //   今は Manager が返した beans をそのまま画面に返す。画面が問題ID・受験IDを持っているので、探し直しもしない
-import type { FrameType, Screen, Student } from "../types";
+import type { FrameType, Screen } from "../types";
+import type { Student } from "../beans/Student";
 import { ApiError, errorText } from "../services/api";
 import { neonAuthClient } from "../boundary/NeonAuthClient";
 import { AccountManager } from "../managers/AccountManager";

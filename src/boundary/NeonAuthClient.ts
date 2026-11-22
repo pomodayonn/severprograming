@@ -1,7 +1,7 @@
 // NeonAuthClient（Boundary／フロントエンド）：Neon Auth とやり取りする窓口。
 // .env に VITE_NEON_AUTH_URL があれば Neon Auth（@neon/neon-js の auth）を使う。
 // なければ端末の中だけで動く「お試しログイン」になる（Neon の準備ができる前に画面を確かめるため）。
-// TODO（W1 さんの beans/ ができたら）：Student は src/beans/Student.ts から読み込む
+// 11/22：Student は types.ts の仮の形（id・email・createdAt）をやめて、src/beans/Student.ts（studentId・mail・registeredAt）を使う
 //
 // 【このファイルで何が起きているか】
 // ログイン・登録・ログアウトを、Neon Auth（ログインの外部サービス）に頼む窓口です。
@@ -10,9 +10,11 @@
 // 流れの例（ログイン）：G001 画面 → Controller → AccountManager.login → ここの signIn → Neon Auth
 // ログインに成功すると、Neon Auth がブラウザに「ログイン中」の印（セッション）を残す。
 // 次にページを開いたときは getSession でその印を確かめるので、もう一度パスワードを入れなくてよい
-import type { Student } from "../types";
+import { Student } from "../beans/Student";
 import { localAccounts, ls, saveLocalAccounts, sha } from "../services/db";
 import { newId } from "../lib/logic";
+import { now } from "../beans/DateTime";
+import type { LocalAccount } from "../types";
 
 /** Neon Auth からの結果。失敗したときは画面に出す文を error に入れる */
 export type AuthResult = { ok: true; student: Student } | { ok: false; error: string };
@@ -36,7 +38,9 @@ interface NeonAuth {
   signOut(): Promise<unknown>;
   getSession(): Promise<NeonRes<{ user: NeonUser; session: { token: string } }>>;
 }
-const toStudent = (u: NeonUser): Student => ({ id: u.id, email: u.email, createdAt: u.createdAt ? new Date(u.createdAt).getTime() : Date.now() });
+const toStudent = (u: NeonUser): Student => new Student({ studentId: u.id, mail: u.email, registeredAt: u.createdAt ? new Date(u.createdAt).toISOString() : now() });
+/** お試しログインのアカウント（端末に保存した形）を Student にする */
+const localToStudent = (a: LocalAccount): Student => new Student({ studentId: a.id, mail: a.email, registeredAt: new Date(a.createdAt).toISOString() });
 
 // ---------- お試しログイン用（端末の中だけ） ----------
 const SESSION_KEY = "runndesu.session";
@@ -86,7 +90,7 @@ export class NeonAuthClient {
 
   /** 今ログインしている学生を返す。いなければ null */
   async getSession(): Promise<Student | null> {
-    if (!this.neon) { await this.ensureDemo(); const a = localAccounts().find(x => x.id === (this.memSession ?? ls.get(SESSION_KEY))); return a ? { id: a.id, email: a.email, createdAt: a.createdAt } : null; }
+    if (!this.neon) { await this.ensureDemo(); const a = localAccounts().find(x => x.id === (this.memSession ?? ls.get(SESSION_KEY))); return a ? localToStudent(a) : null; }
     try { const r = await (await this.auth()).getSession(); return r.data?.user ? toStudent(r.data.user) : null; } catch { return null; }
   }
 
@@ -127,14 +131,14 @@ export class NeonAuthClient {
     if (localAccounts().some(a => a.email === email)) return { ok: false, error: MSG.taken };
     const a = { id: newId(), email, pass: await sha(password), createdAt: Date.now() };
     saveLocalAccounts([...localAccounts(), a]); this.memSession = a.id; ls.set(SESSION_KEY, a.id);
-    return { ok: true, student: { id: a.id, email: a.email, createdAt: a.createdAt } };
+    return { ok: true, student: localToStudent(a) };
   }
   private async localSignIn(email: string, password: string): Promise<AuthResult> {
     await this.ensureDemo();
     const h = await sha(password), a = localAccounts().find(x => x.email === email && x.pass === h);
     if (!a) return { ok: false, error: MSG.wrong };
     this.memSession = a.id; ls.set(SESSION_KEY, a.id);
-    return { ok: true, student: { id: a.id, email: a.email, createdAt: a.createdAt } };
+    return { ok: true, student: localToStudent(a) };
   }
 }
 

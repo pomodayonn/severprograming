@@ -40,7 +40,7 @@ export function Study() {
   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
-  const sid = account?.id ?? "";
+  const sid = account?.studentId ?? "";
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
   const item: LearningItem | undefined = its.find(i => i.itemId === route.itemId) ?? its[0];
   // ノートの部品：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
