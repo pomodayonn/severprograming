@@ -108,7 +108,6 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .score{display:inline-block;width:120px;height:10px;border-radius:99px;background:var(--soft);overflow:hidden;vertical-align:middle}.score i{display:block;height:100%;background:var(--ok);border-radius:99px}
 .graph .node circle{transition:fill .15s}.graph .node:hover circle,.graph .node:focus-visible circle{fill:#f6dde2}.graph .node:focus-visible circle{stroke-width:3}
 /* 11/23：テスト一覧に前回の点数（全問正解は緑） */
-.trow>span:nth-of-type(1){white-space:nowrap;flex:none}
 .tscore{margin-left:auto;flex:none;font-size:12px;font-weight:700;border:1px solid var(--line2);border-radius:99px;padding:0 10px;color:var(--ink);background:#fff}.tscore.full{border-color:var(--ok);color:var(--ok)}
 /* 11/23：左の一覧の検索欄 */
 .search{position:relative;margin:0 0 8px}.search .inp{margin:0;padding-right:28px}.search .link{position:absolute;right:6px;top:50%;transform:translateY(-50%);text-decoration:none;font-size:16px;padding:0 4px}
@@ -116,3 +115,10 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .btn.undo{padding:4px 12px;font-size:17px;line-height:1.4}
 /* 11/23：行数（rows）に合わせた高さの入力欄（前は画面ごとに style で書いていた） */
 .tx.fit{min-height:0;height:auto}
+/* 11/23：テスト一覧の上の行（すべて選ぶ・件数・並べかえ）と、行の左のチェック */
+.tlhead{margin:0 0 8px;flex-wrap:nowrap;white-space:nowrap}.tlhead .sel{width:auto;margin:0;padding:4px 8px}
+.chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.trow input[type=checkbox]{flex:none;margin:0;width:16px;height:16px}
+/* 11/23：テスト一覧の1行は「名前」の下に小さく「種類・問題数・日時」。前回の点数は右はし */
+.tname{display:flex;flex-direction:column;min-width:0;flex:1}.tname small{font-size:12px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
