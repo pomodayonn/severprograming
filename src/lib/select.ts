@@ -13,6 +13,7 @@ import type { Test } from "../beans/Test";
 import type { Question } from "../beans/Question";
 import type { Attempt } from "../beans/Attempt";
 import type { Answer } from "../beans/Answer";
+import { TestType } from "../enums/TestType";
 
 const NO_PARTS: readonly NotePart[] = [];
 
@@ -37,3 +38,10 @@ export const attemptsOf = (test: Test): Attempt[] => [...test.attempts].sort((a,
 /** その受験の中の、その問題への解答（なければ undefined） */
 export const answerOf = (attempt: Attempt | undefined, questionId: string): Answer | undefined =>
   attempt?.answers.find(a => a.questionId === questionId);
+
+/** いちばん新しい受験の点数（11/23）。採点のある「意味→用語」で、1回以上解いたときだけ。それ以外は null */
+export function lastScore(test: Test): { ok: number; total: number; attemptNo: number } | null {
+  if (test.testType !== TestType.MEANING_TO_TERM || !test.attempts.length) return null;
+  const all = attemptsOf(test), last = all[all.length - 1];
+  return { ok: last.answers.filter(a => a.correct).length, total: test.questions.length, attemptNo: last.attemptNo };
+}
