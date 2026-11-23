@@ -50,3 +50,10 @@ export function newPart(type: PartType, y: number, ft?: FrameType): NotePart {
 }
 /** 部品のいちばん下より少し下（新しい部品を置く高さ） */
 export const bottomY = (parts: readonly NotePart[]) => parts.reduce((m, p) => Math.max(m, p.y + p.height), 0) + 36;
+/** 関連図の丸の中に書く名前。4文字までは1行、5文字以上は4文字ずつ2行に分け、2行に入らない分は「…」にする（11/23） */
+export function nodeLabel(name: string): string[] {
+  const c = [...name];
+  if (c.length <= 4) return [name];
+  const rest = c.slice(4);
+  return [c.slice(0, 4).join(""), rest.length > 4 ? rest.slice(0, 3).join("") + "…" : rest.join("")];
+}
