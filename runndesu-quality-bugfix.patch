@@ -1,0 +1,1904 @@
+From c1afc252ebfa7d1840cf5e3ffbc0da81b9b43d56 Mon Sep 17 00:00:00 2001
+From: w-azuma <304294256+w-azuma@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 22:20:41 +0900
+Subject: [PATCH] =?UTF-8?q?=E3=82=8B=E3=82=93=E3=81=A7=E3=81=99=E3=80=82?=
+ =?UTF-8?q?=E3=81=AE=E4=BD=BF=E3=81=84=E5=BF=83=E5=9C=B0=E6=94=B9=E5=96=84?=
+ =?UTF-8?q?=E3=81=A8=E3=83=90=E3=82=B0=E4=BF=AE=E6=AD=A3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+新機能
+- 間違えた問題だけ解き直す（G010:retryWrong、TestManager.createRetryTest）
+- 正答率の推移グラフ（ScoreTrend）、テスト一覧に前回との比較の矢印
+- 関連図に単語テストの正答率の輪、前提項目の正答率が低いと「先に復習」を表示
+- AIの提案ごとに「元になった所」を表示（lib/source.ts）
+- はじめての人への案内と「サンプルで試す」、まっさらなノートの案内
+- 資料追加の進み具合（何件目・ファイル名・バー）、困った顔のるん＋次の行動を出すエラー表示
+
+バグ修正
+- 解答中に Enter を続けて押すと同じ受験が2回保存される
+- 日本語の変換を確定した Enter で送信・次の問題へ進んでしまう
+- 同じ答えの単語があると選択肢が重複する／前の問題に戻ると選択肢が並び替わる
+- 単語テスト作成・文字起こし確定・資料追加の二重実行
+- 「枠を選ぶ」に単語枠以外が出てテストを作れない
+- 問題0問のテストで結果・解答画面が落ちる
+- 確認ダイアログが Esc で閉じない／フォーカスが移らない、全画面が Esc で閉じない
+- エラーのトーストが1.6秒で消える、AI送信画面の成功メッセージが赤字
+- AIに送る文字数の数え方がサーバーとずれる（絵文字）
+- ログインのメール欄で Enter が効かない
+- 「＋単語」で枠の高さが1行分より低く増える
+
+そのほか
+- アクセシビリティ（キーボード操作、aria、本文へ移動、文字色のコントラスト AA）
+- イベントIDのつづり frastLoginButton → firstLoginButton
+- README・tests/README を今のコードに合わせて更新、単体テストを45本追加（全199本）
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AiDThfGQP3WszW6Di7npU7
+---
+ .gitignore                       |  2 +-
+ README.md                        | 77 +++++++++++++++++++++++++-------
+ src/components/AiSend.tsx        | 35 ++++++++++-----
+ src/components/Auth.tsx          | 29 +++++++-----
+ src/components/Mascot.tsx        |  2 +-
+ src/components/Material.tsx      | 17 ++++---
+ src/components/NoteCanvas.tsx    | 15 ++++---
+ src/components/Notice.tsx        | 25 +++++++++++
+ src/components/RelationGraph.tsx | 27 +++++++----
+ src/components/ScoreTrend.tsx    | 27 +++++++++++
+ src/components/Shell.tsx         | 17 ++++---
+ src/components/Study.tsx         | 73 ++++++++++++++++++++----------
+ src/components/SubjectList.tsx   | 27 +++++++++--
+ src/components/Tabs.tsx          |  3 +-
+ src/components/TestAnswer.tsx    | 27 +++++++----
+ src/components/TestCreate.tsx    | 23 +++++++---
+ src/components/TestList.tsx      | 14 +++---
+ src/components/TestResult.tsx    | 34 +++++++++++---
+ src/components/sampleSubject.ts  | 47 +++++++++++++++++++
+ src/components/toast.tsx         | 23 +++++++---
+ src/controller/Controller.ts     | 15 ++++---
+ src/index.css                    | 35 +++++++++++++++
+ src/lib/keys.ts                  | 14 ++++++
+ src/lib/logic.ts                 | 12 +++++
+ src/lib/select.ts                | 47 +++++++++++++++++++
+ src/lib/source.ts                | 34 ++++++++++++++
+ src/lib/words.ts                 |  3 +-
+ src/managers/TestManager.ts      | 27 +++++++++++
+ src/services/api.ts              |  8 ++--
+ src/state/app.tsx                | 47 +++++++++++++++----
+ tests/README.md                  |  5 +++
+ tests/unit/choices.test.ts       | 21 +++++++++
+ tests/unit/keys.test.ts          | 18 ++++++++
+ tests/unit/mastery.test.ts       | 48 ++++++++++++++++++++
+ tests/unit/retryWrong.test.ts    | 54 ++++++++++++++++++++++
+ tests/unit/source.test.ts        | 23 ++++++++++
+ tests/unit/words.test.ts         |  1 +
+ 37 files changed, 804 insertions(+), 152 deletions(-)
+ create mode 100644 src/components/Notice.tsx
+ create mode 100644 src/components/ScoreTrend.tsx
+ create mode 100644 src/components/sampleSubject.ts
+ create mode 100644 src/lib/keys.ts
+ create mode 100644 src/lib/source.ts
+ create mode 100644 tests/unit/choices.test.ts
+ create mode 100644 tests/unit/keys.test.ts
+ create mode 100644 tests/unit/mastery.test.ts
+ create mode 100644 tests/unit/retryWrong.test.ts
+ create mode 100644 tests/unit/source.test.ts
+
+diff --git a/.gitignore b/.gitignore
+index 5ab5947..ef385c0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,4 +1,4 @@
+-﻿node_modules/
++node_modules/
+ dist/
+ .env
+ .env.local
+diff --git a/README.md b/README.md
+index 24d6597..11b7082 100644
+--- a/README.md
++++ b/README.md
+@@ -1,38 +1,85 @@
+ # るんです。（Vite + React + TypeScript）
+ 
+-外部設計書 v1.0（あどれなりん）と要件定義書にそろえた画面（G001〜G011）。
++講義の資料とノートを1か所にまとめて、AIで整理し、模擬テストで「覚えた」まで確かめられる学習ノートです。
++外部設計書 v1.0（あどれなりん）と要件定義書の画面（G001〜G011）にそろえて作っています。
+ 
+ ```
+ npm install
+-npm run dev      # 開発
++npm run dev      # 開発（http://localhost:5173）
++npm test         # 単体テスト（Vitest）
+ npm run build    # 型チェック + 本番ビルド
+ ```
+ 
+ ## ローカルで動かす
+ - フロントに必要な値（Neon Auth・Neon Data API・サーバーの URL）は `.env.development` に入っているので、`npm install` → `npm run dev` だけで動く（ログインは Neon のアカウント）
+ - 自分だけ値を変えたいときは `.env.example` を `.env.development.local` にコピーして書きかえる（GitHub には上がらない）
++- `VITE_API_URL` が空のときは、AI はサーバーを呼ばずに仮の動き（`services/ai.ts` の mock）になる。AIの回数を使わずに画面を試せる
+ - サーバー（`server` フォルダ）も動かしたい人は、`server/.env` の値をチームの福山に聞く
+ 
++## 全体のしくみ（層）
++画面 → Controller → Manager → DAO → 保存場所、の順に仕事が流れる（クラス図・クラス一覧と同じ）。
++
++| 層 | フォルダ | 役目 |
++|---|---|---|
++| 画面 | `src/components/` | React の画面。ボタンを押したら `controller.handleRequest(画面ID, イベントID, params)` を呼ぶ |
++| Controller | `src/controller/Controller.ts` | 「画面ID:イベントID」ごとに担当の Manager を呼ぶ受付。params の形は `RequestParams` で型チェックされる |
++| Manager | `src/managers/` | 科目・学習項目・ノート・資料・テスト・AIまとめ・同期などの処理 |
++| DAO | `src/dao/` | 端末（IndexedDB）への保存・読み込み |
++| Bean | `src/beans/` | データの入れ物（Subject・Note・Test など）。画面もそのまま使う |
++| Boundary | `src/boundary/` | 外部サービスの窓口（Neon Auth） |
++| 小さな関数 | `src/lib/` | 画面にもデータベースにも関係しない計算（単体テストの対象） |
++| サーバー | `server/` | Render の Express。AIの呼び出しと、1日の利用回数の管理だけ |
++
++同期は `SyncManager` がブラウザから Neon の Data API を直接呼ぶ（RLS で自分の行だけ。`db/rls.sql`）。
++
+ ## 画面と部品の対応
+ | 画面 | ファイル |
+ |---|---|
+-| 共通の外枠（紫のヘッダー・ログアウト・左の階層・右サイド） | `components/Shell.tsx` |
+-| G001 ログイン / G002 新規登録（ログインID＋パスワード＋再入力） | `components/Auth.tsx` |
+-| G003 科目一覧（科目の作成・名前の編集・削除） | `components/SubjectList.tsx` |
+-| G004 学習画面（階層／部品、ノート、関連図／目次、資料・AI・テスト一覧・模擬テストのボタン） | `components/Study.tsx` + `NoteCanvas.tsx` + `RelationGraph.tsx` |
++| 共通の外枠（ヘッダー・最新にする・ログアウト・左の階層と検索・右の関連図） | `components/Shell.tsx` |
++| G001 ログイン / G002 新規登録 | `components/Auth.tsx` |
++| G003 科目一覧（作成・名前の編集・削除、はじめての人への案内・サンプルの科目） | `components/SubjectList.tsx` + `sampleSubject.ts` |
++| G004 学習画面（階層／部品、ノート、関連図／目次、資料の追加、元に戻す・やり直す） | `components/Study.tsx` + `NoteCanvas.tsx` + `RelationGraph.tsx` |
+ | G005 資料表示 / G006 文字起こし修正 | `components/Material.tsx` |
+-| G007 送信内容・提案確認（AIに送る内容の編集と、提案の確認） | `components/AiSend.tsx` |
+-| G008 テスト作成 / G009 解答 / G010 結果 / G011 一覧 | `components/Tests.tsx` |
++| G007 送信内容・提案確認（AIに送る内容の編集と、提案の確認・元になった所の表示） | `components/AiSend.tsx` |
++| G008 テスト作成 | `components/TestCreate.tsx` |
++| G009 テスト解答 | `components/TestAnswer.tsx` |
++| G010 テスト結果（正答率の推移・間違えた問題だけ解き直す・解説・直す） | `components/TestResult.tsx` + `ScoreTrend.tsx` |
++| G011 テスト一覧（並べかえ・まとめて削除・前回との比較） | `components/TestList.tsx` |
++
++画面で共通に使う部品：`AiWait.tsx`（AIを待つ間の表示・オフラインの帯）、`Notice.tsx`（エラーの表示・キーボードで押せる部品）、`Tabs.tsx`、`toast.tsx`、`Mascot.tsx`（マスコット「るん」）。
+ 
+-## 差し替え口（実装時にここだけ置き換える）
+-- `services/ai.ts`：AI（いまは仮実装。サーバー経由で複数のAIサービスを順に試す想定）
+-- `services/ocr.ts`：文字起こし（いまは仮実装。実装時は Tesseract.js など、ブラウザの中で処理）
+-- `services/db.ts`：前の保存場所に残っているデータを消すだけ（保存は Manager → `dao/` の IndexedDB、アカウントへの同期は `SyncManager`）
++## 主な機能
++- **ノート**：枠（単語・問題・公式・解答・解き方・要約）・文字・図形・矢印を置いて、動かす・大きさを変える。Ctrl＋S で保存、Ctrl＋Z／Ctrl＋Y で元に戻す・やり直す
++- **資料**：画像・PDF・テキストを追加すると、画像と PDF はブラウザの中で文字起こし（Tesseract.js・pdf.js）。資料は端末だけに保存し、サーバーには送らない
++- **AIでまとめる**：資料やノートの枠をAIに送り、枠ごとの提案を受け取って選んで反映。提案ごとに「元になった所」を出すので、AIの間違いに気づきやすい
++- **関連図**：前提項目のつながりを図にする。単語テストの正答率を丸の外側の輪で表し、前提項目の正答率が低いとノートの上に「先に復習しよう」と出す
++- **模擬テスト**：単語テスト（意味→用語／用語→意味、AIを使わない）と記述テスト（AIで作る）。解き直すたびに記録が残り、正答率の推移をグラフで見られる。「意味→用語」は間違えた問題だけの解き直しもできる
++- **同期**：ログインすると別の端末でも同じデータを使える。オフラインでも端末に保存でき、つながったら自動で送る
++
++## 使いやすさの決まり（11/23）
++- 時間のかかる操作（AI・文字起こし・テスト作成・保存）は、終わるまでボタンを押せなくし、進み具合を出す（二重に保存しない）
++- うまくいかなかったときは、何が起きたかと「次にどうすればいいか」をセットで出す（`ErrorNote`・エラーのトースト）
++- キーボードだけでも使える：Tab で選べる・Enter／スペースで押せる・ダイアログは Esc で閉じる・「本文へ移動」のリンク
++- 日本語の変換を確定する Enter では、送信や「次の問題へ」をしない（`lib/keys.ts`）
++- 文字の色は背景とのコントラスト 4.5:1 以上（WCAG AA）
++
++## 差し替え口
++- `services/ai.ts`：AI。`VITE_API_URL` があればサーバー（`server/`）、なければ仮の動き
++- `services/ocr.ts`：文字起こし（Tesseract.js・pdf.js をブラウザの中で使う）
++- `services/db.ts`：前の保存場所に残っているデータを消すだけ（保存は Manager → `dao/` の IndexedDB、同期は `SyncManager`）
+ - `state/app.tsx`：ログイン中の学生・画面遷移・未保存ノートの確認・ダイアログ
+ 
+ ## 決めごと（打ち合わせ・外部設計書より）
+-- ログインしないと使えない。データは学生ごとに端末へ保存し、ログアウトしても消さない
++- ログインしないと使えない。データは学生ごとに端末へ保存し、ログアウトしても消さない（消すかどうかはログアウトのときに選べる）
+ - ノートは「保存」を押したときだけ保存。未保存のまま別の画面へ移ろうとすると確認が出る
+-- AIは1日20回まで。1万文字を超えると分けて送り、回数を余分に消費する
++- AIは1日20回まで（日本時間の0時に戻る）。1万文字を超えると分けて送り、回数を余分に消費する
+ - 単語テストはAIを使わない。採点は「意味→用語」だけ（全角半角・大文字小文字・前後の空白は区別せず全体一致）
+-- 解き直しの解答は保存しない。過去の結果は、テストを選んでそのまま見る
++- 解き直しも新しい受験（第2回・第3回…）として保存する。過去の回は結果画面で選んで見られる
++- 「間違えた問題だけ解き直す」は、元のテストを変えずに、間違えた問題だけの新しいテストを作る（点数の推移がくずれないように）
++
++## イベントIDの変更（外部設計書のイベント一覧も直すこと）
++- `G001:frastLoginButton` → `G001:firstLoginButton`、`G002:frastloginbutton` → `G002:firstLoginButton`（つづりと大文字小文字をそろえた）
++- 追加：`G010:retryWrong`（間違えた問題だけで新しいテストを作る）
++
++## テスト
++`tests/README.md` を見てください（単体テストの一覧と、確かめていること）。
+diff --git a/src/components/AiSend.tsx b/src/components/AiSend.tsx
+index 079396c..6764554 100644
+--- a/src/components/AiSend.tsx
++++ b/src/components/AiSend.tsx
+@@ -16,8 +16,10 @@ import type { FrameType } from "../types";
+ import { FT, calls, chunkText, parseReplace, replaceText } from "../lib/logic";
+ import { itemsOf, partsOf } from "../lib/select";
+ import { addLocalUsage, useAiRemaining } from "../services/ai";
++import { LIMIT_TEXT } from "../services/api";
+ import { controller } from "../controller/Controller";
+ import { wordsToText } from "../lib/words";
++import { imeEnter } from "../lib/keys";
+ import type { NotePart } from "../beans/NotePart";
+ import { Suggestion } from "../beans/Suggestion";
+ import { PartType } from "../enums/PartType";
+@@ -25,6 +27,8 @@ import { AiWait, useOnline } from "./AiWait";
+ import { Shell } from "./Shell";
+ import { Tabs } from "./Tabs";
+ import { toast } from "./toast";
++import { ErrorNote } from "./Notice";
++import { findSources } from "../lib/source";
+ 
+ interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
+ /** 枠の中身を文字にする（単語枠は「用語：意味」の行） */
+@@ -40,6 +44,8 @@ export function AiSend() {
+   // 提案（Suggestion）と、使うことにした提案の番号
+   const [props, setProps] = useState<Suggestion[]>([]), [pick, setPick] = useState<number[]>([]), [msg, setMsg] = useState(""), [set, setSet] = useState(false);
+   const [ins, setIns] = useState(""), [ref, setRef] = useState<string | null>(null), [busy, setBusy] = useState(false);
++  const [ready, setReady] = useState(false); // 11/23：元にできる内容を読み終わったか（読む前に「内容がありません」と出さない）
++  const chars = [...text].length; // 11/23：絵文字も1文字と数える（サーバーと同じ数え方。前は text.length で、絵文字が2文字になっていた）
+   // 今のノートの部品：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
+   const noteParts = item ? (drafts[item.itemId] ?? partsOf(notes, item.itemId)) : null;
+   const { remaining, limit, refresh } = useAiRemaining(), frames = useMemo(() => (noteParts ?? []).filter(p => p.partType === PartType.FRAME), [noteParts]);
+@@ -51,7 +57,7 @@ export function AiSend() {
+         const b = (await controller.handleRequest("G007", "getContent", { materialId: m.materialId })).data; if (typeof b === "string") chunkText(b).forEach((c, n) => ps.push({ id: `${m.materialId}:${n}`, label: `${m.fileName}　p.${n + 1}`, text: c, kind: "mat" }));
+       }
+       frames.forEach(p => { const t = frameText(p); if (t.trim()) ps.push({ id: p.partId, label: `${frameName(p)}　${t.slice(0, 16)}`, text: t, kind: "frame" }); });
+-      if (live) setParts(ps);
++      if (live) { setParts(ps); setReady(true); }
+     })(); return () => { live = false; };
+   }, [item?.itemId]); // eslint-disable-line
+   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
+@@ -60,14 +66,15 @@ export function AiSend() {
+   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
+   const confirmCalls = async (): Promise<number | null> => {
+     if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
+-    const n = calls(text.length);
+-    if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
++    const n = calls(chars);
++    if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : LIMIT_TEXT); return null; }
+     if (n > 1 && await ask(`1万文字を超えているため、分けて送ると利用回数を余分に消費します（この内容では${n}回分）`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
+     return n;
+   };
+   const send = async () => {
+     if (!types.length) return setMsg("枠の種類を選んでください");
+     if (!online) return setMsg("インターネットにつながっていません。つながってから送信してください");
++    if (busy) return;
+     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
+     // 11/20：Controller → AiSummaryManager.summarize でAIに送る（1万文字を超えたら分けて送る）
+     const r = await controller.handleRequest("G007", "summarize", { studentId: account?.studentId ?? "", itemId: item.itemId, text, frameTypes: types, parts: noteParts ?? [] });
+@@ -78,6 +85,7 @@ export function AiSend() {
+   };
+   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId }); };
+   const approve = async () => {
++    if (busy) return;
+     // 使うことにした提案だけを approved = true にして送る
+     const ps = props.filter((_, i) => pick.includes(i)).map(p => new Suggestion({ ...p, approved: true }));
+     if (ps.length && noteParts) {
+@@ -92,33 +100,36 @@ export function AiSend() {
+     const r = parseReplace(ins); if (!r) return setMsg("「元の文字→直した文字」の形で入力してください");
+     const f = (s: string) => replaceText(s, r);
+     if (tab === "prop") setProps(props.map(p => new Suggestion({ ...p, content: f(p.content) }))); else setText(f(text));
+-    setIns(""); setMsg("直しました");
++    setIns(""); setMsg(""); toast("直したよ"); // 11/23：前は赤い字（エラーと同じ見た目）で出ていた
+   };
+   const refText = parts.find(p => p.id === ref)?.text;
+   const tabs: [typeof tab, string][] = essay ? [["src", "元にする内容"], ["send", "送る内容"]] : [["src", "元にする内容"], ["send", "送る内容"], ["prop", "提案"]];
+   return <Shell center={<>
+     <Tabs tabs={tabs} value={tab} onChange={setTab}><span className="sp" />{essay && <button className="btn pri" onClick={decide}>決定</button>}</Tabs>
+-    {tab === "src" && <div className="vbox">{parts.length === 0 && <p className="mute">元にできる内容がありません。資料をアップロードするか、ノートに枠を作ってください。</p>}
++    {tab === "src" && <div className="vbox">{!ready && <p className="mute loading">資料とノートを読み込み中…</p>}{ready && parts.length === 0 && <ErrorNote text="元にできる内容がありません。学習画面の「資料の追加」で資料（画像・PDF・テキスト）を入れるか、ノートに枠を作って書いてください" action={{ label: "学習画面へ戻る", onClick: () => void go({ s: "G004", subjectId: subject.subjectId, itemId: item.itemId }) }} />}
+       {parts.length > 0 && <div className="row" style={{ marginBottom: 6 }}><button className="btn sm" onClick={() => choose(parts.map(p => p.id))}>すべて選択</button><button className="btn sm line" onClick={() => choose([])}>選択を外す</button></div>}
+       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
+       <p className="mute">選び直すと、「送る内容」の編集はやり直しになります。</p></div>}
+     {tab === "send" && <div className="vbox"><textarea className="tx" value={text} onChange={e => setText(e.target.value)} placeholder="ここに送る内容が入ります。送りたくない文字は削除してください" />
+-      <div className="mute">{text.length.toLocaleString()}文字（1回あたり1万文字まで）　※個人情報などは送らないでください。送った内容は、どこにも残りません。</div></div>}
++      <div className="mute">{chars.toLocaleString()}文字（1回あたり1万文字まで{calls(chars) > 1 ? `。この内容だと ${calls(chars)} 回分使います` : ""}）　※個人情報などは送らないでください。送った内容は、どこにも残りません。</div></div>}
+     {tab === "prop" && <div className="vbox">{!props.length && <p className="mute">まだ提案がありません。「送る内容」から送信してください。</p>}
+-      {props.map((p, i) => { const cur = frames.find(f => f.partId === p.targetPartId); return (<div key={i} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
++      {props.length > 0 && <p className="mute">「元：」の所を押すと、右の「参照」にその部分を出します（AIの提案と見比べて、まちがいがないか確かめよう）。</p>}
++      {props.map((p, i) => { const cur = frames.find(f => f.partId === p.targetPartId), src = findSources(p.content, parts.filter(x => sel.includes(x.id))); return (<div key={i} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
+         <label className="ck"><input type="checkbox" checked={pick.includes(i)} onChange={e => setPick(e.target.checked ? [...pick, i] : pick.filter(x => x !== i))} /><b>{frameName(p)}</b>　{cur ? "（もとの枠の書き換え）" : "（新しい枠）"}</label>
++        {/* 11/23：提案の元になった所（送った内容と文字の並びを見比べて探す） */}
++        <div className="srcs">{src.length ? <>元：{src.map(s => <button key={s.id} className={"srcchip" + (ref === s.id ? " on" : "")} onClick={() => setRef(s.id)} title={`提案の文字の ${Math.round(s.score * 100)}% がここにもあります`}>{s.label}</button>)}</> : <span className="mute">元になった所が見つかりません（AIが言いかえたか、付け足した内容かもしれません。よく確かめてね）</span>}</div>
+         <div className={cur ? "two" : ""}>{cur && <div><div className="mute">いまの中身</div><pre className="txt">{frameText(cur)}</pre></div>}
+           <div>{cur && <div className="mute">提案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.content}
+             onChange={e => setProps(props.map((x, j) => j !== i ? x : new Suggestion({ ...x, content: e.target.value })))} /></div></div></div>); })}</div>}
+     {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
+     {set && essay && <div className="pop">記述テストに使う内容を決めます。AIの利用はテストを作るときです。</div>}
+     <AiWait busy={busy} what="AIがまとめています" />
+-    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
++    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{!online && "　（オフラインのため、AIは使えません）"}</div><ErrorNote text={msg} />
+     <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "送信"}</button>}<button className="btn line" onClick={() => setSet(!set)}>設定</button>
+       {!essay && <button className="btn pri lg" disabled={tab !== "prop"} onClick={approve}>承認</button>}</span>
+       <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("提案をすべて捨てたよ"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.subjectId, itemId: item.itemId }); }}>キャンセル</button></div></>}
+-    right={<><h3>参照</h3><div className="mute">ストレージの資料とノートの枠。押すと中身を見られます（AIの提案と見比べるとき）</div>
+-      <div className="col" style={{ gap: 2 }}>{parts.map(p => <button key={p.id} className="toc" onClick={() => setRef(p.id === ref ? null : p.id)}>{p.label}</button>)}</div>
+-      {refText && <pre className="txt" style={{ fontSize: 12, borderTop: "1px solid #cdbfe0", paddingTop: 6 }}>{refText}</pre>}
+-      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="編集指示（例：兀→元）" value={ins} onChange={e => setIns(e.target.value)} onKeyDown={e => e.key === "Enter" && replace()} /></>} />;
++    right={<><h3 id="ref-h">参照</h3><div className="mute">ストレージの資料とノートの枠。押すと中身を見られます（AIの提案と見比べるとき）</div>
++      <div className="col" style={{ gap: 2 }}>{parts.map(p => <button key={p.id} className={"toc" + (p.id === ref ? " on" : "")} aria-pressed={p.id === ref} onClick={() => setRef(p.id === ref ? null : p.id)}>{p.label}</button>)}</div>
++      {refText && <pre className="txt" aria-labelledby="ref-h" style={{ fontSize: 12, borderTop: "1px solid #cdbfe0", paddingTop: 6 }}>{refText}</pre>}
++      <span className="sp" /><input className="inp" aria-label="編集指示（元の文字→直した文字）" placeholder="編集指示（例：兀→元）" value={ins} onChange={e => setIns(e.target.value)} onKeyDown={e => e.key === "Enter" && !imeEnter(e) && replace()} /></>} />;
+ }
+\ No newline at end of file
+diff --git a/src/components/Auth.tsx b/src/components/Auth.tsx
+index b384480..3651d44 100644
+--- a/src/components/Auth.tsx
++++ b/src/components/Auth.tsx
+@@ -49,26 +49,31 @@ export function Login() {
+   const { busy, err, setErr, send } = useEvent("G001");
+   const login = () => send("login", { mail, pass });
+   return (<Card title="ログイン">
+-    <label>メールアドレス<input type="email" value={mail} onChange={e => { setMail(e.target.value); setErr(""); }} autoComplete="email" /></label>
+-    <label>パスワード<input type="password" value={pass} onChange={e => { setPass(e.target.value); setErr(""); }} onKeyDown={e => e.key === "Enter" && login()} autoComplete="current-password" /></label>
+-    {err && <div className="err">{err}</div>}
+-    <div className="row c"><button className="btn pri lg wide" disabled={busy} onClick={login}>{busy ? "ログイン中…" : "ログイン"}</button></div>
+-    <div className="row c"><span className="mute">はじめての人は</span><button className="btn line" disabled={busy} onClick={() => send("frastLoginButton")}>新規登録</button></div>
++    {/* 11/23：form にして、メール欄で Enter を押してもログインできるようにした（前はパスワード欄だけ） */}
++    <form onSubmit={e => { e.preventDefault(); void login(); }} noValidate>
++      <label>メールアドレス<input type="email" value={mail} onChange={e => { setMail(e.target.value); setErr(""); }} autoComplete="email" aria-invalid={!!err} aria-describedby={err ? "auth-err" : undefined} /></label>
++      <label>パスワード<input type="password" value={pass} onChange={e => { setPass(e.target.value); setErr(""); }} autoComplete="current-password" aria-invalid={!!err} aria-describedby={err ? "auth-err" : undefined} /></label>
++      {err && <div className="err" id="auth-err" role="alert">{err}</div>}
++      <div className="row c"><button type="submit" className="btn pri lg wide" disabled={busy}>{busy ? "ログイン中…" : "ログイン"}</button></div>
++    </form>
++    <div className="row c"><span className="mute">はじめての人は</span><button className="btn line" disabled={busy} onClick={() => send("firstLoginButton")}>新規登録</button></div>
+     <GoogleButton busy={busy} onClick={() => send("googleLogin")} /></Card>);
+ }
+ 
+ export function Register() {
+   const [mail, setMail] = useState(""), [pass, setPass] = useState(""), [passConfirm, setPassConfirm] = useState("");
+   const { busy, err, setErr, send } = useEvent("G002");
+-  const register = () => send("frastloginbutton", { mail, pass, passConfirm });
++  const register = () => send("firstLoginButton", { mail, pass, passConfirm });
+   const clear = (f: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => { f(e.target.value); setErr(""); };
+   return (<Card title="新規登録">
+-    <label>メールアドレス<input type="email" value={mail} onChange={clear(setMail)} autoComplete="email" /></label>
+-    <label>パスワード<input type="password" value={pass} onChange={clear(setPass)} autoComplete="new-password" /></label>
+-    <label>パスワード　再入力<input type="password" value={passConfirm} onChange={clear(setPassConfirm)} onKeyDown={e => e.key === "Enter" && register()} autoComplete="new-password" /></label>
+-    <p className="mute hint">パスワードは8〜16文字で、英字と数字を両方入れてください</p>
+-    {err && <div className="err">{err}</div>}
+-    <div className="row c"><button className="btn pri lg wide" disabled={busy} onClick={register}>{busy ? "登録中…" : "登録"}</button></div>
++    <form onSubmit={e => { e.preventDefault(); void register(); }} noValidate>
++      <label>メールアドレス<input type="email" value={mail} onChange={clear(setMail)} autoComplete="email" /></label>
++      <label>パスワード<input type="password" value={pass} onChange={clear(setPass)} autoComplete="new-password" aria-describedby="pass-rule" /></label>
++      <label>パスワード　再入力<input type="password" value={passConfirm} onChange={clear(setPassConfirm)} autoComplete="new-password" /></label>
++      <p className="mute hint" id="pass-rule">パスワードは8〜16文字で、英字と数字を両方入れてください</p>
++      {err && <div className="err" role="alert">{err}</div>}
++      <div className="row c"><button type="submit" className="btn pri lg wide" disabled={busy}>{busy ? "登録中…" : "登録"}</button></div>
++    </form>
+     <GoogleButton busy={busy} onClick={() => send("googleLogin")} />
+     <div className="row c"><button className="link" onClick={() => send("back")}>← ログインへ戻る</button></div></Card>);
+ }
+\ No newline at end of file
+diff --git a/src/components/Mascot.tsx b/src/components/Mascot.tsx
+index a395679..81a4277 100644
+--- a/src/components/Mascot.tsx
++++ b/src/components/Mascot.tsx
+@@ -1,4 +1,4 @@
+-﻿// 【このファイルで何が起きているか】
++// 【このファイルで何が起きているか】
+ // マスコットの「ことり」を描く部品です。mood で表情、size で大きさを変える（絵は mascotArt.ts）
+ import { birdInner, type Mood } from "./mascotArt";
+ export type { Mood };
+diff --git a/src/components/Material.tsx b/src/components/Material.tsx
+index c44da29..08d8178 100644
+--- a/src/components/Material.tsx
++++ b/src/components/Material.tsx
+@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
+ import { useApp } from "../state/app";
+ import { controller } from "../controller/Controller";
+ import { parseReplace, replaceText } from "../lib/logic";
++import { imeEnter } from "../lib/keys";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
+ 
+@@ -49,7 +50,7 @@ export function MaterialView() {
+     if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.fileName).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
+     else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+     const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.materialId, withTranscript: both });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     await reload(); toast("資料を削除したよ"); back();
+   };
+   return <Shell center={<>
+@@ -61,8 +62,8 @@ export function TranscriptEdit() {
+   const { materials, route, nav, account } = useApp();
+   const m = materials.find(x => x.materialId === route.materialId), src = materials.find(x => x.materialId === m?.sourceMaterialId);
+   const cur = useMaterialContent("G006", m?.materialId), orig = useMaterialContent("G006", src?.materialId);
+-  const [text, setText] = useState<string | null>(null), [ins, setIns] = useState(""), [msg, setMsg] = useState("");
+-  useEffect(() => { if (cur?.text !== undefined) setText(cur.text); }, [cur]);
++  const [text, setText] = useState<string | null>(null), [ins, setIns] = useState(""), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
++  useEffect(() => { if (cur?.text !== undefined) setText(cur.text); else if (cur?.missing) setText(""); }, [cur]); // 読めなかったときも、空から書けるようにする
+   if (!m || !account) return null;
+   const back = () => nav({ ...route, s: "G005" });
+   const apply = () => { // 修正指示「元→先」で、文字起こしの文字をまとめて置き換える
+@@ -73,11 +74,13 @@ export function TranscriptEdit() {
+   return <Shell center={<>
+     <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span></div>
+     <div className="two"><div><h3>元の資料</h3><div className="vbox">{src ? <Viewer type={src.fileType} v={orig} /> : <p className="mute">元の資料がありません（文字起こしだけ表示しています）</p>}</div></div>
+-      <div><h3>文字起こし</h3><textarea className="tx" style={{ height: 330 }} value={text ?? ""} onChange={e => setText(e.target.value)} /></div></div></>}
+-    right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" onClick={async () => {
++      <div><h3>文字起こし</h3>{text === null ? <p className="mute loading">読み込み中…</p> : <textarea className="tx" style={{ height: 330 }} value={text} onChange={e => setText(e.target.value)} aria-label="文字起こしの文" />}</div></div></>}
++    right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" disabled={busy || text === null} onClick={async () => {
++      if (busy) return; setBusy(true); // 11/23：続けて押しても1回だけ保存する
+       const r = await controller.handleRequest("G006", "correctTranscript", { materialId: m.materialId, text: text ?? "" });
+-      if (r.error) return toast(r.error);
++      setBusy(false);
++      if (r.error) return toast(r.error, "error");
+       toast("上書き保存したよ"); back();
+     }}>確定</button><button className="btn line" onClick={back}>キャンセル</button></div>
+-      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="修正指示（例：兀→元）" value={ins} onChange={e => { setIns(e.target.value); setMsg(""); }} onKeyDown={e => e.key === "Enter" && apply()} /></>} />;
++      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="修正指示（例：兀→元）" value={ins} onChange={e => { setIns(e.target.value); setMsg(""); }} onKeyDown={e => e.key === "Enter" && !imeEnter(e) && apply()} /></>} />;
+ }
+diff --git a/src/components/NoteCanvas.tsx b/src/components/NoteCanvas.tsx
+index 53cd05a..0331a8b 100644
+--- a/src/components/NoteCanvas.tsx
++++ b/src/components/NoteCanvas.tsx
+@@ -47,18 +47,19 @@ const PartView = memo(function PartView({ part: p, h }: { part: NotePart; h: Han
+     <div data-id={p.partId} className={`el ${CLS[p.partType]}`} style={{ left: p.x, top: p.y, width: p.width, height: p.height, borderColor: p.color, background: frame ? p.color + "14" : undefined, borderRadius: shape && NotePart.shapeOf(p) === "ellipse" ? "50%" : undefined }}>
+       <div className="eh" style={{ color: p.color }} onPointerDown={e => h.start(e, p, "move")}>
+         <span>{label}</span>
+-        {text && <select value={p.headingLevel} onPointerDown={stop} onChange={e => h.upd(p.partId, { headingLevel: Number(e.target.value) })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
+-        {shape && <select value={NotePart.shapeOf(p)} onPointerDown={stop} onChange={e => h.upd(p.partId, NotePart.shapePatch(e.target.value as ShapeKind))}><option value="rect">四角</option><option value="ellipse">丸</option></select>}
++        {text && <select value={p.headingLevel} aria-label="文字の種類" onPointerDown={stop} onChange={e => h.upd(p.partId, { headingLevel: Number(e.target.value) })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
++        {shape && <select value={NotePart.shapeOf(p)} aria-label="図形の形" onPointerDown={stop} onChange={e => h.upd(p.partId, NotePart.shapePatch(e.target.value as ShapeKind))}><option value="rect">四角</option><option value="ellipse">丸</option></select>}
+         <input type="color" value={p.color} onPointerDown={stop} onChange={e => h.upd(p.partId, { color: e.target.value })} aria-label="色" />
+-        <button onPointerDown={stop} onClick={() => h.remove(p.partId)} aria-label="削除">×</button>
++        <button onPointerDown={stop} onClick={() => h.remove(p.partId)} aria-label={`この${label}を削除（Ctrl＋Z で戻せます）`} title="削除（Ctrl＋Z で戻せます）">×</button>
+       </div>
+       {wordFrame && (
+         <div className="wl">{words.map((w, i) => (
+-          <div className="wr" key={w.wordId}><input placeholder="用語" value={w.term} onChange={e => setWord(i, { term: e.target.value })} />
+-            <input placeholder="意味" value={w.meaning} onChange={e => setWord(i, { meaning: e.target.value })} />
++          <div className="wr" key={w.wordId}><input placeholder="用語" aria-label={`${i + 1}つ目の用語`} value={w.term} onChange={e => setWord(i, { term: e.target.value })} />
++            <input placeholder="意味" aria-label={`${i + 1}つ目の意味`} value={w.meaning} onChange={e => setWord(i, { meaning: e.target.value })} />
+             <button onClick={() => h.upd(p.partId, { words: words.filter((_, j) => j !== i) })} aria-label="この単語を消す">×</button></div>))}
+-          <button className="btn sm" onClick={() => h.upd(p.partId, { words: [...words, newWord(p.partId)], height: p.height + 28 })}>＋ 単語</button></div>)}
+-      {(text || (frame && !wordFrame)) && <textarea className={`h${p.headingLevel}`} value={p.text} placeholder={text ? "文字を入力" : "ここに書く"} onChange={e => {
++          {/* 11/23：1行の本当の高さだけ枠を高くする（前は28px固定で、1行（約34px）より低く、単語が増えるとスクロールしないと見えなかった） */}
++          <button className="btn sm" onClick={e => { const row = (e.currentTarget as HTMLElement).parentElement?.querySelector(".wr") as HTMLElement | null; h.upd(p.partId, { words: [...words, newWord(p.partId)], height: p.height + (row ? row.offsetHeight + 3 : 34) }); }}>＋ 単語</button></div>)}
++      {(text || (frame && !wordFrame)) && <textarea className={`h${p.headingLevel}`} aria-label={label} value={p.text} placeholder={text ? "文字を入力" : "ここに書く"} onChange={e => {
+         // 文字があふれたら、あふれた分だけ部品を高くする（下の部品は grow でずらす）
+         const t = e.target, over = t.scrollHeight - t.clientHeight;
+         h.upd(p.partId, over > 0 ? { text: t.value, height: p.height + over } : { text: t.value });
+diff --git a/src/components/Notice.tsx b/src/components/Notice.tsx
+new file mode 100644
+index 0000000..a4e5c71
+--- /dev/null
++++ b/src/components/Notice.tsx
+@@ -0,0 +1,25 @@
++// 画面の中に出すお知らせ（11/23）
++//
++// 【このファイルで何が起きているか】
++// ・ErrorNote：うまくいかなかったときの表示。困った顔のるん＋「何が起きたか・どうすればいいか」の文＋（あれば）次の操作のボタン。
++//   前は赤い文字が1行出るだけで、次に何をすればいいか分かりにくかった
++// ・pressable：div などを、マウスだけでなくキーボード（Tab で選んで Enter／スペース）でも押せるようにする。
++//   画面の読み上げ（スクリーンリーダー）にも「ボタン」と伝わる
++import type { KeyboardEvent } from "react";
++import { Mascot } from "./Mascot";
++
++export interface NoteAction { label: string; onClick: () => void }
++
++export function ErrorNote({ text, action }: { text: string; action?: NoteAction }) {
++  if (!text) return null;
++  return (<div className="errnote" role="alert"><Mascot size={40} mood="worried" />
++    <div><div>{text}</div>{action && <button className="btn sm line" onClick={action.onClick}>{action.label}</button>}</div></div>);
++}
++
++/** マウスでもキーボードでも押せる、ボタン以外の部品の属性。例：<div {...pressable(open)}> */
++export function pressable(fn: () => void, label?: string) {
++  return {
++    role: "button" as const, tabIndex: 0, "aria-label": label, onClick: fn,
++    onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } },
++  };
++}
+diff --git a/src/components/RelationGraph.tsx b/src/components/RelationGraph.tsx
+index 3192430..c98118a 100644
+--- a/src/components/RelationGraph.tsx
++++ b/src/components/RelationGraph.tsx
+@@ -8,7 +8,7 @@
+ import { memo, useMemo } from "react";
+ import type { LearningItem } from "../beans/LearningItem";
+ import type { Prerequisite } from "../beans/Prerequisite";
+-import { prereqIdsOf } from "../lib/select";
++import { masteryLevel, prereqIdsOf } from "../lib/select";
+ import { nodeLabel } from "../lib/logic";
+ 
+ /** 丸の半径と、丸どうしの横・縦の間隔（11/23：名前が読めるように大きくした） */
+@@ -32,22 +32,31 @@ function layout(items: LearningItem[], prerequisites: readonly Prerequisite[]) {
+ }
+ 
+ /** items はその科目の学習項目、prerequisites は前提項目（ほかの科目の分が入っていてもよい） */
+-interface Props { items: LearningItem[]; prerequisites: readonly Prerequisite[]; selId?: string; onOpen: (id: string) => void }
+-function Graph({ items, prerequisites, selId, onOpen }: Props) {
++/** mastery：学習項目IDごとの正答率（0〜1、解いていなければ null）。渡すと丸の外側に色の輪を付ける（11/23） */
++interface Props { items: LearningItem[]; prerequisites: readonly Prerequisite[]; selId?: string; onOpen: (id: string) => void; mastery?: Readonly<Record<string, number | null>> }
++/** 正答率の輪の色と、読み上げる言葉 */
++const RING = { good: ["#2e7d6d", "よく覚えている"], mid: ["#d98a1f", "あと少し"], weak: ["#cf3f5b", "復習しよう"] } as const;
++function Graph({ items, prerequisites, selId, onOpen, mastery }: Props) {
+   const g = useMemo(() => layout(items, prerequisites), [items, prerequisites]);
+   if (!items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
+   const at = (id: string) => g.pos.get(id)!;
+-  return (
++  const shown = mastery && items.some(i => mastery[i.itemId] != null);
++  return (<>
+     <svg viewBox={`0 0 ${g.W} ${g.H}`} style={{ maxWidth: g.W * 1.15 }} className="graph" role="img" aria-label="関連図">
+       <defs><marker id="arrow" viewBox="0 0 10 10" refX={10 + (R + 2) / 0.8} refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#cdbfa8" /></marker></defs>
+       {items.flatMap(i => prereqIdsOf(prerequisites, i.itemId).filter(p => g.pos.has(p)).map(p => <line key={p + i.itemId} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.itemId)[0]} y2={at(i.itemId)[1]} stroke="#cdbfa8" strokeWidth="2" markerEnd="url(#arrow)" />))}
+-      {items.map(i => { const [x, y] = at(i.itemId), on = i.itemId === selId; return (
+-        <g key={i.itemId} className="node" tabIndex={0} onClick={() => onOpen(i.itemId)} onKeyDown={e => e.key === "Enter" && onOpen(i.itemId)}>
+-          <title>{i.itemName}</title>
++      {items.map(i => { const [x, y] = at(i.itemId), on = i.itemId === selId, rate = mastery?.[i.itemId] ?? null, lv = masteryLevel(rate);
++        const said = `${i.itemName}${lv ? `（正答率 ${Math.round(rate! * 100)}%・${RING[lv][1]}）` : ""}`;
++        return (
++        <g key={i.itemId} className="node" tabIndex={0} role="button" aria-label={said} aria-current={on || undefined} onClick={() => onOpen(i.itemId)} onKeyDown={e => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(i.itemId))}>
++          <title>{said}</title>
++          {lv && <circle cx={x} cy={y} r={R + 5} fill="none" stroke={RING[lv][0]} strokeWidth="4" strokeDasharray={`${2 * Math.PI * (R + 5) * rate!} 999`} transform={`rotate(-90 ${x} ${y})`} />}
+           <circle cx={x} cy={y} r={R} fill={on ? "#f6dde2" : "#fffdf8"} stroke={on ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
+           {(() => { const ls = nodeLabel(i.itemName); return ls.map((t, k) => <text key={k} x={x} y={y + 5 + (k - (ls.length - 1) / 2) * 16} textAnchor="middle" fontSize="13" fontWeight={on ? 700 : 500}>{t}</text>); })()}
+         </g>); })}
+-    </svg>);
++    </svg>
++    {shown && <div className="legend" aria-hidden="true"><span><i style={{ background: RING.good[0] }} />80%以上</span><span><i style={{ background: RING.mid[0] }} />60〜79%</span><span><i style={{ background: RING.weak[0] }} />60%未満</span><span className="mute">輪の長さ＝単語テストの正答率</span></div>}
++  </>);
+ }
+ /** onOpen は画面遷移だけを行う関数を渡す前提で、比べない（毎回新しい関数でも描き直さない） */
+-export const RelationGraph = memo(Graph, (a, b) => a.items === b.items && a.prerequisites === b.prerequisites && a.selId === b.selId);
++export const RelationGraph = memo(Graph, (a, b) => a.items === b.items && a.prerequisites === b.prerequisites && a.selId === b.selId && a.mastery === b.mastery);
+diff --git a/src/components/ScoreTrend.tsx b/src/components/ScoreTrend.tsx
+new file mode 100644
+index 0000000..ca0f50d
+--- /dev/null
++++ b/src/components/ScoreTrend.tsx
+@@ -0,0 +1,27 @@
++// 正答率の推移のグラフ（11/23）
++//
++// 【このファイルで何が起きているか】
++// 単語テスト（意味→用語）を解き直すたびに、正答率がどう変わったかを折れ線で見せる。
++// 横は第1回・第2回…、縦は0〜100%。いま見ている回の点は大きく塗る。
++// 画面の読み上げ用に、全部の回の点数を aria-label にも入れる
++import type { ScorePoint } from "../lib/select";
++
++const W = 300, H = 120, L = 38, R = 12, T = 12, B = 22;
++
++export function ScoreTrend({ points, current }: { points: readonly ScorePoint[]; current?: number }) {
++  if (points.length < 2) return null; // 1回だけなら推移はないので出さない
++  const x = (i: number) => L + (points.length === 1 ? 0 : i * (W - L - R) / (points.length - 1));
++  const y = (r: number) => T + (1 - r) * (H - T - B);
++  const first = points[0].rate, last = points[points.length - 1].rate, diff = Math.round((last - first) * 100);
++  const said = points.map(p => `第${p.attemptNo}回 ${p.ok}/${p.total}問`).join("、");
++  return (<div className="trend">
++    <div className="row"><b>正答率の推移</b><span className={"mute" + (diff > 0 ? " up" : diff < 0 ? " down" : "")}>
++      {diff > 0 ? `1回目から ＋${diff}ポイント` : diff < 0 ? `1回目から ${diff}ポイント` : "1回目と同じ"}</span></div>
++    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`正答率の推移：${said}`}>
++      {[0, 0.5, 1].map(r => <g key={r}><line x1={L} x2={W - R} y1={y(r)} y2={y(r)} className="grid" /><text x={L - 6} y={y(r) + 4} textAnchor="end">{r * 100}%</text></g>)}
++      <polyline points={points.map((p, i) => `${x(i)},${y(p.rate)}`).join(" ")} className="ln" />
++      {points.map((p, i) => <g key={p.attemptNo}>
++        <circle cx={x(i)} cy={y(p.rate)} r={p.attemptNo === current ? 5.5 : 3.5} className={p.attemptNo === current ? "dot on" : "dot"}><title>{`第${p.attemptNo}回：${p.ok}/${p.total}問（${Math.round(p.rate * 100)}%）`}</title></circle>
++        <text x={x(i)} y={H - 6} textAnchor="middle">{p.attemptNo}回</text></g>)}
++    </svg></div>);
++}
+diff --git a/src/components/Shell.tsx b/src/components/Shell.tsx
+index a677d6c..080061a 100644
+--- a/src/components/Shell.tsx
++++ b/src/components/Shell.tsx
+@@ -6,15 +6,17 @@
+ 
+ import { useMemo, useState, type ReactNode } from "react";
+ import { useApp } from "../state/app";
+-import { itemsOf, searchTree } from "../lib/select";
++import { itemsOf, masteryMap, searchTree } from "../lib/select";
+ import { norm } from "../lib/logic";
+ import { Mascot } from "./Mascot";
+ import { RelationGraph } from "./RelationGraph";
+ import { OfflineBar } from "./AiWait";
++import { pressable } from "./Notice";
+ 
+ export function Header({ plain = false }: { plain?: boolean }) {
+   const { account, logout, canRefresh, refreshing, refresh } = useApp();
+-  return (<><header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
++  return (<><a className="skip" href="#main">本文へ移動</a>{/* 11/23：キーボードで使う人が、ヘッダーと左の一覧を飛ばせるように */}
++    <header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
+     {!plain && account && <><span className="who">{account.mail}</span>
+       {canRefresh && <button className="pill" onClick={refresh} disabled={refreshing} title="ほかの端末で変えた内容を受け取ります">{refreshing ? "受け取り中…" : "最新にする"}</button>}{/* 11/23 */}
+       <button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
+@@ -39,21 +41,22 @@ export function Tree({ heading, extra }: { heading: string; extra?: (itemId: str
+   return (<><div className="th">{heading}</div>
+     {subjects.length > 0 && <div className="search"><input className="inp" type="text" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Escape" && setQ("")} placeholder="科目・学習項目を検索" aria-label="科目・学習項目を検索" />{q && <button className="link" onClick={() => setQ("")} aria-label="検索を消す">×</button>}</div>}
+     {shown.map(s => (<div key={s.subjectId}>
+-      <div className={"ts" + (route.s === "G003" && route.subjectId === s.subjectId ? " on" : "")} onClick={() => { setOpen({ ...open, [s.subjectId]: !isOpen(s.subjectId) }); if (route.s === "G003") go({ s: "G003", subjectId: s.subjectId }); }}>{isOpen(s.subjectId) ? "▼" : "▶"} <Hit text={s.subjectName} q={q} /></div>
++      <div className={"ts" + (route.s === "G003" && route.subjectId === s.subjectId ? " on" : "")} aria-expanded={isOpen(s.subjectId)} {...pressable(() => { setOpen({ ...open, [s.subjectId]: !isOpen(s.subjectId) }); if (route.s === "G003") void go({ s: "G003", subjectId: s.subjectId }); })}>{isOpen(s.subjectId) ? "▼" : "▶"} <Hit text={s.subjectName} q={q} /></div>
+       {isOpen(s.subjectId) && (found?.get(s.subjectId) ?? itemsOf(items, s.subjectId)).map(i => { const cur = route.s !== "G003" && route.itemId === i.itemId && route.subjectId === s.subjectId;
+-        return (<div key={i.itemId}><div className={"ti" + (cur ? " on" : "")} onClick={() => go({ s: "G004", subjectId: s.subjectId, itemId: i.itemId })}><i className="dot" /><Hit text={i.itemName} q={q} /></div>{extra && cur && extra(i.itemId)}</div>); })}
++        return (<div key={i.itemId}><div className={"ti" + (cur ? " on" : "")} aria-current={cur ? "page" : undefined} {...pressable(() => void go({ s: "G004", subjectId: s.subjectId, itemId: i.itemId }))}><i className="dot" /><Hit text={i.itemName} q={q} /></div>{extra && cur && extra(i.itemId)}</div>); })}
+     </div>))}
+     {found && !shown.length && <p className="mute">「{q.trim()}」に合う科目・学習項目はありません</p>}
+     {!loaded && <p className="mute loading">読み込み中…</p>}
+     {loaded && !subjects.length && <p className="mute">科目がまだありません</p>}</>);
+ }
+ export function GraphPane() {
+-  const { subjects, items, prerequisites, route, go } = useApp();
++  const { subjects, items, prerequisites, tests, route, go } = useApp();
+   const s = subjects.find(x => x.subjectId === route.subjectId);
+   const its = useMemo(() => itemsOf(items, route.subjectId), [items, route.subjectId]); // 同じ間は関連図を描き直さない
+-  return s ? <RelationGraph items={its} prerequisites={prerequisites} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.subjectId, itemId: id })} /> : null;
++  const mastery = useMemo(() => masteryMap(its, tests), [its, tests]); // 11/23：正答率の輪
++  return s ? <RelationGraph items={its} prerequisites={prerequisites} mastery={mastery} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.subjectId, itemId: id })} /> : null;
+ }
+ export function Shell({ heading = "科目一覧", left, center, right, cls = "" }: { heading?: string; left?: ReactNode; center: ReactNode; right?: ReactNode; cls?: string }) {
+   return (<div className="app"><Header /><div className={"cols " + cls}>
+-    <aside className="lf">{left ?? <Tree heading={heading} />}</aside><main className="ct">{center}</main><aside className="rt">{right ?? <GraphPane />}</aside></div></div>);
++    <aside className="lf">{left ?? <Tree heading={heading} />}</aside><main className="ct" id="main" tabIndex={-1}>{center}</main><aside className="rt">{right ?? <GraphPane />}</aside></div></div>);
+ }
+diff --git a/src/components/Study.tsx b/src/components/Study.tsx
+index aa924a2..dacb130 100644
+--- a/src/components/Study.tsx
++++ b/src/components/Study.tsx
+@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
+ import { Redirect, useApp } from "../state/app";
+ import type { FrameType } from "../types";
+ import { FT, bottomY, newPart } from "../lib/logic";
+-import { itemsOf, partsOf, prereqIdsOf } from "../lib/select";
++import { itemsOf, masteryMap, partsOf, prereqIdsOf, weakPrereqs } from "../lib/select";
+ import { emptyHistory, record, redo, undo, type History } from "../lib/history";
+ import { controller } from "../controller/Controller";
+ import type { LearningItem } from "../beans/LearningItem";
+@@ -26,10 +26,12 @@ import type { TranscribeResult } from "../managers/MaterialManager";
+ import { PartType } from "../enums/PartType";
+ import { NoteCanvas } from "./NoteCanvas";
+ import { Tabs } from "./Tabs";
++import { Mascot } from "./Mascot";
+ import { RelationGraph } from "./RelationGraph";
+ import { Tree, Header } from "./Shell";
+ import { Viewer, useMaterialContent } from "./Material";
+ import { toast } from "./toast";
++import { ErrorNote, pressable } from "./Notice";
+ 
+ /** 左・真ん中・右のタブ（値と、画面に出す名前） */
+ const LTABS = [["tree", "階層"], ["parts", "ノートの部品"]] as const;
+@@ -47,6 +49,9 @@ export function Study() {
+   const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
+   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
+   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
++  // 11/23：資料の追加中（何件目・どのファイルか）。追加中はもう一度「資料の追加」を押せないようにする
++  const [up, setUp] = useState<{ n: number; of: number; name: string } | null>(null);
++  const mastery = useMemo(() => masteryMap(its, tests), [its, tests]); // 11/23：関連図の正答率の輪
+   const sid = account?.studentId ?? "";
+   // 11/23：Ctrl＋S（Mac は ⌘＋S）でノートを保存する。ブラウザの「ページを保存」は出さない
+   const saveKey = useRef<() => void>(() => {});
+@@ -66,6 +71,11 @@ export function Study() {
+     };
+     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+   }, []);
++  useEffect(() => { // 11/23：全画面は Esc でも閉じる（確認ダイアログが出ているときは、ダイアログのほうを閉じる）
++    if (!full) return;
++    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".ov")) setFull(false); };
++    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
++  }, [full]);
+   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
+   const item: LearningItem | undefined = its.find(i => i.itemId === route.itemId) ?? its[0];
+   // ノートの部品：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
+@@ -86,7 +96,7 @@ export function Study() {
+   const addItem = async () => {
+     const n = await askName("学習項目の追加"); if (!n) return;
+     const r = await controller.handleRequest("G004", "addItem", { studentId: sid, subjectId: subject.subjectId, name: n });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     const b = r.data as LearningItem;
+     await reload(); nav({ s: "G004", subjectId: subject.subjectId, itemId: b.itemId });
+   };
+@@ -94,14 +104,14 @@ export function Study() {
+     if (!item) return;
+     const n = await askName("学習項目名の編集", item.itemName); if (!n) return;
+     const r = await controller.handleRequest("G004", "renameItem", { itemId: item.itemId, name: n });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     await reload();
+   };
+   const del = async () => {
+     if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+     const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.itemId });
+-    if (r.error) return toast(r.error);
+-    setDraft(item.itemId, null); // 資料（ストレージ）は LearningItemManager.deleteItem が一緒に消す
++    if (r.error) return toast(r.error, "error");
++    setDraft(item.itemId, null); delete hist.current[item.itemId]; // 資料（ストレージ）は LearningItemManager.deleteItem が一緒に消す
+     await reload();
+     nav({ s: "G004", subjectId: subject.subjectId }); toast("学習項目を削除したよ");
+   };
+@@ -113,20 +123,26 @@ export function Study() {
+   };
+   // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
+   const upload = async (files: FileList | null) => {
+-    if (!files || !item) return; setMsg("");
+-    for (const f of Array.from(files)) {
+-      const u = await controller.handleRequest("G004", "uploadMaterial", { itemId: item.itemId }, { file: f });
+-      if (u.error) { setMsg(u.error); continue; } // 形式・大きさ・保存容量のエラー
+-      const m = u.data as Material;
+-      if (m.fileType !== "text") { // 文字起こし：進み具合を小さく表示。失敗しても画面は移らない（資料は保存済み）
+-        setProg(0);
+-        const t = await controller.handleRequest("G004", "transcribe", { materialId: m.materialId }, { listener: { onProgress: setProg } });
+-        if (t.error) setMsg(t.error);
+-        else { const { failedPages } = t.data as TranscribeResult; if (failedPages.length) setMsg(`読み取れなかったページがあります（${failedPages.join("、")}）。「修正」で自分で直せます`); }
+-        setProg(null);
++    if (!files || !item || up) return; setMsg("");
++    const list = Array.from(files), errs: string[] = [];
++    try {
++      for (const [k, f] of list.entries()) {
++        setUp({ n: k + 1, of: list.length, name: f.name });
++        const u = await controller.handleRequest("G004", "uploadMaterial", { itemId: item.itemId }, { file: f });
++        if (u.error) { errs.push(`${f.name}：${u.error}`); continue; } // 形式・大きさ・保存容量のエラー（ほかのファイルは続ける）
++        const m = u.data as Material;
++        if (m.fileType !== "text") { // 文字起こし：進み具合を表示。失敗しても画面は移らない（資料は保存済み）
++          setProg(0);
++          const t = await controller.handleRequest("G004", "transcribe", { materialId: m.materialId }, { listener: { onProgress: setProg } });
++          if (t.error) errs.push(`${f.name}：${t.error}`); // 資料そのものは保存できている
++          else { const { failedPages } = t.data as TranscribeResult; if (failedPages.length) errs.push(`${f.name}：読み取れなかったページがあります（${failedPages.join("、")}）。資料を開いて「修正」から自分で直せます`); }
++          setProg(null);
++        }
++        await reload(); // 1つ終わるごとに一覧に出す
+       }
+-      await reload(); // 1つ終わるごとに一覧に出す
+-    }
++    } finally { setUp(null); setProg(null); }
++    setMsg(errs.join("\n"));
++    if (!errs.length) toast(list.length > 1 ? `${list.length} 件の資料を追加したよ` : "資料を追加したよ");
+   };
+   const doSave = async () => { if (item && drafts[item.itemId]) { if (await save(item.itemId)) toast("保存したよ"); } else toast("変更はありません"); };
+   saveKey.current = () => { void doSave(); };
+@@ -136,22 +152,26 @@ export function Study() {
+   const matSelect = <select className="inp" style={{ margin: 0 }} value={ref ?? ""} onChange={e => setRef(e.target.value || null)}><option value="">資料を選ぶ…</option>{mats.map(m => <option key={m.materialId} value={m.materialId}>{m.fileName}</option>)}</select>;
+   const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} /> : null;
+   const extra = (id: string) => id === item?.itemId ? (<><div className="ind">ノート</div><div className="ind">ストレージ</div>
+-    {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
+-    <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
++    {mats.map(m => <div className="ind mat" key={m.materialId} {...pressable(() => openMat(m.materialId), `資料 ${m.fileName} を開く`)}>{m.fileName}</div>)}
++    <div className="ind click" {...pressable(() => go({ s: "G011", subjectId: subject.subjectId, itemId: id }))}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
++  // 11/23：前提項目のうち、単語テストの正答率が低いもの。ノートの上に「先に復習しよう」と出す
++  const weak = item ? weakPrereqs(prerequisites, its, tests, item.itemId) : [];
+   return (<div className="app"><Header />
+     <div className="cols">
+       <aside className="lf">
+         <Tabs tabs={LTABS} value={ltab} onChange={setL} />
+         {ltab === "tree" ? (<>
+           <Tree heading="科目一覧" extra={extra} />
+-          {prog !== null && <div className="mute" style={{ margin: "6px 0" }}>文字起こし中… {prog}%</div>}{msg && <div className="err">{msg}</div>}
++          {up && <div className="upprog" role="status" aria-live="polite"><div className="mute">{prog === null ? "保存中" : `文字起こし中 ${prog}%`}{up.of > 1 ? `（${up.n} / ${up.of} 件目）` : ""}　<span className="fname">{up.name}</span></div>
++            <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={prog ?? 0} aria-label="文字起こしの進み具合"><i style={{ width: `${prog ?? 0}%` }} /></div></div>}
++          <ErrorNote text={msg} action={msg ? { label: "閉じる", onClick: () => setMsg("") } : undefined} />
+           {/* 11/17：操作ボタンを「学習項目」「資料」のまとまりに分け、大きく押しやすくした */}
+           <div className="sec"><div className="sh">学習項目{item && <b>{item.itemName}</b>}</div>
+             <button className="btn pri wide" onClick={addItem}>＋ 学習項目を追加</button>
+             <div className="grid2"><button className="btn sm" disabled={!item} onClick={rename}>名前を変更</button><button className="btn sm danger" disabled={!item} onClick={del}>削除</button></div>
+             <button className="btn sm wide" disabled={!item || its.length < 2} onClick={() => { setPre(prereqIdsOf(prerequisites, item!.itemId)); setPreMsg(""); }}>前提項目の設定</button></div>
+           <div className="sec"><div className="sh">資料</div>
+-            <label className={"btn wide" + (item ? "" : " disabled")} aria-disabled={!item} style={item ? undefined : { opacity: .45, cursor: "not-allowed" }}>＋ 資料の追加<input hidden type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item} onChange={e => { upload(e.target.files); e.target.value = ""; }} /></label>
++            <label className={"btn wide filebtn" + (item && !up ? "" : " disabled")} aria-disabled={!item || !!up} style={item && !up ? undefined : { opacity: .45, cursor: "not-allowed" }}>{up ? "追加しています…" : "＋ 資料の追加"}<input className="vh" type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item || !!up} onChange={e => { void upload(e.target.files); e.target.value = ""; }} /></label>
+             <span className="mute">画像・PDF・テキスト（1件20MBまで）。画像とPDFは文字起こしもします</span></div>
+           {pre && item && <div className="pop"><h3>前提項目の設定</h3>
+             {its.filter(i => i.itemId !== item.itemId).map(i => <label className="ck" key={i.itemId}><input type="checkbox" checked={pre.includes(i.itemId)} onChange={e => setPre(e.target.checked ? [...pre, i.itemId] : pre.filter(p => p !== i.itemId))} />{i.itemName}</label>)}
+@@ -164,8 +184,13 @@ export function Study() {
+             <div className="grid3"><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.TEXT)}>文字</button><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.SHAPE)}>図形</button><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.ARROW)}>矢印</button></div></div>
+           <p className="mute">置いた部品はドラッグで動かし、右下で大きさ、上の色ボタンで色を変えます。文字は「見出し」に変えられます。</p></div>)}
+       </aside>
+-      <main className="ct">{item && parts ? (<>
++      <main className="ct" id="main" tabIndex={-1}>{item && parts ? (<>
+         <Tabs tabs={MODES} value={mode} onChange={setMode}><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></Tabs>
++        {weak.length > 0 && <div className="weak" role="note"><Mascot size={36} mood="worried" /><div>前提の{weak.map((w, k) => <span key={w.item.itemId}>{k > 0 && "・"}<button className="link" onClick={() => open(w.item.itemId)}>「{w.item.itemName}」</button>（正答率 {Math.round(w.rate * 100)}%）</span>)}がまだあやしいみたい。先に復習しておくと、この項目も分かりやすくなるよ</div></div>}
++        {parts.length === 0 && <div className="starter"><b>まっさらなノートです。どこから始める？</b>
++          <div className="row"><button className="btn sm pri" onClick={() => addPart(PartType.FRAME, "word")}>単語枠を置く</button><button className="btn sm" onClick={() => addPart(PartType.FRAME, "summary")}>要約枠を置く</button>
++            <button className="btn sm ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>資料からAIでまとめる</button></div>
++          <span className="mute">資料は左の「資料の追加」から。画像・PDF は文字起こしされて、AIでまとめるときに使えます</span></div>}
+         {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
+         <div className="bar2 stick"><span className="row"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn undo" disabled={!h?.past.length} onClick={() => step(true)} title="元に戻す（Ctrl＋Z）" aria-label="元に戻す">↶</button><button className="btn undo" disabled={!h?.future.length} onClick={() => step(false)} title="やり直す（Ctrl＋Y）" aria-label="やり直す">↷</button></span>
+           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
+@@ -176,7 +201,7 @@ export function Study() {
+       </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
+       <aside className="rt">
+         <Tabs tabs={RTABS} value={rtab} onChange={setR} />
+-        {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
++        {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} mastery={mastery} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
+       </aside>
+     </div>
+     {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
+diff --git a/src/components/SubjectList.tsx b/src/components/SubjectList.tsx
+index 5065158..45bb13b 100644
+--- a/src/components/SubjectList.tsx
++++ b/src/components/SubjectList.tsx
+@@ -6,22 +6,33 @@
+ // 科目一覧画面（G003）です。科目の追加・名前の編集・削除と、科目を開くボタンがある。
+ // ボタンを押したときの流れ：画面 → controller.handleRequest("G003", イベントID) → Manager → DAO → 端末に保存（→ Neon）
+ // 結果に error があれば画面に文を出し、なければ reload() で科目を読み直す
++import { useState } from "react";
+ import { useApp } from "../state/app";
+ import { controller } from "../controller/Controller";
+ import type { Subject } from "../beans/Subject";
+ import { itemsOf } from "../lib/select";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
++import { Mascot } from "./Mascot";
++import { createSample, SAMPLE } from "./sampleSubject";
+ 
+ export function SubjectList() {
+   const { account, subjects, items, loaded, reload, route, nav, go, ask, askName } = useApp();
+   const cur = subjects.find(s => s.subjectId === route.subjectId), curItems = itemsOf(items, cur?.subjectId);
+   const sid = account?.studentId ?? "";
++  const [making, setMaking] = useState(false);
++  /** 11/23：「サンプルで試す」。サンプルの科目を作って、最初の学習項目のノートを開く */
++  const sample = async () => {
++    if (making) return; setMaking(true);
++    try { const { subject, first } = await createSample(sid); await reload(); toast("サンプルの科目を作ったよ"); nav({ s: "G004", subjectId: subject.subjectId, itemId: first.itemId }); }
++    catch (e) { await reload(); toast(e instanceof Error ? e.message : "サンプルを作れませんでした", "error"); }
++    finally { setMaking(false); }
++  };
+ 
+   const add = async () => {
+     const n = await askName("科目の追加"); if (!n) return;
+     const r = await controller.handleRequest("G003", "addSubject", { studentId: sid, name: n });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     const s = r.data as Subject;
+     await reload();
+     nav({ s: "G003", subjectId: s.subjectId });
+@@ -30,20 +41,28 @@ export function SubjectList() {
+     if (!cur) return;
+     const n = await askName("科目名の編集", cur.subjectName); if (!n) return;
+     const r = await controller.handleRequest("G003", "renameSubject", { studentId: sid, subjectId: cur.subjectId, name: n });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     await reload();
+   };
+   const del = async () => {
+     if (!cur || await ask("科目の中の学習項目・ノート・資料・テストもすべて削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+     const r = await controller.handleRequest("G003", "deleteSubject", { subjectId: cur.subjectId });
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     await reload(); // 資料（ストレージ）も SubjectManager → LearningItemManager.deleteItem が一緒に消す
+     nav({ s: "G003" }); toast("科目を削除したよ");
+   };
+   return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
+     <div className="row"><h2>科目</h2><span className="sp" /><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>
+     {!loaded && <p className="mute loading">読み込み中…</p>}{/* 11/22：ログインした直後、端末のデータを読み終わるまで */}
+-    {loaded && !subjects.length && <p className="mute">科目がまだありません。「科目の追加」から作ってみよう。</p>}
++    {loaded && !subjects.length && <div className="welcome">{/* 11/23：初めて使う人への案内 */}
++      <div className="row"><Mascot size={64} mood="cheer" /><div><h3>ようこそ！るんだよ。</h3><p className="mute">3ステップで、講義の内容を「覚えた」まで持っていこう。</p></div></div>
++      <ol className="steps">
++        <li><b>科目をつくる</b><span>「数学Ⅰ」「生物基礎」など、授業ごとに1つ</span></li>
++        <li><b>学習項目ごとにノートを書く</b><span>資料（写真・PDF）を入れると、AIが単語・要約などの枠に整理してくれる</span></li>
++        <li><b>模擬テストで確かめる</b><span>単語テストは何度でも。間違えた問題だけの解き直しもできる</span></li></ol>
++      <div className="row"><button className="btn pri lg" onClick={add}>＋ 最初の科目をつくる</button>
++        <button className="btn lg" disabled={making} onClick={sample}>{making ? "準備中…" : "サンプルで試す"}</button>
++        <span className="mute">サンプル：「{SAMPLE.subject}」（{SAMPLE.items.length}項目・単語入り）。あとで削除できます</span></div></div>}
+     {subjects.length > 0 && !cur && <p className="mute">左の一覧から科目を選んでください。</p>}
+     {cur && <div className="box"><h3>{cur.subjectName}</h3><p className="mute">学習項目 {curItems.length} 件</p>
+       <div className="row"><button className="btn pri lg" onClick={() => go({ s: "G004", subjectId: cur.subjectId, itemId: curItems[0]?.itemId })}>この科目を開く</button><button className="btn" onClick={edit}>名前の編集</button><button className="btn danger" onClick={del}>削除</button></div></div>}
+diff --git a/src/components/Tabs.tsx b/src/components/Tabs.tsx
+index 381ed7e..e53326f 100644
+--- a/src/components/Tabs.tsx
++++ b/src/components/Tabs.tsx
+@@ -8,7 +8,8 @@ import type { ReactNode } from "react";
+ 
+ interface Props<K extends string> { tabs: readonly (readonly [K, string])[]; value: K; onChange: (k: K) => void; children?: ReactNode }
+ export function Tabs<K extends string>({ tabs, value, onChange, children }: Props<K>) {
++  // 11/23：画面の読み上げにも「選んでいるタブ」が伝わるように aria-pressed を付けた
+   return (<div className="tabs">
+-    {tabs.map(([k, label]) => <button key={k} className={"chip" + (value === k ? " on" : "")} onClick={() => onChange(k)}>{label}</button>)}
++    {tabs.map(([k, label]) => <button key={k} className={"chip" + (value === k ? " on" : "")} aria-pressed={value === k} onClick={() => onChange(k)}>{label}</button>)}
+     {children}</div>);
+ }
+diff --git a/src/components/TestAnswer.tsx b/src/components/TestAnswer.tsx
+index 802162f..d04325a 100644
+--- a/src/components/TestAnswer.tsx
++++ b/src/components/TestAnswer.tsx
+@@ -7,12 +7,14 @@
+ // どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
+ import { useEffect, useMemo, useRef, useState } from "react";
+ import { Redirect, useApp } from "../state/app";
+-import { shuffle } from "../lib/logic";
++import { choicesFor } from "../lib/logic";
+ import { questionsOf } from "../lib/select";
++import { imeEnter } from "../lib/keys";
+ import { controller } from "../controller/Controller";
+ import { TestType } from "../enums/TestType";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
++import { pressable } from "./Notice";
+ import { KIND } from "./testCommon";
+ 
+ export function TestAnswer() {
+@@ -20,17 +22,20 @@ export function TestAnswer() {
+   const test = tests.find(t => t.testId === route.testId), retry = route.mode === "retry";
+   const qs = useMemo(() => test ? questionsOf(test) : [], [test]); // 問題（番号の順）。解答もこの順に並べる
+   const essay = test?.testType === TestType.ESSAY;
+-  const [busy, setBusy] = useState(false);
++  const [busy, setBusy] = useState(false), sending = useRef(false); // sending：Enter を続けて押しても、同じ解答を2回保存しない（11/23）
+   const keys = useRef<{ next: () => void; prev: () => void; choose: (n: number) => void; essay: boolean } | null>(null);
+   const box = useRef<HTMLTextAreaElement>(null);
+   const [idx, setIdx] = useState(0), [ans, setAns] = useState<string[]>(() => qs.map(() => "")), [kb, setKb] = useState(essay);
+-  const pool = useMemo(() => qs.map(q => q.modelAnswer), [qs]);
+-  const choices = useMemo(() => essay ? [] : shuffle([pool[idx], ...shuffle([...new Set(pool.filter((_, i) => i !== idx))]).slice(0, 3)]), [essay, idx, pool]); // eslint-disable-line
++  // 11/23：選択肢は最初に全問分を1回だけ作る（前の問題に戻ったときに並びが変わらないように）。
++  //   同じ答えの単語が2つあっても、選択肢に同じものが並ばないようにした（choicesFor）
++  const allChoices = useMemo(() => essay ? [] : choicesFor(qs.map(q => q.modelAnswer)), [essay, qs]);
++  const choices = allChoices[idx] ?? [];
+   // キーボード：Enter＝次の問題（記述・入力欄の中では Ctrl＋Enter）、1〜4＝選択肢を選ぶ、← →＝前・次の問題
+   useEffect(() => {
+     const onKey = (e: KeyboardEvent) => {
+       const k = keys.current; if (!k || document.querySelector(".ov")) return; // 確認ダイアログが出ている間は何もしない
+       const typing = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
++      if (e.key === "Enter" && imeEnter(e)) return; // 11/23：日本語の変換を確定した Enter で、次の問題へ進まないようにする
+       if (e.key === "Enter" && (!typing || !k.essay || e.ctrlKey || e.metaKey)) { e.preventDefault(); k.next(); return; }
+       if (typing) return;
+       if (/^[1-4]$/.test(e.key)) k.choose(Number(e.key) - 1);
+@@ -42,12 +47,16 @@ export function TestAnswer() {
+   useEffect(() => { box.current?.focus(); }, [idx, kb]); // 問題が変わったら、入力欄にすぐ打てるようにする
+   if (!test) return <Redirect to={{ s: "G003" }} />;
+   const base = { subjectId: route.subjectId, itemId: route.itemId };
++  if (!qs.length) return <Shell center={<><p className="mute">このテストには問題がありません（同期の途中かもしれません）。</p><button className="btn" onClick={() => nav({ s: "G011", ...base })}>テスト一覧へ戻る</button></>} />;
+   const done = async () => {
++    if (sending.current) return;
+     const un = ans.filter(a => !a.trim()).length;
+     if (un && await ask("答えていない問題があります。確定しますか", [{ label: "確定", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
+     // TestManager が新しい受験として保存し、「意味→用語」なら採点する（解き直しも保存する）
+-    setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.testId, answers: ans }); setBusy(false);
+-    if (r.error) return toast(r.error);
++    if (sending.current) return; sending.current = true; setBusy(true);
++    const r = await controller.handleRequest("G009", "submit", { testId: test.testId, answers: ans });
++    setBusy(false);
++    if (r.error) { sending.current = false; return toast(r.error, "error"); }
+     await reload();
+     nav({ s: "G010", ...base, testId: test.testId, mode: retry ? "retry" : "new" }); // 結果画面は、いちばん新しい受験（いま保存した分）を出す
+   };
+@@ -65,12 +74,12 @@ export function TestAnswer() {
+   const next = () => { if (last) void done(); else setIdx(idx + 1); };
+   const prev = () => { if (idx > 0) setIdx(idx - 1); };
+   keys.current = { next, prev, choose: (n: number) => { if (!kb && choices[n]) set(choices[n]); }, essay };
+-  return <Shell right={<><div className="col">{qs.map((q, i) => <div key={q.questionId} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
++  return <Shell right={<><div className="col">{qs.map((q, i) => <div key={q.questionId} className={"qn" + (i === idx ? " on" : "")} aria-current={i === idx ? "step" : undefined} {...pressable(() => setIdx(i), `第${i + 1}問${ans[i]?.trim() ? "（答えた）" : ""}`)}><i />第{i + 1}問{ans[i]?.trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
+     center={<>
+       <div className="mute">{KIND[test.testType]}{retry ? "（解き直し：解答は新しい回として保存されます）" : ""}　問 {idx + 1} / {qs.length}</div>
+       <div className="vbox" style={{ marginTop: 6 }}><h3>第{idx + 1}問</h3><div style={{ fontSize: 17 }}>{qs[idx].questionText}</div>
+-        {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
+-        {(kb || essay) && <textarea ref={box} className="tx" style={{ minHeight: essay ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
++        {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} aria-pressed={ans[idx] === c} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
++        {(kb || essay) && <textarea ref={box} aria-label={`第${idx + 1}問の答え`} className="tx" style={{ minHeight: essay ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
+         <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
+           <span className="sp" />
+           <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div>
+diff --git a/src/components/TestCreate.tsx b/src/components/TestCreate.tsx
+index 45a0321..90beb91 100644
+--- a/src/components/TestCreate.tsx
++++ b/src/components/TestCreate.tsx
+@@ -10,6 +10,7 @@ import { Redirect, useApp } from "../state/app";
+ import { clampQuestionCount } from "../lib/logic";
+ import { itemsOf, partsOf } from "../lib/select";
+ import { addLocalUsage, useAiRemaining } from "../services/ai";
++import { LIMIT_TEXT } from "../services/api";
+ import { controller } from "../controller/Controller";
+ import type { Test } from "../beans/Test";
+ import { TestType } from "../enums/TestType";
+@@ -18,6 +19,7 @@ import { AiWait, useOnline } from "./AiWait";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
+ import { KIND, KINDS } from "./testCommon";
++import { ErrorNote } from "./Notice";
+ 
+ export function TestCreate() {
+   const { subjects, items, notes, reload, route, nav, go, tmp, setTmp, account } = useApp();
+@@ -28,20 +30,26 @@ export function TestCreate() {
+   const [scope, setScope] = useState<"all" | "pick">(k?.scope ?? "all"), [picks, setPicks] = useState<string[]>(k?.picks ?? []), [kind, setKind] = useState<TestType>(k?.kind ?? TestType.MEANING_TO_TERM), [count, setCount] = useState(k?.count ?? 10), [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+   const { remaining, limit, refresh } = useAiRemaining();
+   if (!subject || !item) return <Redirect to={{ s: "G003" }} />;
+-  const frames = partsOf(notes, item.itemId).filter(p => p.partType === PartType.FRAME), send = (tmp.send as string | undefined) ?? "";
+   const essay = kind === TestType.ESSAY;
++  // 11/23：単語テストの「枠を選ぶ」には単語枠だけを出す（ほかの枠を選んでも単語がないので、前は作れずにエラーになっていた）
++  const frames = partsOf(notes, item.itemId).filter(p => p.partType === PartType.FRAME && (essay || p.frameType === "word")), send = (tmp.send as string | undefined) ?? "";
++  const wordCount = partsOf(notes, item.itemId).reduce((n, p) => n + (p.frameType === "word" ? p.words.filter(w => w.term.trim() && w.meaning.trim()).length : 0), 0);
+   const make = async () => {
++    if (busy) return; // 11/23：続けて押しても、テストを2つ作らない
+     setMsg(""); const n = clampQuestionCount(count); let t: Test;
+     if (kind !== TestType.ESSAY) {
+-      if (scope === "pick" && !picks.length) return setMsg("範囲に単語枠がない（または空）ため、先にノートで単語枠を作ってください");
+-      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.studentId ?? "", itemId: item.itemId, testType: kind, count: n, partIds: scope === "pick" ? picks : undefined });
++      const ids = picks.filter(id => frames.some(f => f.partId === id));
++      if (scope === "pick" && !ids.length) return setMsg("使う単語枠を1つ以上選んでください。単語枠がなければ、先にノートで作ってください");
++      setBusy(true);
++      const r = await controller.handleRequest("G008", "createWordTest", { studentId: account?.studentId ?? "", itemId: item.itemId, testType: kind, count: n, partIds: scope === "pick" ? ids : undefined });
++      setBusy(false);
+       if (r.error) return setMsg(r.error);
+       const d = r.data as { test: Test; shortage: number }; t = d.test;
+       if (d.shortage > 0) toast(`単語が少ないので、ある分（${t.questions.length}問）だけ出題します`);
+     } else {
+       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
+       if (!online) return setMsg("インターネットにつながっていません。記述テストはAIで作るので、つながってから試してください");
+-      const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
++      const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg(LIMIT_TEXT);
+       setBusy(true);
+       const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.studentId ?? "", itemId: item.itemId, text: send, count: n });
+       setBusy(false); void refresh();
+@@ -56,13 +64,14 @@ export function TestCreate() {
+   return <Shell center={<>
+     <div className="vbox" style={{ minHeight: 360 }}><h3>模擬テストを作る　<span className="mute">{subject.subjectName} ／ {item.itemName}</span></h3>
+       <div className="two"><div><b>範囲</b><label className="ck"><input type="radio" checked={scope === "all"} onChange={() => setScope("all")} />ノート丸ごと</label><label className="ck"><input type="radio" checked={scope === "pick"} onChange={() => setScope("pick")} />枠を選ぶ</label>
+-        {scope === "pick" && <div className="pop">{frames.map(p => <label key={p.partId} className="ck"><input type="checkbox" checked={picks.includes(p.partId)} onChange={x => setPicks(x.target.checked ? [...picks, p.partId] : picks.filter(id => id !== p.partId))} />{p.frameType === "word" ? `単語枠　${p.words[0]?.term ?? ""}` : `${p.text.slice(0, 14)}`}</label>)}{!frames.length && <span className="mute">枠がありません</span>}</div>}</div>
++        {scope === "pick" && <div className="pop">{frames.map(p => <label key={p.partId} className="ck"><input type="checkbox" checked={picks.includes(p.partId)} onChange={x => setPicks(x.target.checked ? [...picks, p.partId] : picks.filter(id => id !== p.partId))} />{p.frameType === "word" ? `単語枠　${p.words[0]?.term ?? ""}` : `${p.text.slice(0, 14)}`}</label>)}{!frames.length && <span className="mute">{essay ? "枠がありません" : "単語枠がありません"}</span>}</div>}
++        {!essay && <div className="mute" style={{ marginTop: 6 }}>このノートの単語：{wordCount} 語{wordCount > 0 && wordCount < 5 ? "（5語より少ないので、ある分だけ出題します）" : ""}</div>}</div>
+         <div><b>テストの種類</b>{KINDS.map(t => <label key={t} className="ck"><input type="radio" checked={kind === t} onChange={() => setKind(t)} />{KIND[t]}</label>)}
+           <b>問題数（5〜20問）</b><input className="inp" type="number" min={5} max={20} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 100 }} />
+           {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
+       <AiWait busy={busy && essay} what="AIが問題を作っています" />
+-      {msg && <div className="err">{msg}</div>}</div>
+-    <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy || (essay && !online)} onClick={make}>{busy ? "作成中…" : "作成"}</button>
++      <ErrorNote text={msg} action={!essay && /単語枠/.test(msg) ? { label: "ノートで単語枠を作る", onClick: () => void go({ s: "G004", subjectId: subject.subjectId, itemId: item.itemId }) } : undefined} /></div>
++    <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy || (essay && !online)} onClick={make}>{busy ? (essay ? "AIが作成中…" : "作成中…") : "作成"}</button>
+       <button className="btn line" disabled={!essay} onClick={() => { setTmp({ g8: { itemId: item.itemId, scope, picks, kind, count } satisfies G8Choice }); void go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "essay" }); }}>内容編集</button></span>
+       <button className="btn line" onClick={() => go({ s: "G004", subjectId: subject.subjectId, itemId: item.itemId })}>戻る</button></div></>} />;
+ }
+diff --git a/src/components/TestList.tsx b/src/components/TestList.tsx
+index 2d84e9a..bb961e4 100644
+--- a/src/components/TestList.tsx
++++ b/src/components/TestList.tsx
+@@ -9,12 +9,13 @@
+ import { useState } from "react";
+ import { useApp } from "../state/app";
+ import { fmt, ymd } from "../lib/logic";
+-import { itemsOf, lastScore, sortTests, TEST_SORTS, type TestSort } from "../lib/select";
++import { itemsOf, lastScore, scoreHistory, sortTests, TEST_SORTS, type TestSort } from "../lib/select";
+ import { controller } from "../controller/Controller";
+ import type { Test } from "../beans/Test";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
+ import { KIND } from "./testCommon";
++import { pressable } from "./Notice";
+ 
+ /** 並べ方は、次に開いたときも同じにする（この端末だけ。保存できないブラウザでは毎回「新しい順」） */
+ const SORT_KEY = "runndesu:testSort";
+@@ -41,12 +42,12 @@ export function TestList() {
+     setBusy(true);
+     const r = await controller.handleRequest("G011", "deleteTest", { testIds: targets });
+     setBusy(false);
+-    if (r.error) return toast(r.error);
++    if (r.error) return toast(r.error, "error");
+     setChecked([]); if (sel && targets.includes(sel)) setSel(null);
+     await reload(); toast(targets.length === 1 ? "テストを削除したよ" : `${targets.length} 件のテストを削除したよ`);
+   };
+   return <Shell center={<>
+-    <div className="folders">{subjects.map(s => <div key={s.subjectId} className={"folder" + (s.subjectId === sid ? " on" : "")} onClick={() => changeSubject(s.subjectId)}><i />{s.subjectName}</div>)}</div>
++    <div className="folders">{subjects.map(s => <div key={s.subjectId} className={"folder" + (s.subjectId === sid ? " on" : "")} aria-pressed={s.subjectId === sid} {...pressable(() => changeSubject(s.subjectId))}><i />{s.subjectName}</div>)}</div>
+     {rows.length > 0 && <div className="row tlhead">
+       <label className="chk"><input type="checkbox" checked={allOn} onChange={() => setChecked(allOn ? [] : rows.map(r => r.t.testId))} />すべて選ぶ</label>
+       <span className="mute">{rows.length} 件</span><span className="sp" />
+@@ -54,9 +55,12 @@ export function TestList() {
+       <select id="tsort" className="inp sel" value={sort} onChange={e => { const v = e.target.value as TestSort; setSort(v); saveSort(v); }}>{TEST_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+     </div>}
+     <div className="vbox" style={{ minHeight: 220 }}>{rows.length === 0 && <p className="mute">テストがまだありません。</p>}
+-      {rows.map(({ t, i }) => <div key={t.testId} className={"trow" + (sel === t.testId ? " on" : "")} onClick={() => setSel(t.testId)}>
++      {rows.map(({ t, i }) => <div key={t.testId} className={"trow" + (sel === t.testId ? " on" : "")} aria-pressed={sel === t.testId} {...pressable(() => setSel(t.testId), `${i.itemName}-${ymd(t.createdAt)}　${KIND[t.testType]}`)}>
+         <input type="checkbox" checked={checked.includes(t.testId)} onClick={e => e.stopPropagation()} onChange={() => toggle(t.testId)} aria-label={`${i.itemName}-${ymd(t.createdAt)} を選ぶ`} />
+-        <div className="tname"><span>{i.itemName}-{ymd(t.createdAt)}</span>{(() => { const info = `${KIND[t.testType]}・${t.questions.length}問・作成 ${fmt(t.createdAt)}・最後に解いた ${fmt(t.lastTakenAt)}`; return <small className="mute" title={info}>{info}</small>; })()}</div>{(() => { const sc = lastScore(t); return sc && <span className={"tscore" + (sc.ok === sc.total ? " full" : "")} title={`第${sc.attemptNo}回の結果`}>前回 {sc.ok}/{sc.total}</span>; })()}</div>)}</div>
++        <div className="tname"><span>{i.itemName}-{ymd(t.createdAt)}</span>{(() => { const info = `${KIND[t.testType]}・${t.questions.length}問・作成 ${fmt(t.createdAt)}・最後に解いた ${fmt(t.lastTakenAt)}`; return <small className="mute" title={info}>{info}</small>; })()}</div>{(() => { const sc = lastScore(t); if (!sc) return null;
++          // 11/23：前の回より上がったか・下がったかを矢印で出す
++          const h = scoreHistory(t), d = h.length > 1 ? h[h.length - 1].rate - h[h.length - 2].rate : 0;
++          return <span className={"tscore" + (sc.ok === sc.total ? " full" : "")} title={`第${sc.attemptNo}回の結果${h.length > 1 ? `（前の回は ${h[h.length - 2].ok}/${h[h.length - 2].total}）` : ""}`}>前回 {sc.ok}/{sc.total}{d > 0 ? <b className="up" aria-label="上がった"> ↑</b> : d < 0 ? <b className="down" aria-label="下がった"> ↓</b> : null}</span>; })()}</div>)}</div>
+     <div className="bar2"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(selected), testId: sel!, mode: "list" })}>結果表示</button>
+       <button className="btn" disabled={!sel} onClick={() => nav({ s: "G009", ...base(selected), testId: sel!, mode: "retry" })}>解き直し</button>
+       <button className="btn danger" disabled={!targets.length || busy} onClick={del}>{busy ? "削除中…" : checked.length > 1 ? `削除（${checked.length} 件）` : "削除"}</button></span>
+diff --git a/src/components/TestResult.tsx b/src/components/TestResult.tsx
+index dcaf678..dafec75 100644
+--- a/src/components/TestResult.tsx
++++ b/src/components/TestResult.tsx
+@@ -8,22 +8,26 @@
+ import { useEffect, useState } from "react";
+ import { Redirect, useApp } from "../state/app";
+ import { fmt } from "../lib/logic";
+-import { answerOf, attemptsOf, questionsOf } from "../lib/select";
++import { answerOf, attemptsOf, questionsOf, scoreHistory } from "../lib/select";
+ import { addLocalUsage, useAiRemaining } from "../services/ai";
++import { LIMIT_TEXT } from "../services/api";
+ import { controller } from "../controller/Controller";
+ import type { Question } from "../beans/Question";
++import type { Test } from "../beans/Test";
+ import type { Attempt } from "../beans/Attempt";
+ import { TestType } from "../enums/TestType";
+ import { AiWait, useOnline } from "./AiWait";
+ import { Shell } from "./Shell";
+ import { toast } from "./toast";
+ import { KIND } from "./testCommon";
++import { ErrorNote } from "./Notice";
++import { ScoreTrend } from "./ScoreTrend";
+ 
+ /** 直す対象：問題と模範解答／自分の解答／解説 */
+ type Fix = "question" | "answer" | "expl";
+ 
+ export function TestResult() {
+-  const { tests, reload, route, go } = useApp();
++  const { tests, reload, route, go, nav } = useApp();
+   const test = tests.find(t => t.testId === route.testId), [idx, setIdx] = useState(0), [msg, setMsg] = useState("");
+   const { remaining, refresh } = useAiRemaining();
+   // 過去の受験（1回目から順に）と、いま表示している回の受験ID（Controller の G010:getAttempts で読む）
+@@ -41,14 +45,15 @@ export function TestResult() {
+     });
+   }, [test]);
+   if (!test) return <Redirect to={{ s: "G003" }} />;
+-  const qs = questionsOf(test), q: Question = qs[idx], list = route.mode === "list", base = { subjectId: route.subjectId, itemId: route.itemId };
++  if (!test.questions.length) return <Shell center={<><p className="mute">このテストには問題がありません（同期の途中かもしれません）。</p><button className="btn" onClick={() => go({ s: "G011", subjectId: route.subjectId, itemId: route.itemId })}>テスト一覧へ戻る</button></>} />;
++  const qs = questionsOf(test), q: Question = qs[Math.min(idx, qs.length - 1)], list = route.mode === "list", base = { subjectId: route.subjectId, itemId: route.itemId };
+   const att = atts.find(a => a.attemptId === attemptId) ?? attemptsOf(test).pop(); // 受験の読み込みが終わるまでは、テストに入っている最後の回
+   const scored = test.testType === TestType.MEANING_TO_TERM; // 採点するのは「意味→用語」だけ
+   const mine = answerOf(att, q.questionId); // この問題への、この回の自分の解答
+   const essay = test.testType === TestType.ESSAY, canAnswer = !scored && !!att;
+   const useAi = () => { addLocalUsage(1); void refresh(); };
+   const expl = async () => {
+-    if (q.explanation || busy) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
++    if (q.explanation || busy) return; if (remaining !== null && remaining < 1) return setMsg(LIMIT_TEXT);
+     if (!online) return setMsg("インターネットにつながっていません。解説はAIで作るので、つながってから試してください");
+     setBusy(true); setWait("AIが解説を書いています");
+     const r = await controller.handleRequest("G010", "explain", { testId: test.testId, questionId: q.questionId }); void refresh();
+@@ -75,7 +80,7 @@ export function TestResult() {
+   };
+   const aiFix = async () => {
+     if (fix !== "question" && fix !== "expl") return;
+-    if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
++    if (remaining !== null && remaining < 1) return setMsg(LIMIT_TEXT);
+     if (!online) return setMsg("インターネットにつながっていません。AIで直すのは、つながってから試してください");
+     setBusy(true); setWait("AIが直しています");
+     const p = { testId: test.testId, questionId: q.questionId, extra };
+@@ -87,6 +92,17 @@ export function TestResult() {
+     setMsg(""); toast("AIで直して保存したよ");
+   };
+   const okCount = scored && att ? att.answers.filter(a => a.correct).length : null;
++  const wrongCount = okCount === null ? 0 : qs.length - okCount;
++  /** 11/23：間違えた問題だけで新しいテストを作り、すぐ解く（Controller → TestManager.createRetryTest） */
++  const retryWrong = async () => {
++    if (!att || busy) return; setBusy(true); setWait(""); setMsg("");
++    const r = await controller.handleRequest("G010", "retryWrong", { testId: test.testId, attemptId: att.attemptId });
++    setBusy(false);
++    if (r.error) return setMsg(r.error);
++    const t = r.data as Test; await reload();
++    toast(`間違えた ${t.questions.length} 問だけのテストを作ったよ`);
++    nav({ s: "G009", ...base, testId: t.testId, mode: "new" });
++  };
+   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{att || list ? q.modelAnswer : "（解答するとここに表示されます）"}</div></div>
+       <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn ai" disabled={busy} onClick={expl}>解説</button></span>
+       {q.explanation && <div className="pop" style={{ whiteSpace: "pre-wrap" }}>{q.explanation}</div>}
+@@ -102,12 +118,16 @@ export function TestResult() {
+         <span className="row"><button className="btn pri" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn ai" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
+       </div>}
+       <AiWait busy={busy && !!wait} what={wait} />
+-      {msg && <div className="err">{msg}</div>}</>}
++      <ErrorNote text={msg} /></>}
+     center={<>
+       <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{okCount !== null && <b>{okCount} / {qs.length} 問正解</b>}{okCount !== null && qs.length > 0 && <span className="score" role="img" aria-label={`正解率 ${Math.round(okCount / qs.length * 100)}%`}><i style={{ width: `${okCount / qs.length * 100}%` }} /></span>}<span className="mute">{KIND[test.testType]}{att ? `　第${att.attemptNo}回　${fmt(att.takenAt)}` : list ? `　最後に解いた日時 ${fmt(test.lastTakenAt)}` : ""}</span>
+         {atts.length > 1 && <select className="inp" style={{ width: "auto", display: "inline-block", margin: 0 }} value={att?.attemptId ?? ""} onChange={e => { setAttemptId(e.target.value); close(); }} aria-label="受験を選ぶ">{atts.map(a => <option key={a.attemptId} value={a.attemptId}>第{a.attemptNo}回（{fmt(a.takenAt)}）</option>)}</select>}</div>
++      {scored && <ScoreTrend points={scoreHistory(test)} current={att?.attemptNo} />}
+       <div className="qtabs" style={{ marginTop: 8 }}>{qs.map((x, i) => { const r = scored && att ? answerOf(att, x.questionId)?.correct : undefined; return <button key={x.questionId} className={"btn sm" + (i === idx ? " fill" : " line") + (r === true ? " okb" : r === false ? " ngb" : "")} onClick={() => { setIdx(i); close(); }} aria-label={`第${i + 1}問${r === true ? "（正解）" : r === false ? "（不正解）" : ""}`}>第{i + 1}問{r === true ? " ○" : r === false ? " ×" : ""}</button>; })}</div>
+       <div className="vbox"><h3>自身の回答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.questionText}</div>
+         {att ? <div style={{ whiteSpace: "pre-wrap" }}>{mine?.studentAnswer || "（未回答）"}　{scored && (mine?.correct ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">まだ解いていません。「解き直し」で解けます。</p>}</div>
+-      <div className="bar2"><button className="btn line" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn pri" onClick={() => go({ s: "G011", ...base })}>テスト一覧へ戻る</button></div></>} />;
++      <div className="bar2"><span className="row"><button className="btn line" onClick={() => go({ s: "G004", ...base })}>終了</button>
++        {wrongCount > 0 && <button className="btn" disabled={busy} onClick={retryWrong} title="この回で間違えた問題（未回答も）だけで、新しいテストを作ってすぐ解きます">間違えた {wrongCount} 問だけ解き直す</button>}
++        {okCount !== null && wrongCount === 0 && qs.length > 0 && <span className="ok">全問正解！</span>}</span>
++        <button className="btn pri" onClick={() => go({ s: "G011", ...base })}>テスト一覧へ戻る</button></div></>} />;
+ }
+diff --git a/src/components/sampleSubject.ts b/src/components/sampleSubject.ts
+new file mode 100644
+index 0000000..35cf311
+--- /dev/null
++++ b/src/components/sampleSubject.ts
+@@ -0,0 +1,47 @@
++// 初めて使う人向けの「サンプルの科目」（11/23）
++//
++// 【このファイルで何が起きているか】
++// 科目一覧（G003）の「サンプルで試す」で、科目・学習項目・前提項目・ノート（単語枠と要約枠）を1セット作る。
++// 自分で一から作らなくても、ノート・関連図・単語テストをすぐ試せる（発表のデモにも使える）。
++// 作るときは、ふつうのボタンと同じく Controller を通す（G003:addSubject → G004:addItem → G004:setPrerequisites → G004:saveNote）。
++// 中身（SAMPLE）はただのデータ。画面のボタンと同じく Controller を呼ぶので、lib ではなく components に置いた
++import type { Subject } from "../beans/Subject";
++import type { LearningItem } from "../beans/LearningItem";
++import { Word } from "../beans/Word";
++import { PartType } from "../enums/PartType";
++import { newId, newPart } from "../lib/logic";
++import { controller } from "../controller/Controller";
++
++interface SampleItem { name: string; prereqs: string[]; words: [string, string][]; summary: string }
++export const SAMPLE: { subject: string; items: SampleItem[] } = {
++  subject: "サンプル：生物基礎",
++  items: [
++    { name: "細胞のつくり", prereqs: [], summary: "生物の体は細胞でできている。植物の細胞には、動物の細胞にない細胞壁と葉緑体がある。",
++      words: [["核", "遺伝情報（DNA）が入っている部分"], ["細胞膜", "細胞の内と外を仕切るうすい膜"], ["細胞壁", "植物の細胞の外側にあるかたい壁"], ["ミトコンドリア", "呼吸を行い、エネルギーを取り出す場所"], ["葉緑体", "光合成を行う場所"]] },
++    { name: "光合成", prereqs: ["細胞のつくり"], summary: "植物は葉緑体で、光のエネルギーを使って二酸化炭素と水からデンプンなどをつくり、酸素を出す。",
++      words: [["光合成", "光のエネルギーで有機物をつくるはたらき"], ["クロロフィル", "葉緑体にある緑色の色素"], ["気孔", "葉の表面にある、気体が出入りするすき間"], ["二酸化炭素", "光合成の材料になる気体"], ["酸素", "光合成でできて出される気体"]] },
++    { name: "呼吸", prereqs: ["細胞のつくり"], summary: "細胞はミトコンドリアで有機物を分解し、生きるためのエネルギーを取り出す。このとき酸素を使い、二酸化炭素を出す。",
++      words: [["呼吸", "有機物を分解してエネルギーを取り出すはたらき"], ["ATP", "生物がエネルギーのやりとりに使う物質"], ["グルコース", "呼吸でよく使われる糖"]] },
++  ],
++};
++
++/** サンプルの科目を作り、作った科目と最初の学習項目を返す。途中で失敗したらエラーの文を投げる */
++export async function createSample(studentId: string): Promise<{ subject: Subject; first: LearningItem }> {
++  const must = <T>(r: { error?: string; data?: unknown }) => { if (r.error) throw new Error(r.error); return r.data as T; };
++  const subject = must<Subject>(await controller.handleRequest("G003", "addSubject", { studentId, name: SAMPLE.subject }));
++  const made = new Map<string, LearningItem>();
++  for (const it of SAMPLE.items) {
++    const item = must<LearningItem>(await controller.handleRequest("G004", "addItem", { studentId, subjectId: subject.subjectId, name: it.name }));
++    made.set(it.name, item);
++    const words = newPart(PartType.FRAME, 24, "word"), summary = newPart(PartType.FRAME, 0, "summary");
++    words.words = it.words.map(([term, meaning]) => new Word({ wordId: newId(), partId: words.partId, term, meaning, updatedAt: words.updatedAt }));
++    words.height = 76 + it.words.length * 34; // 見出し＋1行約34px×単語の数＋「＋単語」ボタン
++    summary.text = it.summary; summary.y = words.y + words.height + 36;
++    must(await controller.handleRequest("G004", "saveNote", { studentId, itemId: item.itemId, parts: [words, summary] }));
++  }
++  for (const it of SAMPLE.items) {
++    if (!it.prereqs.length) continue;
++    must(await controller.handleRequest("G004", "setPrerequisites", { itemId: made.get(it.name)!.itemId, prereqIds: it.prereqs.map(n => made.get(n)!.itemId) }));
++  }
++  return { subject, first: made.get(SAMPLE.items[0].name)! };
++}
+diff --git a/src/components/toast.tsx b/src/components/toast.tsx
+index 3074edb..4de6cde 100644
+--- a/src/components/toast.tsx
++++ b/src/components/toast.tsx
+@@ -1,11 +1,22 @@
+ // 【このファイルで何が起きているか】
+ // 画面の下に少しだけ出て消える、短いお知らせ（トースト）です。例：toast("保存したよ")
+-// どこからでも toast("文")（トースト：短いお知らせ） と呼べば、1.6秒だけ表示される
++// どこからでも toast("文") と呼べば表示される。ふつうのお知らせは1.6秒で消える。
++// 11/23：エラーは toast(r.error, "error") と呼ぶ。赤い帯・長め（文の長さに合わせて4〜8秒）に出して、読む前に消えないようにした
+ import { useEffect, useState } from "react";
+-let emit: (m: string) => void = () => {};
+-export const toast = (m: string) => emit(m);
++
++export type ToastKind = "info" | "error";
++let emit: (m: string, kind: ToastKind) => void = () => {};
++export const toast = (m: string, kind: ToastKind = "info") => emit(m, kind);
++/** 表示する長さ（ミリ秒）。エラーは文が長いほど長く出す */
++export const toastMs = (m: string, kind: ToastKind) => kind === "error" ? Math.min(8000, Math.max(4000, [...m].length * 90)) : 1600;
++
+ export function Toast() {
+-  const [m, setM] = useState(""); const [show, setShow] = useState(false);
+-  useEffect(() => { let t = 0; emit = x => { setM(x); setShow(true); clearTimeout(t); t = window.setTimeout(() => setShow(false), 1600); }; return () => clearTimeout(t); }, []);
+-  return <div id="toast" role="status" className={show ? "show" : ""}>{m}</div>;
++  const [m, setM] = useState<{ text: string; kind: ToastKind }>({ text: "", kind: "info" }); const [show, setShow] = useState(false);
++  useEffect(() => {
++    let t = 0;
++    emit = (text, kind) => { setM({ text, kind }); setShow(true); clearTimeout(t); t = window.setTimeout(() => setShow(false), toastMs(text, kind)); };
++    return () => clearTimeout(t);
++  }, []);
++  return <div id="toast" role={m.kind === "error" ? "alert" : "status"} aria-live={m.kind === "error" ? "assertive" : "polite"}
++    className={(show ? "show" : "") + (m.kind === "error" ? " error" : "")} onClick={() => setShow(false)}>{m.text}</div>;
+ }
+diff --git a/src/controller/Controller.ts b/src/controller/Controller.ts
+index a0f1cfa..57ce8da 100644
+--- a/src/controller/Controller.ts
++++ b/src/controller/Controller.ts
+@@ -77,10 +77,10 @@ export interface StudentData {
+  */
+ export type RequestParams = {
+   "G001:login": { mail: string; pass: string };
+-  "G001:frastLoginButton": NoParams; // 新規登録画面へ
++  "G001:firstLoginButton": NoParams; // 新規登録画面へ（11/23：つづりを first に直し、G001・G002 で大文字小文字もそろえた。外部設計書のイベント一覧も合わせて直すこと）
+   "G001:googleLogin": NoParams;
+   "G002:googleLogin": NoParams;
+-  "G002:frastloginbutton": { mail: string; pass: string; passConfirm: string }; // 登録
++  "G002:firstLoginButton": { mail: string; pass: string; passConfirm: string }; // 登録
+   "G002:back": NoParams;
+   "G003:loadSubjects": { studentId: string };
+   "G003:addSubject": { studentId: string; name: string };
+@@ -111,6 +111,7 @@ export type RequestParams = {
+   "G010:editAnswer": QuestionOf & { attemptId: string; answer: string };
+   "G010:editExplanation": QuestionOf & { explanation: string };
+   "G010:regenerateExplanation": QuestionOf & { extra: string };
++  "G010:retryWrong": { testId: string; attemptId: string }; // 11/23 追加（外部設計書のイベント一覧にも追加すること）
+   "G011:deleteTest": { testIds: string[] };
+ } & {
+   // ログアウトはヘッダーのボタンなので、どの画面からでも。clearLocal：この端末のデータも消すか、force：送れていない変更があっても消すか
+@@ -163,15 +164,15 @@ export class Controller {
+           const { mail, pass } = p("G001:login");
+           return { next: "G003", student: await this.accountManager.login(mail, pass) };
+         }
+-        case "G001:frastLoginButton": // 新規登録画面へ
++        case "G001:firstLoginButton": // 新規登録画面へ
+           return { next: "G002" };
+         case "G001:googleLogin": // 外部設計書に追加が必要（Google でログイン）
+         case "G002:googleLogin":
+           await this.accountManager.loginWithGoogle(); // ページが Google に移動する
+           return {};
+         // ---- G002 アカウント登録画面 ----
+-        case "G002:frastloginbutton": {
+-          const { mail, pass, passConfirm } = p("G002:frastloginbutton");
++        case "G002:firstLoginButton": {
++          const { mail, pass, passConfirm } = p("G002:firstLoginButton");
+           return { next: "G003", student: await this.accountManager.register(mail, pass, passConfirm) };
+         }
+         case "G002:back": // 外部設計書に追加が必要（ログインへ戻る）
+@@ -289,6 +290,10 @@ export class Controller {
+           const { testId, questionId, extra: ins } = p("G010:regenerateExplanation");
+           return { data: await this.testManager.regenerateExplanation(testId, questionId, ins) };
+         }
++        case "G010:retryWrong": { // 間違えた問題だけで新しいテストを作る（11/23）。作ったテストを返す
++          const { testId, attemptId } = p("G010:retryWrong");
++          return { data: await this.testManager.createRetryTest(testId, attemptId) };
++        }
+         // ---- G011 テスト一覧 ----
+         case "G011:deleteTest": { // 削除（11/23）。選んだテストを、問題・受験・解答ごと消す（まとめて消すときは複数）
+           await this.testManager.deleteTests(p("G011:deleteTest").testIds);
+diff --git a/src/index.css b/src/index.css
+index fd19edd..9820b4f 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -127,3 +127,38 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
+ .cover{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--mute);background:var(--soft);border-radius:10px;padding:6px 10px;margin:0 0 8px}
+ .cover .btn{margin-left:auto}
+ 
++
++/* ===== 11/23 使い心地・見やすさの改善 ===== */
++/* 文字の色のコントラストを WCAG AA（4.5:1）以上に（前の --mute #7a7690 は 4.3:1 で少し足りなかった） */
++:root{--mute:#6b6782;--err:#b8324e}
++/* キーボードで選んだ場所がはっきり分かるように */
++[role=button]:focus-visible,.chip:focus-visible,.toc:focus-visible,.choice:focus-visible,.pill:focus-visible,.link:focus-visible,.inp:focus-visible,.srcchip:focus-visible,.filebtn:focus-within{outline:3px solid color-mix(in srgb,var(--pri) 40%,transparent);outline-offset:2px;border-radius:10px}
++.skip{position:absolute;left:8px;top:-60px;z-index:80;background:var(--pri);color:#fff;padding:8px 14px;border-radius:10px;font-weight:700}.skip:focus{top:8px}
++.vh{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
++.ct:focus{outline:none}
++/* エラーのトースト：赤く、長めに出す（押すと消える） */
++#toast.error{background:var(--err);font-weight:700;max-width:min(560px,92vw);border-radius:14px;text-align:center;pointer-events:auto;cursor:pointer}
++/* 困った顔のるん＋次にすること */
++.errnote{display:flex;gap:10px;align-items:flex-start;background:#fbeef0;border:1px solid #efc3cc;color:var(--err);border-radius:14px;padding:8px 12px;margin:8px 0;font-size:14px;white-space:pre-line}
++.errnote>div{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.errnote .btn{color:var(--ink)}
++/* 資料の追加の進み具合 */
++.upprog{margin:6px 0}.upprog .fname{display:inline}.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--ai);transition:width .2s}
++/* 前提の復習のおすすめ・まっさらなノートの案内 */
++.weak{display:flex;gap:10px;align-items:center;background:#fff7ea;border:1px solid #f0d3a4;border-radius:14px;padding:8px 12px;margin:6px 0;font-size:14px}.weak .link{color:var(--ink);font-weight:700;padding:0}
++.starter{border:2px dashed var(--line2);border-radius:16px;padding:12px 16px;margin:6px 0;display:flex;flex-direction:column;gap:8px;background:#fff}
++/* はじめての人への案内（科目一覧） */
++.welcome{border:1px solid var(--line);background:#fff;border-radius:18px;padding:18px 20px;margin-top:12px;display:flex;flex-direction:column;gap:12px}.welcome h3{margin:0}
++.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:8px}
++.steps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;column-gap:10px;align-items:center}.steps li::before{content:counter(s);grid-row:span 2;width:32px;height:32px;border-radius:50%;background:var(--soft);color:var(--acc);font-weight:700;display:grid;place-items:center}
++.steps span{color:var(--mute);font-size:13px}
++/* 正答率の推移・関連図の凡例・前回との比較 */
++.trend{border:1px solid var(--line);border-radius:14px;background:#fff;padding:8px 12px;margin:10px 0 0;max-width:420px}.trend svg{width:100%;height:auto;display:block}
++.trend text{font-size:10px;fill:var(--mute)}.trend .grid{stroke:var(--line);stroke-width:1}.trend .ln{fill:none;stroke:var(--ai);stroke-width:2.5;stroke-linejoin:round}
++.trend .dot{fill:#fff;stroke:var(--ai);stroke-width:2}.trend .dot.on{fill:var(--ai)}
++.up{color:var(--ok)}.down{color:var(--err)}
++.legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;margin-top:4px}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
++/* AIの提案の「元になった所」 */
++.srcs{font-size:12px;color:var(--mute);margin:2px 0 6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
++.srcchip{border:1px solid var(--line2);background:var(--bg);border-radius:99px;padding:0 10px;font-size:12px}.srcchip:hover,.srcchip.on,.toc.on{border-color:var(--ai);background:#eef6f3}
++@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
++.errnote .mas,.weak .mas,.aiwait .mas{flex:none}
+diff --git a/src/lib/keys.ts b/src/lib/keys.ts
+new file mode 100644
+index 0000000..09a639a
+--- /dev/null
++++ b/src/lib/keys.ts
+@@ -0,0 +1,14 @@
++// キー操作の小さな決まり（11/23）
++//
++// 【このファイルで何が起きているか】
++// 日本語を入力するとき、変換を確定する Enter も keydown として届く。
++// それを「送信」「次の問題へ」の Enter と取り違えると、漢字に変換しただけで送信されてしまう。
++// imeEnter は「変換中の Enter か」を返す。Chrome・Firefox は isComposing、Safari は keyCode 229 で分かる
++// （React のイベントは nativeEvent に、ブラウザのイベントはそのものに入っている）
++interface KeyLike { isComposing?: boolean; keyCode?: number; nativeEvent?: { isComposing?: boolean; keyCode?: number } }
++
++/** 日本語の変換を確定するための Enter（＝送信や次へ進む Enter ではない）なら true */
++export function imeEnter(e: KeyLike): boolean {
++  const n = e.nativeEvent ?? e;
++  return !!(n.isComposing || e.isComposing || n.keyCode === 229 || e.keyCode === 229);
++}
+diff --git a/src/lib/logic.ts b/src/lib/logic.ts
+index 024b1f1..ce48b20 100644
+--- a/src/lib/logic.ts
++++ b/src/lib/logic.ts
+@@ -35,6 +35,18 @@ export function nameError(name: string, label: string): string | null {
+   if ([...n].length > NAME_MAX) return `${label}は${NAME_MAX}文字までです`;
+   return null;
+ }
++/**
++ * 単語テストの選択肢を、全問分まとめて作る（11/23）。answers[i] が i 問目の正解。
++ * 正解1つ＋ほかの問題の答えから最大3つ。正解と同じ答え（全角半角・大文字小文字の違いだけのものも）や空の答えは混ぜない。
++ * 前は問題を開くたびに作り直していたので、前の問題に戻ると並びが変わり、同じ用語が2つあると同じ選択肢が並んでいた
++ */
++export function choicesFor(answers: readonly string[], rand: <T>(a: T[]) => T[] = shuffle): string[][] {
++  return answers.map(correct => {
++    const k = norm(correct), seen = new Set([k]), others: string[] = [];
++    for (const a of answers) { const n = norm(a); if (n && !seen.has(n)) { seen.add(n); others.push(a); } }
++    return rand([correct, ...rand(others).slice(0, 3)]);
++  });
++}
+ /** 問題数を5〜20問にそろえる（数でなければ10問） */
+ export const clampQuestionCount = (n: number) => Math.min(20, Math.max(5, Math.round(n) || 10));
+ export const calls = (chars: number) => Math.max(1, Math.ceil(chars / SEND_LIMIT));
+diff --git a/src/lib/select.ts b/src/lib/select.ts
+index ff3cacb..4ab9036 100644
+--- a/src/lib/select.ts
++++ b/src/lib/select.ts
+@@ -91,3 +91,50 @@ export function sortTests<R extends { t: Test; i: LearningItem }>(rows: readonly
+   return [...rows].sort(cmp[by]);
+ }
+ 
++// ---------- 11/23：正答率（どれくらい覚えたか）を見る ----------
++// 採点があるのは「意味→用語」の単語テストだけなので、どれもそのテストの結果から数える
++
++/** 1回分の点数 */
++export interface ScorePoint { attemptNo: number; takenAt: string; ok: number; total: number; rate: number }
++
++/** そのテストの点数の推移（1回目から順に）。採点のないテストや、まだ解いていないテストは空 */
++export function scoreHistory(test: Test): ScorePoint[] {
++  if (test.testType !== TestType.MEANING_TO_TERM) return [];
++  const total = test.questions.length;
++  return attemptsOf(test).map(a => { const ok = a.answers.filter(x => x.correct).length; return { attemptNo: a.attemptNo, takenAt: a.takenAt, ok, total, rate: total ? ok / total : 0 }; });
++}
++
++/**
++ * 学習項目の正答率（0〜1）。その項目の単語テスト（意味→用語）それぞれの「いちばん新しい回」を合わせて数える。
++ * 例：10問中8問と5問中2問なら (8+2)/(10+5)。1回も解いていなければ null
++ */
++export function itemMastery(tests: readonly Test[], itemId: string): number | null {
++  let ok = 0, total = 0;
++  for (const t of tests) {
++    if (t.itemId !== itemId) continue;
++    const s = lastScore(t); if (!s || !s.total) continue;
++    ok += s.ok; total += s.total;
++  }
++  return total ? ok / total : null;
++}
++
++/** 正答率がこれより低い前提項目は「先に復習」と出す */
++export const WEAK_RATE = 0.6;
++
++/** その学習項目の前提項目のうち、正答率が低いもの（低い順）。解いていない前提項目は出さない */
++export function weakPrereqs(prerequisites: readonly Prerequisite[], items: readonly LearningItem[], tests: readonly Test[], itemId: string, limit = WEAK_RATE): { item: LearningItem; rate: number }[] {
++  const out: { item: LearningItem; rate: number }[] = [];
++  for (const id of prereqIdsOf(prerequisites, itemId)) {
++    const item = items.find(i => i.itemId === id), rate = itemMastery(tests, id);
++    if (item && rate !== null && rate < limit) out.push({ item, rate });
++  }
++  return out.sort((a, b) => a.rate - b.rate);
++}
++
++/** 正答率を3段階に分ける（関連図の丸の色に使う）。null は「まだ解いていない」 */
++export type MasteryLevel = "good" | "mid" | "weak" | null;
++export const masteryLevel = (rate: number | null): MasteryLevel => rate === null ? null : rate >= 0.8 ? "good" : rate >= WEAK_RATE ? "mid" : "weak";
++
++/** 学習項目IDごとの正答率（関連図に渡す形） */
++export const masteryMap = (items: readonly LearningItem[], tests: readonly Test[]): Record<string, number | null> =>
++  Object.fromEntries(items.map(i => [i.itemId, itemMastery(tests, i.itemId)]));
+diff --git a/src/lib/source.ts b/src/lib/source.ts
+new file mode 100644
+index 0000000..e537c75
+--- /dev/null
++++ b/src/lib/source.ts
+@@ -0,0 +1,34 @@
++// AIの提案が「元にした内容のどこから来たか」を探す（11/23）
++//
++// 【このファイルで何が起きているか】
++// AIの提案（例：要約枠の文）と、送った内容（資料のページ・ノートの枠）を見比べて、
++// 提案の文字の並びがいちばん多く入っている所を「元になった所」として返す。
++// 比べ方：2文字ずつの組（「光合」「合成」…）に分けて、提案の組のうち何割がその所にもあるかを数える（大文字小文字・全角半角・空白は無視）。
++// AIのサーバーには手を入れず、画面の中だけで分かるので、AIが根拠を返さなくても使える
++import { norm } from "./logic";
++
++export interface SourceText { id: string; label: string; text: string }
++export interface SourceHit { id: string; label: string; score: number }
++
++/** 2文字ずつの組の集まり */
++export function grams(s: string): Set<string> {
++  const c = [...norm(s).replace(/\s+/g, "")], out = new Set<string>();
++  for (let i = 0; i + 1 < c.length; i++) out.add(c[i] + c[i + 1]);
++  return out;
++}
++
++/**
++ * 提案 content の元になった所を、よく合う順に最大 max 件返す。
++ * score は「提案の組のうち、その所にもある組の割合」（0〜1）。min より低いもの・提案が短すぎる（組が3つ未満）ときは出さない
++ */
++export function findSources(content: string, sources: readonly SourceText[], max = 2, min = 0.3): SourceHit[] {
++  const g = grams(content); if (g.size < 3) return [];
++  const hits: SourceHit[] = [];
++  for (const s of sources) {
++    const h = grams(s.text); let n = 0;
++    for (const x of g) if (h.has(x)) n++;
++    const score = n / g.size;
++    if (score >= min) hits.push({ id: s.id, label: s.label, score });
++  }
++  return hits.sort((a, b) => b.score - a.score).slice(0, max);
++}
+diff --git a/src/lib/words.ts b/src/lib/words.ts
+index 8104010..6715694 100644
+--- a/src/lib/words.ts
++++ b/src/lib/words.ts
+@@ -20,7 +20,8 @@ export function lineToWord(line: string): TermMeaning {
+   const l = line.trim();
+   const m = /[：:]/.exec(l) ?? /とは/.exec(l);
+   if (!m) return { term: l, meaning: "" };
+-  return { term: l.slice(0, m.index).trim(), meaning: l.slice(m.index + m[0].length).trim() };
++  // 11/23：「光合成とは、植物が…」のように区切りのすぐ後ろにある読点は意味に入れない
++  return { term: l.slice(0, m.index).trim(), meaning: l.slice(m.index + m[0].length).trim().replace(/^[、，,]\s*/, "") };
+ }
+ 
+ /** 「用語：意味」の行を単語のリストにする（空の行は飛ばす） */
+diff --git a/src/managers/TestManager.ts b/src/managers/TestManager.ts
+index 1fe6c8c..045a8e4 100644
+--- a/src/managers/TestManager.ts
++++ b/src/managers/TestManager.ts
+@@ -70,6 +70,27 @@ export class TestManager {
+     return (await this.testDAO.findById(testId))!;
+   }
+ 
++  /**
++   * 間違えた問題だけで、新しいテストを作る（G010 の「間違えた問題だけ解き直す」、11/23）。
++   * 採点のある「意味→用語」だけ。attemptId の回で不正解（未回答も含む）だった問題を、同じ問題文・模範解答のまま新しいテストにする。
++   * 元のテストと結果はそのまま残すので、点数の記録（推移）はくずれない
++   */
++  async createRetryTest(testId: string, attemptId: string): Promise<Test> {
++    const src = await this.getTest(testId);
++    if (src.testType !== TestType.MEANING_TO_TERM) throw new TestError("間違えた問題だけの解き直しは、採点のある「意味→用語」のテストだけです");
++    const attempt = src.attempts.find(a => a.attemptId === attemptId);
++    if (!attempt) throw new TestError("受験の記録が見つかりません");
++    const wrong = wrongQuestions(src, attempt);
++    if (!wrong.length) throw new TestError("この回は全問正解なので、解き直す問題はありません");
++    const newTestId = newId();
++    const test = new Test({
++      testId: newTestId, studentId: src.studentId, itemId: src.itemId, testType: src.testType, questionCount: wrong.length, createdAt: now(),
++      questions: wrong.map((q, i) => new Question({ questionId: newId(), testId: newTestId, studentId: src.studentId, number: i + 1, questionText: q.questionText, modelAnswer: q.modelAnswer })),
++    });
++    await this.testDAO.insert(test); await this.sync();
++    return (await this.testDAO.findById(newTestId))!;
++  }
++
+   /** テスト一覧を返す（G011、新しい順） */
+   async getTests(itemId: string): Promise<Test[]> { return this.testDAO.findByItem(itemId); }
+ 
+@@ -174,4 +195,10 @@ export class TestManager {
+   private sync() { return pushQuietly(this.syncManager); }
+ }
+ 
++/** その回で不正解（未回答も含む）だった問題を、問題番号の順に返す（採点のないテストでは空） */
++export function wrongQuestions(test: Test, attempt: Attempt): Question[] {
++  if (test.testType !== TestType.MEANING_TO_TERM) return [];
++  return inOrder(test).filter(q => attempt.answers.find(a => a.questionId === q.questionId)?.correct !== true);
++}
++
+ const checkLength = (s: string) => { if ([...s].length > SEND_LIMIT) throw new TestError("追加の指示が長すぎます（問題と合わせて1万文字まで）"); };
+\ No newline at end of file
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 4888048..d9b355c 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -17,16 +17,18 @@ const TIMEOUT_MS = 250_000; // 11/22：90秒 → 250秒。サーバーはAI2つ
+ /** サーバーから返るエラーの種類（画面に出す文言はここで決める） */
+ export type ApiErrorCode = "UNAUTHORIZED" | "LIMIT_EXCEEDED" | "TOO_LONG" | "AI_UNAVAILABLE" | "BAD_REQUEST" | "NETWORK" | "SERVER" | "OFFLINE" | "TIMEOUT";
+ const TEXT: Record<ApiErrorCode, string> = {
+-  UNAUTHORIZED: "ログインの期限が切れました。もう一度ログインしてください",
+-  LIMIT_EXCEEDED: "今日はこれ以上使えません",
++  UNAUTHORIZED: "ログインの期限が切れました。右上の「ログアウト」から、もう一度ログインしてください（ノートは端末に保存されています）",
++  LIMIT_EXCEEDED: "今日のAIの利用回数を使い切りました。夜0時（日本時間）に回数が戻ります。ノートを手で書くことと単語テストは、AIなしでできます",
+   TOO_LONG: "送る内容が長すぎます。1万文字ごとに分けて送ってください",
+-  AI_UNAVAILABLE: "AIサービスが使えません。時間をおいて試してください",
++  AI_UNAVAILABLE: "AIサービスが今つながりません。数分おいて、もう一度試してください（利用回数は減っていません）",
+   BAD_REQUEST: "送る内容に問題がありました。見直してください",
+   NETWORK: "サーバーとつながりません。インターネットの接続を確認してください",
+   SERVER: "サーバーでエラーが起きました。時間をおいて試してください",
+   OFFLINE: "インターネットにつながっていません。つながってから、もう一度試してください（ノートの保存は端末にできます）",
+   TIMEOUT: "AIの返事が来ませんでした（4分）。時間をおいて、もう一度試してください。利用回数は減っていません",
+ };
++/** 利用回数が足りないときの文（画面で先に確かめるときも同じ文を出す） */
++export const LIMIT_TEXT = TEXT.LIMIT_EXCEEDED;
+ export class ApiError extends Error {
+   constructor(public code: ApiErrorCode, public status = 0) { super(TEXT[code]); }
+ }
+diff --git a/src/state/app.tsx b/src/state/app.tsx
+index b349207..ba4d45c 100644
+--- a/src/state/app.tsx
++++ b/src/state/app.tsx
+@@ -29,6 +29,7 @@ import { removeOldData } from "../services/db";
+ import { controller, type StudentData } from "../controller/Controller";
+ import { toast } from "../components/toast";
+ import { nameError } from "../lib/logic";
++import { imeEnter } from "../lib/keys";
+ 
+ /** 確認ダイアログのボタン。primary＝主な操作（紺）、danger＝消す操作（赤） */
+ export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
+@@ -87,7 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
+     const a = aRef.current; if (!a) return;
+     const n = ++seq.current;
+     const r = await controller.handleRequest("G003", "loadSubjects", { studentId: a.studentId });
+-    if (r.error) { toast(r.error); if (n === seq.current) setLoaded(true); return; } // 失敗しても「読み込み中」のままにしない
++    if (r.error) { toast(r.error, "error"); if (n === seq.current) setLoaded(true); return; } // 失敗しても「読み込み中」のままにしない
+     const d = r.data as StudentData | undefined;
+     if (!d || n !== seq.current || aRef.current?.studentId !== a.studentId) return; // 古い結果・ほかの学生の結果は出さない
+     setDb(d); setLoaded(true);
+@@ -110,7 +111,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
+   const save = useCallback(async (itemId: string) => {
+     const dr = dRef.current[itemId], sid = aRef.current?.studentId; if (!dr || !sid) return false;
+     const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, parts: dr });
+-    if (r.error) { toast(r.error); return false; } // 保存できなかったときは下書きを残す
++    if (r.error) { toast(r.error, "error"); return false; } // 保存できなかったときは下書きを残す
+     await reload();
+     setDrafts(p => { if (p[itemId] !== dr) return p; const n = { ...p }; delete n[itemId]; return n; }); // 保存中にさらに書いた分は残す
+     return true;
+@@ -150,7 +151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
+       if (w !== "force") return;
+       r = await controller.handleRequest(s, "logoutButton", { clearLocal: true, force: true });
+     }
+-    if (r.error) { toast(r.error); return; }
++    if (r.error) { toast(r.error, "error"); return; }
+     if (v === "clear") toast("この端末のデータを消してログアウトしたよ");
+     close();
+   }, [guard, ask, close]);
+@@ -164,7 +165,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
+     setRefreshing(true);
+     try {
+       const r = await controller.handleRequest(rRef.current.s, "refreshButton");
+-      if (r.error) { toast(r.error); return; }
++      if (r.error) { toast(r.error, "error"); return; }
+       await reload(); toast("最新にしたよ");
+     } finally { setRefreshing(false); }
+   }, [refreshing, guard, reload]);
+@@ -181,14 +182,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
+     if (err) return setPop({ ...pop, err });
+     pop.res(pop.val.trim()); setPop(null);
+   };
++  const choose = (v: string) => { dlg?.res(v); setDlg(null); };
++  // 11/23：Esc で閉じるときの答え。「キャンセル」「やめる」などのボタン（value が cancel か no）があれば、それを押したことにする
++  const dlgCancel = dlg?.buttons.find(b => b.value === "cancel" || b.value === "no");
++  // 消す操作の確認では、うっかり Enter で消さないよう、最初は「やめる」側にフォーカスを置く
++  const dlgFocus = dlg?.buttons.some(b => b.danger) ? dlgCancel?.value : dlg?.buttons.find(b => b.primary)?.value;
+   return (
+     <C.Provider value={value}>
+       {children}
+-      {dlg && <div className="ov"><div className="dlg" role="dialog"><p>{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} className={"btn" + (b.danger ? " danger" : b.primary ? " pri" : " line")} onClick={() => { dlg.res(b.value); setDlg(null); }}>{b.label}</button>)}</div></div></div>}
+-      {pop && <div className="ov"><div className="dlg" role="dialog"><h3>{pop.title}</h3>
+-        <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter") submitPop(); else if (e.key === "Escape") { pop.res(null); setPop(null); } }} placeholder="50文字まで" />
+-        {pop.err && <div className="err">{pop.err}</div>}
+-        <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
++      {dlg && <Modal label={dlg.msg} onCancel={dlgCancel ? () => choose(dlgCancel.value) : undefined}><p id="dlg-msg">{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} data-autofocus={b.value === dlgFocus || undefined} className={"btn" + (b.danger ? " danger" : b.primary ? " pri" : " line")} onClick={() => choose(b.value)}>{b.label}</button>)}</div></Modal>}
++      {pop && <Modal label={pop.title} onCancel={() => { pop.res(null); setPop(null); }}><h3>{pop.title}</h3>
++        <input data-autofocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter" && !imeEnter(e)) submitPop(); }} placeholder="50文字まで" aria-label={pop.title} aria-invalid={!!pop.err} aria-describedby={pop.err ? "pop-err" : undefined} />
++        {pop.err && <div className="err" id="pop-err" role="alert">{pop.err}</div>}
++        <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></Modal>}
+     </C.Provider>
+   );
++}
++
++/**
++ * 確認ダイアログ・名前の入力の外枠（11/23：キーボードで使いやすくした）
++ * ・開いたら中の部品（data-autofocus の付いたもの）にフォーカスを移し、閉じたら元の場所に戻す
++ * ・Esc で onCancel（キャンセル）。Tab はダイアログの中だけを回る（後ろの画面に行かない）
++ */
++function Modal({ label, onCancel, children }: { label: string; onCancel?: () => void; children: ReactNode }) {
++  const box = useRef<HTMLDivElement>(null), cancel = useRef(onCancel); cancel.current = onCancel;
++  useEffect(() => {
++    const back = document.activeElement as HTMLElement | null, el = box.current;
++    (el?.querySelector<HTMLElement>("[data-autofocus]") ?? el?.querySelector<HTMLElement>("button, input"))?.focus();
++    const onKey = (e: KeyboardEvent) => {
++      if (e.key === "Escape" && cancel.current) { e.preventDefault(); e.stopPropagation(); cancel.current(); return; }
++      if (e.key !== "Tab" || !el) return;
++      const f = [...el.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])")]; if (!f.length) return;
++      const i = f.indexOf(document.activeElement as HTMLElement);
++      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
++    };
++    document.addEventListener("keydown", onKey, true);
++    return () => { document.removeEventListener("keydown", onKey, true); if (back?.isConnected) back.focus(); };
++  }, []);
++  return <div className="ov"><div className="dlg" role="dialog" aria-modal="true" aria-label={label} ref={box}>{children}</div></div>;
+ }
+\ No newline at end of file
+diff --git a/tests/README.md b/tests/README.md
+index dd5347f..8243382 100644
+--- a/tests/README.md
++++ b/tests/README.md
+@@ -23,6 +23,11 @@
+ | `nodeLabel.test.ts` | 関連図の丸の中の名前（4文字ずつ2行まで、入らない分は「…」） |
+ | `isPullStale.test.ts` | ページを開き直したときに受け取り直すか（30分以内なら受け取らない・時刻が読めない／未来なら念のため受け取る） |
+ | `nameError.test.ts` | 科目名・学習項目名の確認（空・空白だけはだめ・50文字まで・絵文字も1文字と数える） |
++| `choices.test.ts` | 単語テストの選択肢（正解を必ず入れる・同じ答えを並べない・空の答えは使わない）。11/23 のバグの再発防止 |
++| `mastery.test.ts` | 正答率の推移・学習項目の正答率・「先に復習」と出す前提項目・3段階の色分け |
++| `retryWrong.test.ts` | 間違えた問題だけの解き直し（間違えた問題の選び方・新しいテストの中身・元のテストを変えない・全問正解や採点なしのときのエラー） |
++| `source.test.ts` | AIの提案の「元になった所」の探し方（よく合う順・合わないときは出さない・短すぎる提案） |
++| `keys.test.ts` | 日本語の変換を確定する Enter の見分け方・お知らせ（トースト）を出す長さ |
+ 
+ 初めて動かすときは、先に `npm install` をしてください（Vitest が入ります）。
+ テストのファイルは `src/` の外にあるので、`npm run build` には影響しません。
+diff --git a/tests/unit/choices.test.ts b/tests/unit/choices.test.ts
+new file mode 100644
+index 0000000..930d5eb
+--- /dev/null
++++ b/tests/unit/choices.test.ts
+@@ -0,0 +1,21 @@
++// 単体テスト：lib/logic.ts の choicesFor（単語テストの選択肢）
++// 11/23：同じ答えの単語が2つあると同じ選択肢が並ぶ・前の問題に戻ると並びが変わる、のバグの再発防止
++import { describe, expect, it } from "vitest";
++import { choicesFor } from "../../src/lib/logic";
++
++const keep = <T>(a: T[]) => [...a]; // 並べかえない（結果を確かめやすくする）
++
++describe("choicesFor：単語テストの選択肢", () => {
++  it("正解を必ず1つ入れる", () => {
++    const c = choicesFor(["核", "細胞膜", "細胞壁", "葉緑体", "液胞"]);
++    c.forEach((cs, i) => expect(cs.includes(["核", "細胞膜", "細胞壁", "葉緑体", "液胞"][i])).toBe(true));
++  });
++  it("選択肢は最大4つ", () => expect(choicesFor(["a", "b", "c", "d", "e", "f"])[0]).toHaveLength(4));
++  it("同じ答えが2つあっても、同じ選択肢を並べない", () => {
++    const c = choicesFor(["酸素", "酸素", "水", "光"], keep);
++    expect(c[0]).toEqual(["酸素", "水", "光"]);
++  });
++  it("全角半角・大文字小文字だけ違う答えも同じとみなす", () => expect(choicesFor(["ATP", "ａｔｐ", "DNA"], keep)[0]).toEqual(["ATP", "DNA"]));
++  it("空の答えは選択肢にしない", () => expect(choicesFor(["核", "", "  ", "膜"], keep)[0]).toEqual(["核", "膜"]));
++  it("問題が1つなら選択肢は正解だけ", () => expect(choicesFor(["核"], keep)).toEqual([["核"]]));
++});
+diff --git a/tests/unit/keys.test.ts b/tests/unit/keys.test.ts
+new file mode 100644
+index 0000000..45f5050
+--- /dev/null
++++ b/tests/unit/keys.test.ts
+@@ -0,0 +1,18 @@
++// 単体テスト：lib/keys.ts の imeEnter と、toast の表示時間
++// 11/23：日本語の変換を確定した Enter で、送信・次の問題へ進まないようにした（その見分け方）
++import { describe, expect, it } from "vitest";
++import { imeEnter } from "../../src/lib/keys";
++import { toastMs } from "../../src/components/toast";
++
++describe("imeEnter：変換を確定する Enter か", () => {
++  it("ブラウザのイベントで isComposing なら true", () => expect(imeEnter({ isComposing: true })).toBe(true));
++  it("React のイベント（nativeEvent）で isComposing なら true", () => expect(imeEnter({ nativeEvent: { isComposing: true } })).toBe(true));
++  it("Safari（keyCode 229）なら true", () => expect(imeEnter({ keyCode: 229 })).toBe(true));
++  it("ふつうの Enter なら false", () => expect(imeEnter({ isComposing: false, keyCode: 13 })).toBe(false));
++});
++
++describe("toastMs：お知らせを出す長さ", () => {
++  it("ふつうは1.6秒", () => expect(toastMs("保存したよ", "info")).toBe(1600));
++  it("エラーは4秒以上", () => expect(toastMs("だめ", "error")).toBe(4000));
++  it("長いエラーは長く（8秒まで）", () => expect(toastMs("あ".repeat(200), "error")).toBe(8000));
++});
+diff --git a/tests/unit/mastery.test.ts b/tests/unit/mastery.test.ts
+new file mode 100644
+index 0000000..ecaffbf
+--- /dev/null
++++ b/tests/unit/mastery.test.ts
+@@ -0,0 +1,48 @@
++// 単体テスト：lib/select.ts の正答率（scoreHistory・itemMastery・weakPrereqs・masteryLevel）
++// 11/23：正答率の推移のグラフ・関連図の輪・「前提を先に復習」の表示に使う
++import { describe, expect, it } from "vitest";
++import { itemMastery, masteryLevel, scoreHistory, weakPrereqs } from "../../src/lib/select";
++import { Test } from "../../src/beans/Test";
++import { Question } from "../../src/beans/Question";
++import { Attempt } from "../../src/beans/Attempt";
++import { Answer } from "../../src/beans/Answer";
++import { LearningItem } from "../../src/beans/LearningItem";
++import { Prerequisite } from "../../src/beans/Prerequisite";
++import { TestType } from "../../src/enums/TestType";
++
++/** 問題 n 問のテスト。results は回ごとの「正解した問題の数」 */
++function test(itemId: string, n: number, results: number[], type = TestType.MEANING_TO_TERM): Test {
++  const questions = Array.from({ length: n }, (_, i) => new Question({ questionId: `${itemId}-q${i}`, number: i + 1 }));
++  const attempts = results.map((ok, k) => new Attempt({ attemptId: `${itemId}-a${k}`, attemptNo: k + 1, takenAt: `2026-11-2${k}T00:00:00Z`,
++    answers: questions.map((q, i) => new Answer({ questionId: q.questionId, correct: type === TestType.MEANING_TO_TERM ? i < ok : null })) }));
++  return new Test({ testId: `${itemId}-t${n}`, itemId, testType: type, questions, attempts });
++}
++
++describe("scoreHistory：点数の推移", () => {
++  it("1回目から順に、正解数と正答率", () => expect(scoreHistory(test("A", 4, [1, 3])).map(p => [p.attemptNo, p.ok, p.rate])).toEqual([[1, 1, 0.25], [2, 3, 0.75]]));
++  it("採点のないテストは空", () => expect(scoreHistory(test("A", 4, [1], TestType.ESSAY))).toEqual([]));
++  it("まだ解いていなければ空", () => expect(scoreHistory(test("A", 4, []))).toEqual([]));
++});
++
++describe("itemMastery：学習項目の正答率", () => {
++  it("テストごとのいちばん新しい回を合わせる", () => expect(itemMastery([test("A", 10, [2, 8]), test("A", 5, [2])], "A")).toBe(10 / 15));
++  it("ほかの学習項目のテストは数えない", () => expect(itemMastery([test("A", 4, [4]), test("B", 4, [0])], "A")).toBe(1));
++  it("解いていなければ null", () => expect(itemMastery([test("A", 4, [])], "A")).toBeNull());
++  it("記述テストだけなら null", () => expect(itemMastery([test("A", 4, [1], TestType.ESSAY)], "A")).toBeNull());
++});
++
++describe("weakPrereqs：先に復習したほうがよい前提項目", () => {
++  const items = ["A", "B", "C", "D"].map(id => new LearningItem({ itemId: id, itemName: id }));
++  const pre = [new Prerequisite({ itemId: "D", prereqItemId: "A" }), new Prerequisite({ itemId: "D", prereqItemId: "B" }), new Prerequisite({ itemId: "D", prereqItemId: "C" })];
++  const tests = [test("A", 10, [3]), test("B", 10, [9]), test("C", 10, [5])];
++  it("正答率が60%より低い前提だけを、低い順に", () => expect(weakPrereqs(pre, items, tests, "D").map(w => w.item.itemId)).toEqual(["A", "C"]));
++  it("前提がなければ空", () => expect(weakPrereqs(pre, items, tests, "A")).toEqual([]));
++  it("解いていない前提は出さない", () => expect(weakPrereqs(pre, items, [test("B", 10, [1])], "D").map(w => w.item.itemId)).toEqual(["B"]));
++});
++
++describe("masteryLevel：3段階", () => {
++  it("80%以上は good", () => expect(masteryLevel(0.8)).toBe("good"));
++  it("60〜79%は mid", () => expect(masteryLevel(0.6)).toBe("mid"));
++  it("60%未満は weak", () => expect(masteryLevel(0.59)).toBe("weak"));
++  it("解いていなければ null", () => expect(masteryLevel(null)).toBeNull());
++});
+diff --git a/tests/unit/retryWrong.test.ts b/tests/unit/retryWrong.test.ts
+new file mode 100644
+index 0000000..88b4c25
+--- /dev/null
++++ b/tests/unit/retryWrong.test.ts
+@@ -0,0 +1,54 @@
++// 単体テスト：TestManager の「間違えた問題だけ解き直す」（createRetryTest・wrongQuestions）
++// TestDAO の代わりに、メモリの中だけで動く小さな DAO を使う（IndexedDB を使わない）
++import { describe, expect, it } from "vitest";
++import { TestManager, wrongQuestions } from "../../src/managers/TestManager";
++import type { TestDAO } from "../../src/dao/TestDAO";
++import { Test } from "../../src/beans/Test";
++import { Question } from "../../src/beans/Question";
++import { Attempt } from "../../src/beans/Attempt";
++import { Answer } from "../../src/beans/Answer";
++import { TestType } from "../../src/enums/TestType";
++
++class MemoryDAO {
++  rows = new Map<string, Test>();
++  async insert(t: Test) { this.rows.set(t.testId, new Test({ ...t, attempts: [] })); }
++  async findById(id: string) { return this.rows.get(id) ?? null; }
++}
++const noWords = { getWords: async () => [] };
++
++function source(type = TestType.MEANING_TO_TERM) {
++  const questions = ["核", "膜", "壁", "液胞"].map((a, i) => new Question({ questionId: `q${i}`, number: i + 1, questionText: `意味${i}`, modelAnswer: a }));
++  const answers = [true, false, null, true].map((c, i) => new Answer({ questionId: `q${i}`, correct: c, studentAnswer: c ? questions[i].modelAnswer : "" }));
++  return new Test({ testId: "t1", studentId: "s", itemId: "i1", testType: type, questions, attempts: [new Attempt({ attemptId: "a1", attemptNo: 1, answers })] });
++}
++
++describe("wrongQuestions：その回で間違えた問題", () => {
++  it("不正解と未回答を、番号の順に", () => expect(wrongQuestions(source(), source().attempts[0]).map(q => q.modelAnswer)).toEqual(["膜", "壁"]));
++  it("採点のないテストは空", () => expect(wrongQuestions(source(TestType.TERM_TO_MEANING), source().attempts[0])).toEqual([]));
++});
++
++describe("createRetryTest：間違えた問題だけの新しいテスト", () => {
++  const setup = async (t = source()) => { const dao = new MemoryDAO(); dao.rows.set(t.testId, t); return { dao, m: new TestManager(dao as unknown as TestDAO, noWords) }; };
++  it("間違えた2問だけで、問題文と模範解答はそのまま", async () => {
++    const { m } = await setup(); const t = await m.createRetryTest("t1", "a1");
++    expect(t.questions.map(q => [q.number, q.questionText, q.modelAnswer])).toEqual([[1, "意味1", "膜"], [2, "意味2", "壁"]]);
++  });
++  it("新しいテストIDで、同じ学習項目・同じ種類", async () => {
++    const { m } = await setup(); const t = await m.createRetryTest("t1", "a1");
++    expect([t.testId !== "t1", t.itemId, t.testType, t.questionCount]).toEqual([true, "i1", TestType.MEANING_TO_TERM, 2]);
++  });
++  it("元のテストは変えない", async () => { const { m, dao } = await setup(); await m.createRetryTest("t1", "a1"); expect(dao.rows.get("t1")!.questions).toHaveLength(4); });
++  it("全問正解ならエラー", async () => {
++    const t = source(); t.attempts[0].answers.forEach(a => { a.correct = true; });
++    const { m } = await setup(t); let msg = ""; try { await m.createRetryTest("t1", "a1"); } catch (e) { msg = (e as Error).message; }
++    expect(msg).toBe("この回は全問正解なので、解き直す問題はありません");
++  });
++  it("採点のないテストはエラー", async () => {
++    const { m } = await setup(source(TestType.ESSAY)); let msg = ""; try { await m.createRetryTest("t1", "a1"); } catch (e) { msg = (e as Error).message; }
++    expect(msg.includes("意味→用語")).toBe(true);
++  });
++  it("ない受験IDはエラー", async () => {
++    const { m } = await setup(); let msg = ""; try { await m.createRetryTest("t1", "zzz"); } catch (e) { msg = (e as Error).message; }
++    expect(msg).toBe("受験の記録が見つかりません");
++  });
++});
+diff --git a/tests/unit/source.test.ts b/tests/unit/source.test.ts
+new file mode 100644
+index 0000000..c1e37d9
+--- /dev/null
++++ b/tests/unit/source.test.ts
+@@ -0,0 +1,23 @@
++// 単体テスト：lib/source.ts（AIの提案の「元になった所」を探す）
++import { describe, expect, it } from "vitest";
++import { findSources, grams } from "../../src/lib/source";
++
++const SRC = [
++  { id: "m:0", label: "notes.txt p.1", text: "光合成とは、植物が光のエネルギーを使って二酸化炭素と水から有機物をつくるはたらき" },
++  { id: "m:1", label: "notes.txt p.2", text: "呼吸はミトコンドリアで行われ、酸素を使って有機物を分解する" },
++];
++
++describe("grams：2文字ずつの組", () => {
++  it("空白を除いて2文字ずつ", () => expect([...grams("光 合成")]).toEqual(["光合", "合成"]));
++  it("全角半角・大文字小文字をそろえる", () => expect([...grams("ＡＴＰ")]).toEqual([...grams("atp")]));
++  it("1文字なら空", () => expect(grams("核").size).toBe(0));
++});
++
++describe("findSources：元になった所", () => {
++  it("いちばん合う所を先に返す", () => expect(findSources("植物は光のエネルギーで有機物をつくる", SRC)[0].id).toBe("m:0"));
++  it("呼吸の文は p.2 を返す", () => expect(findSources("ミトコンドリアで酸素を使う", SRC)[0].id).toBe("m:1"));
++  it("どこにもない文なら空", () => expect(findSources("三角形の内角の和は180度", SRC)).toEqual([]));
++  it("短すぎる提案（組が3つ未満）は探さない", () => expect(findSources("光合", SRC)).toEqual([]));
++  it("max 件までにする", () => { expect(findSources("酸素を使って有機物を分解する", SRC, 2, 0)).toHaveLength(2); expect(findSources("酸素を使って有機物を分解する", SRC, 1, 0)).toHaveLength(1); });
++  it("score は 0〜1", () => { const s = findSources("光のエネルギー", SRC)[0].score; expect(s > 0 && s <= 1).toBe(true); });
++});
+diff --git a/tests/unit/words.test.ts b/tests/unit/words.test.ts
+index 98b8ef2..1c2c6e7 100644
+--- a/tests/unit/words.test.ts
++++ b/tests/unit/words.test.ts
+@@ -12,6 +12,7 @@ describe("lineToWord：1行を用語と意味に分ける", () => {
+ });
+ 
+ describe("textToWords・wordsToText：行き来しても変わらない", () => {
++  it("「とは」のすぐ後ろの読点は意味に入れない（11/23）", () => expect(lineToWord("光合成とは、光で有機物をつくること")).toEqual({ term: "光合成", meaning: "光で有機物をつくること" }));
+   it("空の行は飛ばす", () => expect(textToWords("葉緑体：粒\n\n気孔：すきま\n")).toHaveLength(2));
+   it("リスト → 文字 → リストで元に戻る", () => {
+     const words = [{ term: "葉緑体", meaning: "光合成：をする粒" }, { term: "集合時刻", meaning: "12:30" }];
+-- 
+2.43.0
+
