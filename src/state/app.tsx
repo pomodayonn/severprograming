@@ -66,6 +66,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dlg, setDlg] = useState<{ msg: string; buttons: Btn[]; res: (v: string) => void } | null>(null);
   const [pop, setPop] = useState<{ title: string; val: string; err: string; res: (v: string | null) => void } | null>(null);
   const dRef = useRef(drafts); dRef.current = drafts;
+  // 11/23：保存していないノートがあるときは、タブの名前に「●」を付け、タブを閉じる・再読み込みする前にブラウザが確認する
+  const dirty = Object.keys(drafts).length > 0;
+  useEffect(() => {
+    document.title = dirty ? "● るんです。" : "るんです。";
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const aRef = useRef(account); aRef.current = account;
   const rRef = useRef(route); rRef.current = route; // ログアウトのとき、いまの画面IDを Controller に渡す
 
@@ -160,7 +168,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
       {dlg && <div className="ov"><div className="dlg" role="dialog"><p>{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} className={"btn" + (b.danger ? " danger" : b.primary ? " pri" : " line")} onClick={() => { dlg.res(b.value); setDlg(null); }}>{b.label}</button>)}</div></div></div>}
       {pop && <div className="ov"><div className="dlg" role="dialog"><h3>{pop.title}</h3>
-        <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => e.key === "Enter" && submitPop()} placeholder="50文字まで" />
+        <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter") submitPop(); else if (e.key === "Escape") { pop.res(null); setPop(null); } }} placeholder="50文字まで" />
         {pop.err && <div className="err">{pop.err}</div>}
         <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
     </C.Provider>

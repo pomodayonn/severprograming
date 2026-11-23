@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import { clampQuestionCount, fmt, shuffle } from "../lib/logic";
-import { answerOf, attemptsOf, itemsOf, partsOf, questionsOf } from "../lib/select";
+import { answerOf, attemptsOf, itemsOf, lastScore, partsOf, questionsOf } from "../lib/select";
 import { addLocalUsage, useAiRemaining } from "../services/ai";
 import { controller } from "../controller/Controller";
 import type { Test } from "../beans/Test";
@@ -252,7 +252,7 @@ export function TestList() {
   return <Shell center={<>
     <div className="folders">{subjects.map(s => <div key={s.subjectId} className={"folder" + (s.subjectId === sid ? " on" : "")} onClick={() => { setSid(s.subjectId); setSel(null); }}><i />{s.subjectName}</div>)}</div>
     <div className="vbox" style={{ minHeight: 220 }}>{rows.length === 0 && <p className="mute">テストがまだありません。</p>}
-      {rows.map(({ t, i }) => <div key={t.testId} className={"trow" + (sel === t.testId ? " on" : "")} onClick={() => setSel(t.testId)}><i className="dot" /><span>{i.itemName}-{ymd(t.createdAt)}</span><span className="mute">{KIND[t.testType]}／{t.questions.length}問／最後に解いた日時 {fmt(t.lastTakenAt)}</span></div>)}</div>
+      {rows.map(({ t, i }) => <div key={t.testId} className={"trow" + (sel === t.testId ? " on" : "")} onClick={() => setSel(t.testId)}><i className="dot" /><span>{i.itemName}-{ymd(t.createdAt)}</span><span className="mute">{KIND[t.testType]}／{t.questions.length}問／最後に解いた日時 {fmt(t.lastTakenAt)}</span>{(() => { const sc = lastScore(t); return sc && <span className={"tscore" + (sc.ok === sc.total ? " full" : "")} title={`第${sc.attemptNo}回の結果`}>前回 {sc.ok}/{sc.total}</span>; })()}</div>)}</div>
     <div className="bar2"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(selected), testId: sel!, mode: "list" })}>結果表示</button>
       <button className="btn" disabled={!sel} onClick={() => nav({ s: "G009", ...base(selected), testId: sel!, mode: "retry" })}>解き直し</button></span>
       <button className="btn line" onClick={() => nav({ s: "G004", subjectId: route.subjectId ?? sid, itemId: route.itemId })}>戻る</button></div></>} />;
