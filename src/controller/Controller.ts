@@ -115,6 +115,9 @@ export type RequestParams = {
 } & {
   // ログアウトはヘッダーのボタンなので、どの画面からでも。clearLocal：この端末のデータも消すか、force：送れていない変更があっても消すか
   [S in Screen as `${S}:logoutButton`]: LogoutParams;
+} & {
+  // 「最新にする」もヘッダーのボタンなので、どの画面からでも（11/23）
+  [S in Screen as `${S}:refreshButton`]: NoParams;
 };
 type RequestKey = keyof RequestParams;
 /** 画面 S で使えるイベントID */
@@ -297,6 +300,11 @@ export class Controller {
       }
       // ---- ログアウト（ヘッダーのボタンなので、どの画面からでも） ----
       // 送れていない変更があって消すのを止めたときは、ログアウトせずに data で unsent を返す（画面が確認を出す）
+      // ---- 最新にする（ヘッダーのボタン。11/23）：30分たっていなくても、アカウントのデータを受け取り直す ----
+      if (eventId === "refreshButton") {
+        await this.accountManager.refresh();
+        return {};
+      }
       if (eventId === "logoutButton") {
         const { clearLocal = false, force = false } = (params ?? {}) as LogoutParams;
         if (await this.accountManager.logout(clearLocal, force) === "unsent") return { data: { unsent: true } };

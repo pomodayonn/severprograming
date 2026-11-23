@@ -64,4 +64,15 @@ export function canvasWidth(parts: readonly { x: number; width: number }[]): num
   let w = 0; for (const p of parts) w = Math.max(w, p.x + p.width);
   return w + 24;
 }
-
+/** アカウントから受け取ったデータを、受け取り直さずに使う長さ（30分）。11/23 */
+export const PULL_MAX_AGE_MS = 30 * 60 * 1000;
+/**
+ * 受け取り直したほうがよいか（11/23）。前回受け取った時刻 lastPulledAt から maxAge 以上たっていれば true。
+ * まだ受け取ったことがない（null）・時刻が読めない・端末の時計が戻って未来の時刻になっている、ときも true（念のため受け取る）
+ */
+export function isPullStale(lastPulledAt: string | null | undefined, nowMs: number, maxAge = PULL_MAX_AGE_MS): boolean {
+  if (!lastPulledAt) return true;
+  const t = Date.parse(lastPulledAt);
+  if (Number.isNaN(t) || t > nowMs) return true;
+  return nowMs - t >= maxAge;
+}
