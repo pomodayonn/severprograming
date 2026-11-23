@@ -110,3 +110,7 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 /* 11/23：テスト一覧に前回の点数（全問正解は緑） */
 .trow>span:nth-of-type(1){white-space:nowrap;flex:none}
 .tscore{margin-left:auto;flex:none;font-size:12px;font-weight:700;border:1px solid var(--line2);border-radius:99px;padding:0 10px;color:var(--ink);background:#fff}.tscore.full{border-color:var(--ok);color:var(--ok)}
+/* 11/23：左の一覧の検索欄 */
+.search{position:relative;margin:0 0 8px}.search .inp{margin:0;padding-right:28px}.search .link{position:absolute;right:6px;top:50%;transform:translateY(-50%);text-decoration:none;font-size:16px;padding:0 4px}
+.lf mark{margin:0;padding:0;background:var(--soft);border-radius:3px}
+.btn.undo{padding:4px 12px;font-size:17px;line-height:1.4}

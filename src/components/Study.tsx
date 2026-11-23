@@ -17,6 +17,7 @@ import { Redirect, useApp } from "../state/app";
 import type { FrameType } from "../types";
 import { FT, bottomY, newPart } from "../lib/logic";
 import { itemsOf, partsOf, prereqIdsOf } from "../lib/select";
+import { emptyHistory, record, redo, undo, type History } from "../lib/history";
 import { controller } from "../controller/Controller";
 import type { LearningItem } from "../beans/LearningItem";
 import type { NotePart } from "../beans/NotePart";
@@ -43,8 +44,20 @@ export function Study() {
   const sid = account?.studentId ?? "";
   // 11/23：Ctrl＋S（Mac は ⌘＋S）でノートを保存する。ブラウザの「ページを保存」は出さない
   const saveKey = useRef<() => void>(() => {});
+  // 11/23：ノートの「元に戻す」（Ctrl＋Z）・「やり直す」（Ctrl＋Y か Ctrl＋Shift＋Z）。履歴は学習項目ごとに持つ（lib/history.ts）
+  const hist = useRef<Record<string, History<NotePart[]>>>({}), [, setTick] = useState(0);
+  const undoKey = useRef<(back: boolean) => void>(() => {});
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveKey.current(); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") { e.preventDefault(); saveKey.current(); return; }
+      if (k !== "z" && k !== "y") return;
+      // ノートの外の入力欄（名前の入力など）では、ブラウザのふつうの「元に戻す」にまかせる
+      const el = document.activeElement as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !el.closest("#note-canvas")) return;
+      e.preventDefault(); undoKey.current(k === "z" && !e.shiftKey);
+    };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
@@ -52,7 +65,16 @@ export function Study() {
   // ノートの部品：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
   const parts: NotePart[] | null = item ? (drafts[item.itemId] ?? [...partsOf(notes, item.itemId)]) : null;
   const mats = item ? materials.filter(m => m.itemId === item.itemId) : [];
-  const setParts = (ps: NotePart[]) => item && setDraft(item.itemId, ps);
+  const h = item ? hist.current[item.itemId] ?? emptyHistory<NotePart[]>() : null;
+  const setParts = (ps: NotePart[]) => { if (!item || !parts) return; hist.current[item.itemId] = record(hist.current[item.itemId] ?? emptyHistory<NotePart[]>(), parts, Date.now()); setDraft(item.itemId, ps); };
+  /** back が true なら元に戻す、false ならやり直す */
+  const step = (back: boolean) => {
+    if (!item || !parts || !h) return;
+    const cur = hist.current[item.itemId] ?? h, r = back ? undo(cur, parts) : redo(cur, parts);
+    if (!r) return toast(back ? "これより前には戻せません" : "やり直す変更はありません");
+    hist.current[item.itemId] = r.h; setDraft(item.itemId, r.value); setTick(t => t + 1);
+  };
+  undoKey.current = step;
   const addPart = (type: PartType, f?: FrameType) => parts && setParts([...parts, newPart(type, bottomY(parts), f)]);
   const open = (id: string) => go({ s: "G004", subjectId: subject.subjectId, itemId: id });
   const addItem = async () => {
@@ -139,7 +161,7 @@ export function Study() {
       <main className="ct">{item && parts ? (<>
         <div className="tabs"><button className={"chip" + (mode === "note" ? " on" : "")} onClick={() => setMode("note")}>ノート</button><button className={"chip" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>資料と並べる</button><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></div>
         {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
-        <div className="bar2 stick"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button>
+        <div className="bar2 stick"><span className="row"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn undo" disabled={!h?.past.length} onClick={() => step(true)} title="元に戻す（Ctrl＋Z）" aria-label="元に戻す">↶</button><button className="btn undo" disabled={!h?.future.length} onClick={() => step(false)} title="やり直す（Ctrl＋Y）" aria-label="やり直す">↷</button></span>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
             {menu && <div className="pop" style={{ position: "absolute", bottom: "110%", left: 0, minWidth: 180, zIndex: 5 }}>{mats.map(m => <div key={m.materialId} className="ind mat" style={{ margin: "3px 0" }} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}</div>}</span>
           <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>AIでまとめる</button>

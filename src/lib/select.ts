@@ -6,6 +6,8 @@
 // そこで「この科目の学習項目」「この学習項目のノート」のように、IDで探す関数をここにまとめた。
 // 形を変える（変換する）のではなく、探すだけ。SQL の WHERE と同じ考え方
 import type { LearningItem } from "../beans/LearningItem";
+import type { Subject } from "../beans/Subject";
+import { norm } from "./logic";
 import type { Prerequisite } from "../beans/Prerequisite";
 import type { Note } from "../beans/Note";
 import type { NotePart } from "../beans/NotePart";
@@ -44,4 +46,23 @@ export function lastScore(test: Test): { ok: number; total: number; attemptNo: n
   if (test.testType !== TestType.MEANING_TO_TERM || !test.attempts.length) return null;
   const all = attemptsOf(test), last = all[all.length - 1];
   return { ok: last.answers.filter(a => a.correct).length, total: test.questions.length, attemptNo: last.attemptNo };
+}
+
+/** 名前に検索の言葉が入っているか（全角半角・大文字小文字は区別しない） */
+export const nameHas = (name: string, q: string) => norm(name).includes(norm(q));
+
+/**
+ * 左の一覧の検索（11/23）。言葉が空なら null（全部出す）。
+ * 科目名に入っていれば、その科目の学習項目を全部出す。入っていなければ、名前に入っている学習項目だけを出す。
+ * どちらもなければ、その科目は出さない
+ */
+export function searchTree(subjects: readonly Subject[], items: readonly LearningItem[], q: string): Map<string, LearningItem[]> | null {
+  if (!q.trim()) return null;
+  const out = new Map<string, LearningItem[]>();
+  for (const s of subjects) {
+    const its = itemsOf(items, s.subjectId);
+    const hit = nameHas(s.subjectName, q) ? its : its.filter(i => nameHas(i.itemName, q));
+    if (hit.length || nameHas(s.subjectName, q)) out.set(s.subjectId, hit);
+  }
+  return out;
 }
