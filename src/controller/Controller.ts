@@ -314,6 +314,7 @@ export class Controller {
     } catch (e) {
       // Manager のエラー（AppError）は文をそのまま画面に出す
       if (e instanceof ApiError) return { error: errorText(e) }; // AIのサーバーのエラー（回数切れ・長すぎるなど）
+      if (!(e instanceof AppError)) console.error(`[Controller] ${key} で思いがけないエラー:`, e); // 11/23：原因を追えるように中身を残す
       return { error: e instanceof AppError ? e.message : "うまくいきませんでした。時間をおいて試してください" };
     }
   }

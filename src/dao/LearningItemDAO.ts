@@ -28,7 +28,7 @@ export class LearningItemDAO {
   /** 学習項目名を変える */
   async updateName(itemId: string, name: string): Promise<void> {
     const i = await get<LearningItem>("learningItems", itemId); if (!i) return;
-    await put("learningItems", { ...i, itemName: name, updatedAt: now() });
+    await put("learningItems", new LearningItem({ ...i, itemName: name, updatedAt: now() })); // 11/23：ほかの保存と同じく beans で
   }
   /** 学習項目を消す（ノート・テスト・資料は LearningItemManager.deleteItem が消す） */
   async delete(itemId: string): Promise<void> {
