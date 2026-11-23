@@ -66,3 +66,28 @@ export function searchTree(subjects: readonly Subject[], items: readonly Learnin
   }
   return out;
 }
+
+/** テスト一覧の並べ方（11/23） */
+export type TestSort = "new" | "old" | "taken" | "low" | "name";
+export const TEST_SORTS: readonly (readonly [TestSort, string])[] = [
+  ["new", "作った日が新しい順"], ["old", "作った日が古い順"], ["taken", "最近解いた順"], ["low", "前回の点数が低い順"], ["name", "学習項目の名前順"],
+];
+/**
+ * テスト一覧を並べかえる（元の配列は変えない）。
+ * 名前順は、ひらがな・カタカナならあいうえお順（漢字は読みが分からないので文字の順）。
+ * 「最近解いた順」でまだ解いていないテスト、「点数が低い順」で点数のないテスト（未受験・記述）は後ろ。同じなら作った日が新しい順
+ */
+export function sortTests<R extends { t: Test; i: LearningItem }>(rows: readonly R[], by: TestSort): R[] {
+  const newer = (a: R, b: R) => b.t.createdAt.localeCompare(a.t.createdAt);
+  const rate = (r: R) => { const s = lastScore(r.t); return s && s.total ? s.ok / s.total : null; };
+  const last = <V>(a: V | null, b: V | null, cmp: (x: V, y: V) => number) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : cmp(a, b);
+  const cmp: Record<TestSort, (a: R, b: R) => number> = {
+    new: newer,
+    old: (a, b) => -newer(a, b),
+    taken: (a, b) => last(a.t.lastTakenAt || null, b.t.lastTakenAt || null, (x, y) => y.localeCompare(x)) || newer(a, b),
+    low: (a, b) => last(rate(a), rate(b), (x, y) => x - y) || newer(a, b),
+    name: (a, b) => a.i.itemName.localeCompare(b.i.itemName, "ja") || newer(a, b),
+  };
+  return [...rows].sort(cmp[by]);
+}
+
