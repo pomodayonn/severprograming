@@ -10,13 +10,13 @@
 // 11/21 道B：部品は画面用の形（El）ではなく、beans の NotePart をそのまま使う。
 //   名前の対応：kind → partType（PartType）、ft → frameType、w・h → width・height、head → headingLevel、at → updatedAt
 //   部品を変えたら、新しい NotePart を作って updatedAt を今の時刻にする（同期でその部品が送られる）
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { FrameType } from "../types";
 import { NotePart, type ShapeKind } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
 import { PartType } from "../enums/PartType";
-import { FT, newWord } from "../lib/logic";
+import { canvasWidth, FT, newWord } from "../lib/logic";
 import { controller } from "../controller/Controller";
 
 /** 部品の種類ごとの名前（部品の上に出す） */
@@ -70,13 +70,25 @@ const PartView = memo(function PartView({ part: p, h }: { part: NotePart; h: Han
 
 export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void }) {
   const ref = useRef({ parts, onChange }); ref.current = { parts, onChange };
-  const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number } | null>(null);
+  const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number; z: number; w0: number } | null>(null);
+  // 11/23：全画面で右のほうに置いた部品が、ふつうの画面で切れて見えなくなっていた。
+  // ノートの幅を「いちばん右の部品」まで広げて横にスクロールできるようにし、「縮小して全体を見る」も選べるようにした
+  const wrap = useRef<HTMLDivElement>(null), [cw, setCw] = useState(0), [fit, setFit] = useState(false), [, setTick] = useState(0);
+  useEffect(() => {
+    const el = wrap.current; if (!el) return;
+    const ro = new ResizeObserver(() => setCw(el.clientWidth)); ro.observe(el); setCw(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  // ドラッグ中は幅を縮めない（縮小表示の倍率がドラッグの途中で変わると、部品がマウスからずれるため）
+  const W = Math.max(canvasWidth(parts), drag.current?.w0 ?? 0), over = cw > 0 && W > cw, z = fit && over ? cw / W : 1;
+  const zoom = useRef(z); zoom.current = z;
+  const width = useRef(W); width.current = W;
 
   // 部品に渡す関数は最初に1回だけ作る（いつも最新の els / onChange を ref から読む）
   const h = useRef<Handlers | null>(null);
   const apply = useCallback(() => {
     const d = drag.current; if (!d) return; d.raf = 0;
-    const dx = d.cx - d.sx, dy = d.cy - d.sy, r = ref.current;
+    const dx = (d.cx - d.sx) / d.z, dy = (d.cy - d.sy) / d.z, r = ref.current; // 縮小して表示しているときは、マウスの動きを元の大きさに直す
     r.onChange(r.parts.map(x => x.partId !== d.id ? x : new NotePart(d.mode === "move" ? { ...x, x: Math.max(0, d.x + dx), y: Math.max(0, d.y + dy), updatedAt: now() } : { ...x, width: Math.max(60, d.w + dx), height: Math.max(30, d.h + dy), updatedAt: now() })));
   }, []);
   const mv = useCallback((e: PointerEvent) => {
@@ -87,6 +99,7 @@ export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (
     const d = drag.current; if (d?.raf) { cancelAnimationFrame(d.raf); apply(); } // 最後の位置は必ず反映
     if (d?.mode === "size") { const r = ref.current, n = grow(r.parts, d.id, d.h); if (n !== r.parts) r.onChange(n); } // 大きくしたら下をずらす
     drag.current = null; window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up);
+    setTick(t => t + 1); // ドラッグが終わったら、幅と倍率を部品に合わせて直す
   }, [apply, mv]);
   if (!h.current) h.current = {
     upd: (id, patch) => {
@@ -97,15 +110,18 @@ export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (
     remove: id => { const r = ref.current; r.onChange(r.parts.filter(x => x.partId !== id)); },
     start: (e, part, mode) => {
       e.preventDefault(); e.stopPropagation();
-      drag.current = { id: part.partId, mode, sx: e.clientX, sy: e.clientY, x: part.x, y: part.y, w: part.width, h: part.height, cx: e.clientX, cy: e.clientY, raf: 0 };
+      drag.current = { id: part.partId, mode, sx: e.clientX, sy: e.clientY, x: part.x, y: part.y, w: part.width, h: part.height, cx: e.clientX, cy: e.clientY, raf: 0, z: zoom.current, w0: width.current };
       window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
     },
   };
   useEffect(() => () => up(), [up]); // ドラッグ中に画面を離れても、イベントを残さない
 
   let H = 520; for (const p of parts) H = Math.max(H, p.y + p.height + 160);
-  return (
-    <div className="canvas" id="note-canvas" style={{ height: H }}>
-      {parts.map(p => <PartView key={p.partId} part={p} h={h.current!} />)}
-    </div>);
+  return (<div className="cwrap">
+    {over && <div className="cover"><span>{fit ? "ノート全体を縮小して表示しています。" : "右にはみ出した部品があります。横にスクロールすると見えます。"}</span>
+      <button className="btn sm line" onClick={() => setFit(!fit)}>{fit ? "元の大きさに戻す" : "縮小して全体を見る"}</button></div>}
+    <div className="cscroll" ref={wrap}>
+      <div className="canvas" id="note-canvas" style={{ height: H, width: over ? W : undefined, zoom: z === 1 ? undefined : z }}>
+        {parts.map(p => <PartView key={p.partId} part={p} h={h.current!} />)}
+      </div></div></div>);
 }

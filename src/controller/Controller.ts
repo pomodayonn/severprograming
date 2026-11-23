@@ -111,6 +111,7 @@ export type RequestParams = {
   "G010:editAnswer": QuestionOf & { attemptId: string; answer: string };
   "G010:editExplanation": QuestionOf & { explanation: string };
   "G010:regenerateExplanation": QuestionOf & { extra: string };
+  "G011:deleteTest": { testIds: string[] };
 } & {
   // ログアウトはヘッダーのボタンなので、どの画面からでも。clearLocal：この端末のデータも消すか、force：送れていない変更があっても消すか
   [S in Screen as `${S}:logoutButton`]: LogoutParams;
@@ -284,6 +285,11 @@ export class Controller {
         case "G010:regenerateExplanation": { // 解説をAIで作り直す（1回分）。extra は追加の指示。作り直した解説を返す
           const { testId, questionId, extra: ins } = p("G010:regenerateExplanation");
           return { data: await this.testManager.regenerateExplanation(testId, questionId, ins) };
+        }
+        // ---- G011 テスト一覧 ----
+        case "G011:deleteTest": { // 削除（11/23）。選んだテストを、問題・受験・解答ごと消す（まとめて消すときは複数）
+          await this.testManager.deleteTests(p("G011:deleteTest").testIds);
+          return {};
         }
         // ---- ログインした直後・保存したあと：端末のデータベース（アカウントから受け取った分）を beans のまま返す ----
         case "G003:loadSubjects":
