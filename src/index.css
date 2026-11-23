@@ -96,3 +96,14 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 .loading::before{content:"";width:14px;height:14px;border:2px solid #d9d2c3;border-top-color:#2e7d6d;border-radius:50%;animation:spin .8s linear infinite;flex:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.loading::before{animation:none}}
+/* 11/23：見た目の調整
+   ・ラジオボタンとチェックボックスを、ブラウザの青ではなくアプリの色にする
+   ・テスト解答（G009）のキーの説明は、ボタンの下に1行で出す
+   ・テスト結果（G010）：問題のボタンに正解（緑）・不正解（赤）の色を付け、正解率を横の棒で見せる
+   ・関連図の丸は、押せることが分かるように、マウスを乗せると少し濃くなる */
+input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
+.keyhint{text-align:center;margin-top:8px}
+.btn.okb{border-color:var(--ok);color:var(--ok)}.btn.ngb{border-color:var(--err);color:var(--err)}
+.btn.fill.okb{background:var(--ok);color:#fff}.btn.fill.ngb{background:var(--err);color:#fff}
+.score{display:inline-block;width:120px;height:10px;border-radius:99px;background:var(--soft);overflow:hidden;vertical-align:middle}.score i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.graph .node circle{transition:fill .15s}.graph .node:hover circle,.graph .node:focus-visible circle{fill:#f6dde2}.graph .node:focus-visible circle{stroke-width:3}
