@@ -7,8 +7,10 @@
 //
 // 【このファイルで何が起きているか】
 // 端末（IndexedDB）とクラウド（Neon）のデータをそろえる係です。
-// ・pullAll（受け取る）：ログインしたとき。Neon から自分のデータを全部もらい、端末のデータをそれに置き換える
+// ・pullAll（受け取る）：ログインしたとき・「最新にする」を押したとき。Neon から自分のデータを全部もらい、端末のデータをそれに置き換える
 //     → だから別の端末で作った科目も出てくる
+//     11/23：置き換えは1つのトランザクションでする（途中で止まっても、端末のデータが空にならない）
+// ・pullIfStale（古ければ受け取る）：ページを開き直したとき。前回受け取ってから30分たっていなければ受け取らず、端末のデータをそのまま使う（11/23）
 // ・pushChanges（送る）：保存したとき。前回送った時刻（lastSyncedAt）より新しいものと、消したものだけを送る
 //     → 毎回全部を送らないので速い
 // Neon の表は「subject_name」のような snake_case、beans は「subjectName」のような camelCase なので、ここで書き換えている。
@@ -27,7 +29,8 @@ import { now } from "../beans/DateTime";
 import type { PartType } from "../enums/PartType";
 import type { TestType } from "../enums/TestType";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
-import { del, get, getAll, getAllBy, put, putMany, type Deletion } from "../dao/idb";
+import { del, get, getAll, getAllBy, put, replaceStudentData, type Deletion } from "../dao/idb";
+import { isPullStale } from "../lib/logic";
 
 type Row = Record<string, unknown>;
 export class SyncError extends Error {}
@@ -76,11 +79,27 @@ export class SyncManager {
         answers: (ansBy[s(a.attempt_id)] ?? []).map(x => new Answer({ answerId: s(x.answer_id), studentId: sid, attemptId: s(x.attempt_id), questionId: s(x.question_id), studentAnswer: s(x.student_answer), correct: x.correct === null || x.correct === undefined ? null : !!x.correct, answeredAt: s(x.answered_at), updatedAt: s(x.updated_at) })),
       })).sort((a, b) => a.attemptNo - b.attemptNo),
     }));
-    // ---- 端末のこの学生のデータを、受け取った内容に置き換える ----
-    await this.clearLocal(sid);
-    await putMany("subjects", sub); await putMany("learningItems", its); await putMany("prerequisites", pres);
-    await putMany("notes", nts); await putMany("tests", tss);
-    await this.setLastSynced(sid, now());
+    // ---- 端末のこの学生のデータを、受け取った内容に置き換える（11/23：1つのトランザクションで） ----
+    const t = now();
+    await replaceStudentData(sid, { subjects: sub, learningItems: its, prerequisites: pres, notes: nts, tests: tss },
+      { [`lastSyncedAt:${sid}`]: t, [`lastPulledAt:${sid}`]: t });
+    this.lastSyncedAt = t;
+  }
+
+  /**
+   * 前回受け取ってから30分以上たっていれば pullAll する（11/23）。ページを開き直したときに AccountManager から呼ぶ。
+   * 30分以内なら、端末のデータ（前回受け取った分＋この端末での変更）をそのまま使う
+   */
+  async pullIfStale(): Promise<void> {
+    if (!this.enabled) return;
+    const student = await this.authClient.getSession(); if (!student) return;
+    const last = await get<string>("meta", `lastPulledAt:${student.studentId}`);
+    if (isPullStale(last, Date.now())) await this.pullAll();
+  }
+
+  /** 前回受け取った時刻を忘れる（ログアウトのとき）。次にログインしたら、30分以内でも必ず受け取り直す（11/23） */
+  async forgetPull(studentId: string): Promise<void> {
+    await del("meta", `lastPulledAt:${studentId}`);
   }
 
   /**
@@ -177,13 +196,6 @@ export class SyncManager {
     if (!res.ok) throw new SyncError(`同期に失敗しました（${res.status}）`);
     const text = await res.text();
     return text ? JSON.parse(text) : null;
-  }
-  /** 端末にあるこの学生の同期データを消す（受け取り直す前に） */
-  private async clearLocal(sid: string): Promise<void> {
-    for (const [store, key] of [["subjects", "subjectId"], ["learningItems", "itemId"], ["notes", "noteId"], ["tests", "testId"]] as const) {
-      for (const r of await getAllBy<Row>(store, "studentId", sid)) await del(store, r[key] as string);
-    }
-    for (const p of await getAllBy<Prerequisite>("prerequisites", "studentId", sid)) await del("prerequisites", [p.itemId, p.prereqItemId]);
   }
   private async getLastSynced(sid: string): Promise<string | null> {
     this.lastSyncedAt = (await get<string>("meta", `lastSyncedAt:${sid}`)) ?? null; return this.lastSyncedAt;

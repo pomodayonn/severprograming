@@ -5,7 +5,7 @@
 //   subjects・learningItems・prerequisites・notes（部品と単語ごと）・tests（問題・受験・解答ごと）：Neon と同期する
 //   materials（資料の情報）・materialContents（資料の中身）：端末だけ。同期しない
 //   deletions：Neon にまだ伝えていない削除（SyncManager.pushChanges で送る）
-//   meta：前回同期した日時など
+//   meta：前回同期した日時・前回受け取った日時（11/23）など
 
 // 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
@@ -107,6 +107,34 @@ export async function clearStudentData(studentId: string): Promise<void> {
     for (const key of keys) await del(store, key);
   }
   await del("meta", `lastSyncedAt:${studentId}`);
+  await del("meta", `lastPulledAt:${studentId}`); // 11/23：次にログインしたとき、必ず受け取り直すように
+}
+
+/** replaceStudentData で入れ替える入れ物（学生IDの索引があり、Neon と同期するもの） */
+export type SyncedStore = "subjects" | "learningItems" | "prerequisites" | "notes" | "tests";
+
+/**
+ * その学生の同期データを、受け取った内容にまるごと入れ替える（11/23）。
+ * 「古い分を消す」「新しい分を入れる」「同期した時刻を書く」を1つのトランザクションでするので、
+ * 途中でタブを閉じたりエラーになったりしても、全部入れ替わるか、何も変わらないかのどちらかになる
+ * （Java の JDBC で setAutoCommit(false) → 最後に commit、失敗したら rollback するのと同じ考え方）
+ * @param meta 同じトランザクションで meta に書く値（キー → 値）。前回同期した日時など
+ */
+export async function replaceStudentData(studentId: string, data: Record<SyncedStore, unknown[]>, meta: Record<string, unknown> = {}): Promise<void> {
+  const stores = Object.keys(data) as SyncedStore[];
+  const db = await openDb(); const tx = db.transaction([...stores, "meta"], "readwrite");
+  for (const store of stores) {
+    const os = tx.objectStore(store);
+    const req = os.index("studentId").getAllKeys(studentId);
+    // 消し終わってから入れる（先に入れると、同じキーの新しい行まで消してしまうため、getAllKeys の結果を待つ）
+    req.onsuccess = () => {
+      for (const key of req.result) os.delete(key);
+      for (const v of data[store]) os.put(structuredClone(v));
+    };
+  }
+  const ms = tx.objectStore("meta");
+  for (const [k, v] of Object.entries(meta)) ms.put(v, k);
+  return done(tx);
 }
 
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */

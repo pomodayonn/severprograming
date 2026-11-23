@@ -13,9 +13,11 @@ import { RelationGraph } from "./RelationGraph";
 import { OfflineBar } from "./AiWait";
 
 export function Header({ plain = false }: { plain?: boolean }) {
-  const { account, logout } = useApp();
+  const { account, logout, canRefresh, refreshing, refresh } = useApp();
   return (<><header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
-    {!plain && account && <><span className="who">{account.mail}</span><button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
+    {!plain && account && <><span className="who">{account.mail}</span>
+      {canRefresh && <button className="pill" onClick={refresh} disabled={refreshing} title="ほかの端末で変えた内容を受け取ります">{refreshing ? "受け取り中…" : "最新にする"}</button>}{/* 11/23 */}
+      <button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
   // ↑ ヘッダーの下に、オフラインのときだけ帯を出す（OfflineBar）。ヘッダーと帯を1つにまとめて返すため、下で包んでいる
 }
 /** 名前の中の、検索の言葉に合う所に印（mark）を付ける */

@@ -43,6 +43,8 @@ interface Ctx {
   askName: (title: string, initial?: string) => Promise<string | null>;
   guard: () => Promise<boolean>; save: (itemId: string) => Promise<boolean>;
   go: (r: Route) => Promise<void>; logout: () => Promise<void>;
+  /** 11/23：ヘッダーの「最新にする」。canRefresh＝同期する設定があるか、refreshing＝受け取っている最中か */
+  canRefresh: boolean; refreshing: boolean; refresh: () => Promise<void>;
 }
 const C = createContext<Ctx | null>(null);
 export const useApp = () => { const c = useContext(C); if (!c) throw new Error("AppProvider がありません"); return c; };
@@ -76,6 +78,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [dirty]);
   const aRef = useRef(account); aRef.current = account;
   const rRef = useRef(route); rRef.current = route; // ログアウトのとき、いまの画面IDを Controller に渡す
+  const [refreshing, setRefreshing] = useState(false);
+  const canRefresh = controller.syncManager.enabled; // .env に Neon の設定がないとき（端末だけで動かすとき）はボタンを出さない
 
   /** 科目・テスト・資料を Manager から読み直す（Controller → G003:loadSubjects）。追加・保存などのあとに呼ぶ */
   const reload = useCallback(async () => {
@@ -151,11 +155,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     close();
   }, [guard, ask, close]);
 
+  /**
+   * ヘッダーの「最新にする」（11/23）。ふだんはページを開き直しても30分は受け取り直さないので、
+   * 別の端末で変えた分をすぐ見たいときに押す。保存していないノートがあれば、先に確認する（guard）
+   */
+  const refresh = useCallback(async () => {
+    if (refreshing || !(await guard())) return;
+    setRefreshing(true);
+    try {
+      const r = await controller.handleRequest(rRef.current.s, "refreshButton");
+      if (r.error) { toast(r.error); return; }
+      await reload(); toast("最新にしたよ");
+    } finally { setRefreshing(false); }
+  }, [refreshing, guard, reload]);
+
   // 関数はすべて同じものを使い回すので、memo した部品は subjects・materials などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({
     account, ready, ...db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
-    enter: open, leave, ask, askName, guard, save, go, logout,
-  }), [account, ready, db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout]);
+    enter: open, leave, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh,
+  }), [account, ready, db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh]);
 
   const submitPop = () => {
     if (!pop) return; const v = pop.val.trim();

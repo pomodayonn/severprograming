@@ -5,6 +5,8 @@
 // 1. 画面から来たメールとパスワードを確かめる（空欄・メールの形・8〜16文字で英字と数字）
 // 2. よければ NeonAuthClient に頼んで、Neon Auth に登録・ログインしてもらう
 // 3. ログインできたら SyncManager.pullAll で、アカウント（Neon）のデータを端末に受け取る
+//    11/23：ページを開き直したとき（getCurrentStudent）は、前回受け取ってから30分以内なら受け取らない（pullIfStale）。
+//    すぐに別の端末の変更を見たいときは、ヘッダーの「最新にする」（refresh）で受け取り直す
 // だめなときは AccountError（画面に出す文）を throw し、Controller がその文を画面に出す
 import type { Student } from "../beans/Student";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
@@ -15,7 +17,10 @@ import { clearStudentData } from "../dao/idb";
 export class AccountError extends AppError {}
 
 /** SyncManager のうち AccountManager が使う部分（ログインで受け取る・ログアウトの前に送る） */
-export interface PullOnLogin { pullAll(): Promise<void>; sendAll(): Promise<boolean> }
+export interface PullOnLogin {
+  readonly enabled: boolean;
+  pullAll(): Promise<void>; pullIfStale(): Promise<void>; forgetPull(studentId: string): Promise<void>; sendAll(): Promise<boolean>;
+}
 
 /** logout() の結果。done＝ログアウトした、unsent＝アカウントに送れていない変更があるので、消さずに止めた */
 export type LogoutResult = "done" | "unsent";
@@ -58,23 +63,36 @@ export class AccountManager {
    *   3. 確認して force を true にして呼び直したら、送れなくても消す
    */
   async logout(clearLocal = false, force = false): Promise<LogoutResult> {
-    if (clearLocal) {
-      const s = await this.authClient.getSession();
-      if (s) {
-        const sent = (await this.syncManager?.sendAll()) ?? false;
-        if (!sent && !force) return "unsent";
-        await clearStudentData(s.studentId);
-      }
+    const s = await this.authClient.getSession();
+    if (clearLocal && s) {
+      const sent = (await this.syncManager?.sendAll()) ?? false;
+      if (!sent && !force) return "unsent";
+      await clearStudentData(s.studentId);
     }
+    if (s) await this.syncManager?.forgetPull(s.studentId).catch(() => {}); // 11/23：次のログインでは必ず受け取り直す
     await this.authClient.signOut();
     return "done";
   }
 
-  /** ログイン中の学生（画面を開き直したとき・Google から戻ったときの確認にも使う） */
+  /**
+   * ログイン中の学生（画面を開き直したとき・Google から戻ったときの確認にも使う）。
+   * 11/23：前回受け取ってから30分以内なら受け取らず、端末のデータをそのまま使う
+   */
   async getCurrentStudent(): Promise<Student | null> {
     const s = await this.authClient.getSession();
-    if (s) await this.pull();
+    if (s) { try { await this.syncManager?.pullIfStale(); } catch { /* 同期の失敗はログインの失敗にしない */ } }
     return s;
+  }
+
+  /**
+   * 「最新にする」ボタン（11/23）。30分たっていなくても、アカウントのデータを受け取り直す。
+   * pull() と違って、失敗したら画面に知らせる（押した人は結果を知りたいので）
+   */
+  async refresh(): Promise<void> {
+    if (!this.syncManager?.enabled) throw new AccountError("アカウントと同期する設定がないため、最新にできません");
+    if (!(await this.authClient.getSession())) throw new AccountError("ログインしていないため、最新にできません");
+    try { await this.syncManager.pullAll(); }
+    catch (e) { throw new AccountError(e instanceof Error && e.message ? e.message : "最新にできませんでした。時間をおいて試してください"); }
   }
 
   /** 8〜16文字で、英字と数字を両方含むか（Neon Auth が確認するか分からないので自分たちで確認する） */
