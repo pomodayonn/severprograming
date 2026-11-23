@@ -142,8 +142,10 @@ export function TestAnswer() {
         {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
         {(kb || essay) && <textarea ref={box} className="tx" style={{ minHeight: essay ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
         <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
-          <span className="mute">{essay || kb ? (essay ? "Ctrl＋Enter" : "Enter") : "1〜4 キーで選んで Enter"}で{last ? "解答" : "次の問題へ"}</span>
-          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div></div>
+          <span className="sp" />
+          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div>
+        {/* 11/23：説明が3行に折り返していたので、ボタンの下に1行で出す。選択肢の数に合わせて「1〜3」などにする */}
+        <div className="mute keyhint">{essay || kb ? (essay ? "Ctrl＋Enter" : "Enter") : `${choices.length > 1 ? `1〜${choices.length}` : "1"} キーで選んで Enter`}で{last ? "解答" : "次の問題へ"}</div></div>
       <div className="bar2"><span className="row"><button className="btn line" onClick={quit}>中断する</button></span>
         {!essay && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
 }
@@ -233,9 +235,9 @@ export function TestResult() {
       <AiWait busy={busy && !!wait} what={wait} />
       {msg && <div className="err">{msg}</div>}</>}
     center={<>
-      <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{okCount !== null && <b>{okCount} / {qs.length} 問正解</b>}<span className="mute">{KIND[test.testType]}{att ? `　第${att.attemptNo}回　${fmt(att.takenAt)}` : list ? `　最後に解いた日時 ${fmt(test.lastTakenAt)}` : ""}</span>
+      <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{okCount !== null && <b>{okCount} / {qs.length} 問正解</b>}{okCount !== null && qs.length > 0 && <span className="score" role="img" aria-label={`正解率 ${Math.round(okCount / qs.length * 100)}%`}><i style={{ width: `${okCount / qs.length * 100}%` }} /></span>}<span className="mute">{KIND[test.testType]}{att ? `　第${att.attemptNo}回　${fmt(att.takenAt)}` : list ? `　最後に解いた日時 ${fmt(test.lastTakenAt)}` : ""}</span>
         {atts.length > 1 && <select className="inp" style={{ width: "auto", display: "inline-block", margin: 0 }} value={att?.attemptId ?? ""} onChange={e => { setAttemptId(e.target.value); close(); }} aria-label="受験を選ぶ">{atts.map(a => <option key={a.attemptId} value={a.attemptId}>第{a.attemptNo}回（{fmt(a.takenAt)}）</option>)}</select>}</div>
-      <div className="qtabs" style={{ marginTop: 8 }}>{qs.map((x, i) => <button key={x.questionId} className={"btn sm" + (i === idx ? " fill" : " line")} onClick={() => { setIdx(i); close(); }}>第{i + 1}問</button>)}</div>
+      <div className="qtabs" style={{ marginTop: 8 }}>{qs.map((x, i) => { const r = scored && att ? answerOf(att, x.questionId)?.correct : undefined; return <button key={x.questionId} className={"btn sm" + (i === idx ? " fill" : " line") + (r === true ? " okb" : r === false ? " ngb" : "")} onClick={() => { setIdx(i); close(); }} aria-label={`第${i + 1}問${r === true ? "（正解）" : r === false ? "（不正解）" : ""}`}>第{i + 1}問{r === true ? " ○" : r === false ? " ×" : ""}</button>; })}</div>
       <div className="vbox"><h3>自身の回答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.questionText}</div>
         {att ? <div style={{ whiteSpace: "pre-wrap" }}>{mine?.studentAnswer || "（未回答）"}　{scored && (mine?.correct ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">まだ解いていません。「解き直し」で解けます。</p>}</div>
       <div className="bar2"><button className="btn line" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn pri" onClick={() => go({ s: "G011", ...base })}>テスト一覧へ戻る</button></div></>} />;
