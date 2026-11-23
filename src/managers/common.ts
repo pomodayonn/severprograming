@@ -6,7 +6,7 @@
 // ・newId      ：新しいIDを作る（ランダムな文字＋時刻なので、ほぼかぶらない）
 // ・pushQuietly：保存のあとに Neon へ送る。失敗しても保存は成功扱い（端末には残っていて、次にまとめて送る）
 // ・checkName  ：科目名・学習項目名の確認（空はだめ、50文字まで）
-import { SEND_LIMIT, newId } from "../lib/logic";
+import { SEND_LIMIT, nameError, newId } from "../lib/logic";
 
 /** 1回に送れる文字数（1万文字。これを超えると分けて送り、その分だけ利用回数を使う） */
 export { SEND_LIMIT };
@@ -30,8 +30,7 @@ export async function pushQuietly(sync: ChangePusher | null): Promise<void> {
 
 /** 名前を確認する。前後の空白を取って1〜50文字。だめなら Err（各 Manager のエラー）を投げる */
 export function checkName(name: string, label: string, Err: new (message: string) => AppError): string {
-  const n = name.trim();
-  if (!n) throw new Err(`${label}を入力してください`);
-  if ([...n].length > 50) throw new Err(`${label}は50文字までです`);
-  return n;
+  const err = nameError(name, label); // ルールは lib/logic.ts の nameError（画面のポップアップと同じ）
+  if (err) throw new Err(err);
+  return name.trim();
 }

@@ -24,7 +24,7 @@ export class SubjectDAO {
   /** 科目名を変える */
   async updateName(subjectId: string, name: string): Promise<void> {
     const s = await get<Subject>("subjects", subjectId); if (!s) return;
-    await put("subjects", { ...s, subjectName: name, updatedAt: now() });
+    await put("subjects", new Subject({ ...s, subjectName: name, updatedAt: now() })); // 11/23：ほかの保存と同じく beans で
   }
   /** 科目を消す（中の学習項目などは、SubjectManager が LearningItemManager.deleteItem で消す） */
   async delete(subjectId: string): Promise<void> {

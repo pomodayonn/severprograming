@@ -23,6 +23,18 @@ export const fmt = (t?: DateTime | number | null) => t ? new Date(t).toLocaleStr
 export const norm = (s: string) => s.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
 export const isCorrect = (user: string, model: string) => !!user.trim() && norm(user) === norm(model);
 export function shuffle<T>(a: T[]): T[] { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+/** 名前（科目名・学習項目名）の長さの上限 */
+export const NAME_MAX = 50;
+/**
+ * 名前の確認（11/23：画面のポップアップと Manager の checkName で同じルールを使うため、ここにまとめた）。
+ * 前後の空白を取って1〜50文字ならエラーなし（null）。文字数は絵文字も1文字と数える（[...n].length）
+ */
+export function nameError(name: string, label: string): string | null {
+  const n = name.trim();
+  if (!n) return `${label}を入力してください`;
+  if ([...n].length > NAME_MAX) return `${label}は${NAME_MAX}文字までです`;
+  return null;
+}
 /** 問題数を5〜20問にそろえる（数でなければ10問） */
 export const clampQuestionCount = (n: number) => Math.min(20, Math.max(5, Math.round(n) || 10));
 export const calls = (chars: number) => Math.max(1, Math.ceil(chars / SEND_LIMIT));

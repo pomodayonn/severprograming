@@ -28,6 +28,7 @@ import type { Material } from "../beans/Material";
 import { removeOldData } from "../services/db";
 import { controller, type StudentData } from "../controller/Controller";
 import { toast } from "../components/toast";
+import { nameError } from "../lib/logic";
 
 /** 確認ダイアログのボタン。primary＝主な操作（紺）、danger＝消す操作（赤） */
 export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
@@ -38,7 +39,7 @@ interface Ctx {
   route: Route; nav: (r: Route) => void;
   drafts: Record<string, NotePart[]>; setDraft: (itemId: string, parts: NotePart[] | null) => void;
   tmp: Record<string, unknown>; setTmp: (p: Record<string, unknown>) => void;
-  enter: (a: Student) => void; leave: () => void;
+  enter: (a: Student) => void;
   ask: (msg: string, buttons: Btn[]) => Promise<string>;
   askName: (title: string, initial?: string) => Promise<string | null>;
   guard: () => Promise<boolean>; save: (itemId: string) => Promise<boolean>;
@@ -129,7 +130,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), []);
   const setTmp = useCallback((p: Record<string, unknown>) => setT(t => ({ ...t, ...p })), []);
   // ログアウトは Controller → AccountManager → NeonAuthClient の順に呼ぶ
-  const leave = useCallback(() => { void controller.handleRequest(rRef.current.s, "logoutButton"); close(); }, [close]);
   const go = useCallback(async (r: Route) => { if (await guard()) setRoute(r); }, [guard]);
   /**
    * ヘッダーの「ログアウト」（11/21：この端末のデータも消せるようにした）
@@ -172,14 +172,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // 関数はすべて同じものを使い回すので、memo した部品は subjects・materials などが変わったときだけ描き直る
   const value = useMemo<Ctx>(() => ({
     account, ready, ...db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
-    enter: open, leave, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh,
-  }), [account, ready, db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, leave, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh]);
+    enter: open, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh,
+  }), [account, ready, db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh]);
 
   const submitPop = () => {
-    if (!pop) return; const v = pop.val.trim();
-    if (!v) return setPop({ ...pop, err: "名前が入力されていません" });
-    if (v.length > 50) return setPop({ ...pop, err: "文字数が多すぎます（50文字まで）" });
-    pop.res(v); setPop(null);
+    if (!pop) return;
+    const err = nameError(pop.val, "名前"); // 11/23：Manager の checkName と同じルール（絵文字も1文字と数える）
+    if (err) return setPop({ ...pop, err });
+    pop.res(pop.val.trim()); setPop(null);
   };
   return (
     <C.Provider value={value}>
