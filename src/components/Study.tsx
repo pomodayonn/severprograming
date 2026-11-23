@@ -25,10 +25,16 @@ import type { Material } from "../beans/Material";
 import type { TranscribeResult } from "../managers/MaterialManager";
 import { PartType } from "../enums/PartType";
 import { NoteCanvas } from "./NoteCanvas";
+import { Tabs } from "./Tabs";
 import { RelationGraph } from "./RelationGraph";
 import { Tree, Header } from "./Shell";
 import { Viewer, useMaterialContent } from "./Material";
 import { toast } from "./toast";
+
+/** 左・真ん中・右のタブ（値と、画面に出す名前） */
+const LTABS = [["tree", "階層"], ["parts", "ノートの部品"]] as const;
+const MODES = [["note", "ノート"], ["side", "資料と並べる"]] as const;
+const RTABS = [["graph", "関連図"], ["toc", "目次"]] as const;
 
 function SideMaterial({ id }: { id: string | null }) {
   const { materials } = useApp(); const m = materials.find(x => x.materialId === id); const v = useMaterialContent("G004", m?.materialId);
@@ -135,7 +141,7 @@ export function Study() {
   return (<div className="app"><Header />
     <div className="cols">
       <aside className="lf">
-        <div className="tabs"><button className={"chip" + (ltab === "tree" ? " on" : "")} onClick={() => setL("tree")}>階層</button><button className={"chip" + (ltab === "parts" ? " on" : "")} onClick={() => setL("parts")}>ノートの部品</button></div>
+        <Tabs tabs={LTABS} value={ltab} onChange={setL} />
         {ltab === "tree" ? (<>
           <Tree heading="科目一覧" extra={extra} />
           {prog !== null && <div className="mute" style={{ margin: "6px 0" }}>文字起こし中… {prog}%</div>}{msg && <div className="err">{msg}</div>}
@@ -159,7 +165,7 @@ export function Study() {
           <p className="mute">置いた部品はドラッグで動かし、右下で大きさ、上の色ボタンで色を変えます。文字は「見出し」に変えられます。</p></div>)}
       </aside>
       <main className="ct">{item && parts ? (<>
-        <div className="tabs"><button className={"chip" + (mode === "note" ? " on" : "")} onClick={() => setMode("note")}>ノート</button><button className={"chip" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>資料と並べる</button><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></div>
+        <Tabs tabs={MODES} value={mode} onChange={setMode}><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></Tabs>
         {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
         <div className="bar2 stick"><span className="row"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn undo" disabled={!h?.past.length} onClick={() => step(true)} title="元に戻す（Ctrl＋Z）" aria-label="元に戻す">↶</button><button className="btn undo" disabled={!h?.future.length} onClick={() => step(false)} title="やり直す（Ctrl＋Y）" aria-label="やり直す">↷</button></span>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
@@ -169,7 +175,7 @@ export function Study() {
           <button className="btn" onClick={() => go({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId })}>模擬テスト</button></div>
       </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
       <aside className="rt">
-        <div className="tabs"><button className={"chip" + (rtab === "graph" ? " on" : "")} onClick={() => setR("graph")}>関連図</button><button className={"chip" + (rtab === "toc" ? " on" : "")} onClick={() => setR("toc")}>目次</button></div>
+        <Tabs tabs={RTABS} value={rtab} onChange={setR} />
         {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </div>
