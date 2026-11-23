@@ -9,6 +9,10 @@ import { memo, useMemo } from "react";
 import type { LearningItem } from "../beans/LearningItem";
 import type { Prerequisite } from "../beans/Prerequisite";
 import { prereqIdsOf } from "../lib/select";
+import { nodeLabel } from "../lib/logic";
+
+/** 丸の半径と、丸どうしの横・縦の間隔（11/23：名前が読めるように大きくした） */
+const R = 36, GX = 118, GY = 96;
 
 function layout(items: LearningItem[], prerequisites: readonly Prerequisite[]) {
   const byId = new Map(items.map(i => [i.itemId, i])), depth = new Map<string, number>();
@@ -23,8 +27,8 @@ function layout(items: LearningItem[], prerequisites: readonly Prerequisite[]) {
   for (const i of items) { const c = d(i.itemId, new Set()); (cols.get(c) ?? cols.set(c, []).get(c)!).push(i.itemId); }
   const pos = new Map<string, [number, number]>();
   let rows = 0;
-  cols.forEach((ids, c) => { rows = Math.max(rows, ids.length); ids.forEach((id, r) => pos.set(id, [48 + c * 100, 44 + r * 76])); });
-  return { pos, W: 100 + cols.size * 100, H: 90 + rows * 76 };
+  cols.forEach((ids, c) => { rows = Math.max(rows, ids.length); ids.forEach((id, r) => pos.set(id, [R + 12 + c * GX, R + 12 + r * GY])); });
+  return { pos, W: 2 * R + 24 + (cols.size - 1) * GX, H: 2 * R + 24 + (rows - 1) * GY };
 }
 
 /** items はその科目の学習項目、prerequisites は前提項目（ほかの科目の分が入っていてもよい） */
@@ -34,12 +38,14 @@ function Graph({ items, prerequisites, selId, onOpen }: Props) {
   if (!items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
   const at = (id: string) => g.pos.get(id)!;
   return (
-    <svg viewBox={`0 0 ${g.W} ${g.H}`} className="graph" role="img" aria-label="関連図">
-      {items.flatMap(i => prereqIdsOf(prerequisites, i.itemId).filter(p => g.pos.has(p)).map(p => <line key={p + i.itemId} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.itemId)[0]} y2={at(i.itemId)[1]} stroke="#cdbfa8" strokeWidth="2" />))}
+    <svg viewBox={`0 0 ${g.W} ${g.H}`} style={{ maxWidth: g.W * 1.4 }} className="graph" role="img" aria-label="関連図">
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX={10 + (R + 2) / 0.8} refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 5L0 10z" fill="#cdbfa8" /></marker></defs>
+      {items.flatMap(i => prereqIdsOf(prerequisites, i.itemId).filter(p => g.pos.has(p)).map(p => <line key={p + i.itemId} x1={at(p)[0]} y1={at(p)[1]} x2={at(i.itemId)[0]} y2={at(i.itemId)[1]} stroke="#cdbfa8" strokeWidth="2" markerEnd="url(#arrow)" />))}
       {items.map(i => { const [x, y] = at(i.itemId), on = i.itemId === selId; return (
         <g key={i.itemId} className="node" tabIndex={0} onClick={() => onOpen(i.itemId)} onKeyDown={e => e.key === "Enter" && onOpen(i.itemId)}>
-          <circle cx={x} cy={y} r="24" fill={on ? "#f6dde2" : "#fffdf8"} stroke={on ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
-          <text x={x} y={y + 4} textAnchor="middle" fontSize="10">{i.itemName.length > 5 ? i.itemName.slice(0, 5) + "…" : i.itemName}</text>
+          <title>{i.itemName}</title>
+          <circle cx={x} cy={y} r={R} fill={on ? "#f6dde2" : "#fffdf8"} stroke={on ? "#cf3f5b" : "#2a2740"} strokeWidth="2" />
+          {(() => { const ls = nodeLabel(i.itemName); return ls.map((t, k) => <text key={k} x={x} y={y + 5 + (k - (ls.length - 1) / 2) * 16} textAnchor="middle" fontSize="13" fontWeight={on ? 700 : 500}>{t}</text>); })()}
         </g>); })}
     </svg>);
 }
