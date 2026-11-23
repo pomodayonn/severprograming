@@ -78,6 +78,14 @@ export class TestManager {
     const t = await this.testDAO.findById(testId); if (!t) throw new TestError("テストが見つかりません"); return t;
   }
 
+  /** テストを消す（G011 の「削除」、11/23）。中の問題・受験・解答も一緒に消える。まとめて消しても、Neon に送るのは最後に1回 */
+  async deleteTests(testIds: readonly string[]): Promise<void> {
+    if (!testIds.length) throw new TestError("消すテストを選んでください");
+    for (const id of testIds) await this.getTest(id); // 1つでもなければ「テストが見つかりません」（どれも消さない）
+    for (const id of testIds) await this.testDAO.delete(id);
+    await this.sync();
+  }
+
   /**
    * 解答を受け取り、意味→用語のテストなら採点する。
    * 初回も解き直しも、解くたびに新しい Attempt（受験）として保存し、最終受験日時も更新する

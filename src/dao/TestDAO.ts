@@ -13,7 +13,7 @@ import { Question } from "../beans/Question";
 import { Attempt } from "../beans/Attempt";
 import { Answer } from "../beans/Answer";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put } from "./idb";
+import { del, get, getAllBy, put, recordDeletion } from "./idb";
 
 const toTest = (r: Test): Test => new Test({
   ...r,
@@ -72,6 +72,12 @@ export class TestDAO {
   /** 最終受験日時を更新する */
   async updateLastTaken(testId: string, at: string = now()): Promise<void> {
     await this.change(testId, test => { test.lastTakenAt = at; });
+  }
+  /** テストを1つ、問題・受験・解答ごと消す（11/23）。Neon では test を消すと question・attempt・answer も一緒に消える */
+  async delete(testId: string): Promise<void> {
+    const t = await get<Test>("tests", testId); if (!t) return;
+    await del("tests", testId);
+    await recordDeletion("test", testId, t.studentId);
   }
   /** 学習項目を消したときに、テストフォルダを中のテストごと消す（Neon では学習項目と一緒に消える） */
   async deleteTestFolder(itemId: string): Promise<void> {
