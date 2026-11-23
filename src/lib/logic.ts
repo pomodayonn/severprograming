@@ -59,3 +59,9 @@ export function nodeLabel(name: string): string[] {
 }
 /** テスト名に使う日付（例：20261121）。11/23：Tests.tsx から移した */
 export const ymd = (t: string) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; };
+/** ノートに要る幅：いちばん右の部品の右はし ＋ 余白24px（11/23）。これがノートの見える幅より大きいと、横にはみ出している */
+export function canvasWidth(parts: readonly { x: number; width: number }[]): number {
+  let w = 0; for (const p of parts) w = Math.max(w, p.x + p.width);
+  return w + 24;
+}
+
