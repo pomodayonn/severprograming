@@ -57,3 +57,5 @@ export function nodeLabel(name: string): string[] {
   const rest = c.slice(4);
   return [c.slice(0, 4).join(""), rest.length > 4 ? rest.slice(0, 3).join("") + "…" : rest.join("")];
 }
+/** テスト名に使う日付（例：20261121）。11/23：Tests.tsx から移した */
+export const ymd = (t: string) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; };

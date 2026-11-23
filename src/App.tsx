@@ -10,11 +10,10 @@ const material = () => import("./components/Material");
 const MaterialView = lazy(() => material().then(m => ({ default: m.MaterialView })));
 const TranscriptEdit = lazy(() => material().then(m => ({ default: m.TranscriptEdit })));
 const AiSend = lazy(() => import("./components/AiSend").then(m => ({ default: m.AiSend })));
-const tests = () => import("./components/Tests");
-const TestCreate = lazy(() => tests().then(m => ({ default: m.TestCreate })));
-const TestAnswer = lazy(() => tests().then(m => ({ default: m.TestAnswer })));
-const TestResult = lazy(() => tests().then(m => ({ default: m.TestResult })));
-const TestList = lazy(() => tests().then(m => ({ default: m.TestList })));
+const TestCreate = lazy(() => import("./components/TestCreate").then(m => ({ default: m.TestCreate })));
+const TestAnswer = lazy(() => import("./components/TestAnswer").then(m => ({ default: m.TestAnswer })));
+const TestResult = lazy(() => import("./components/TestResult").then(m => ({ default: m.TestResult })));
+const TestList = lazy(() => import("./components/TestList").then(m => ({ default: m.TestList })));
 
 const Loading = () => <div className="app"><div className="authwrap"><p className="mute">読み込み中…</p></div></div>;
 

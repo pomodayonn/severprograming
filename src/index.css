@@ -114,3 +114,5 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .search{position:relative;margin:0 0 8px}.search .inp{margin:0;padding-right:28px}.search .link{position:absolute;right:6px;top:50%;transform:translateY(-50%);text-decoration:none;font-size:16px;padding:0 4px}
 .lf mark{margin:0;padding:0;background:var(--soft);border-radius:3px}
 .btn.undo{padding:4px 12px;font-size:17px;line-height:1.4}
+/* 11/23：行数（rows）に合わせた高さの入力欄（前は画面ごとに style で書いていた） */
+.tx.fit{min-height:0;height:auto}
