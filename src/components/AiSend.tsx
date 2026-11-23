@@ -23,6 +23,7 @@ import { Suggestion } from "../beans/Suggestion";
 import { PartType } from "../enums/PartType";
 import { AiWait, useOnline } from "./AiWait";
 import { Shell } from "./Shell";
+import { Tabs } from "./Tabs";
 import { toast } from "./toast";
 
 interface Part { id: string; label: string; text: string; kind: "mat" | "frame" }
@@ -96,7 +97,7 @@ export function AiSend() {
   const refText = parts.find(p => p.id === ref)?.text;
   const tabs: [typeof tab, string][] = essay ? [["src", "元にする内容"], ["send", "送る内容"]] : [["src", "元にする内容"], ["send", "送る内容"], ["prop", "提案"]];
   return <Shell center={<>
-    <div className="tabs">{tabs.map(([k, l]) => <button key={k} className={"chip" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>{l}</button>)}<span className="sp" />{essay && <button className="btn pri" onClick={decide}>決定</button>}</div>
+    <Tabs tabs={tabs} value={tab} onChange={setTab}><span className="sp" />{essay && <button className="btn pri" onClick={decide}>決定</button>}</Tabs>
     {tab === "src" && <div className="vbox">{parts.length === 0 && <p className="mute">元にできる内容がありません。資料をアップロードするか、ノートに枠を作ってください。</p>}
       {parts.length > 0 && <div className="row" style={{ marginBottom: 6 }}><button className="btn sm" onClick={() => choose(parts.map(p => p.id))}>すべて選択</button><button className="btn sm line" onClick={() => choose([])}>選択を外す</button></div>}
       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
