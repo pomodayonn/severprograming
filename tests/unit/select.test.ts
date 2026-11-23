@@ -1,7 +1,8 @@
 // 単体テスト：lib/select.ts（画面が beans の中から「欲しいもの」を IDで探す関数）
 // 別の科目・別の学習項目のものがまざらないか、並び順が正しいか、見つからないときに落ちないかを確かめる
 import { describe, expect, it } from "vitest";
-import { answerOf, attemptsOf, itemsOf, partsOf, prereqIdsOf, questionsOf } from "../../src/lib/select";
+import { answerOf, attemptsOf, itemsOf, lastScore, partsOf, prereqIdsOf, questionsOf } from "../../src/lib/select";
+import { TestType } from "../../src/enums/TestType";
 import { LearningItem } from "../../src/beans/LearningItem";
 import { Prerequisite } from "../../src/beans/Prerequisite";
 import { Note } from "../../src/beans/Note";
@@ -59,4 +60,15 @@ describe("answerOf：その受験の、その問題への解答", () => {
   it("解答を返す", () => expect(answerOf(attempt, "q1")?.studentAnswer).toBe("葉緑体"));
   it("まだ答えていない問題は undefined", () => expect(answerOf(attempt, "q2")).toBeUndefined());
   it("受験がまだなければ undefined（落ちない）", () => expect(answerOf(undefined, "q1")).toBeUndefined());
+});
+
+describe("lastScore：テスト一覧に出す前回の点数", () => {
+  const qs = [new Question({ questionId: "q1" }), new Question({ questionId: "q2" }), new Question({ questionId: "q3" })];
+  const att = (no: number, ok: boolean[]) => new Attempt({ attemptNo: no, answers: ok.map((c, i) => new Answer({ questionId: `q${i + 1}`, correct: c })) });
+  it("いちばん新しい回の正解数を数える", () => {
+    const t = new Test({ testType: TestType.MEANING_TO_TERM, questions: qs, attempts: [att(2, [true, true, false]), att(1, [false, false, false])] });
+    expect(lastScore(t)).toEqual({ ok: 2, total: 3, attemptNo: 2 });
+  });
+  it("まだ解いていなければ null", () => expect(lastScore(new Test({ testType: TestType.MEANING_TO_TERM, questions: qs }))).toBeNull());
+  it("採点のない記述テストは null", () => expect(lastScore(new Test({ testType: TestType.ESSAY, questions: qs, attempts: [att(1, [true])] }))).toBeNull());
 });
