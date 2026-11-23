@@ -107,3 +107,6 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .btn.fill.okb{background:var(--ok);color:#fff}.btn.fill.ngb{background:var(--err);color:#fff}
 .score{display:inline-block;width:120px;height:10px;border-radius:99px;background:var(--soft);overflow:hidden;vertical-align:middle}.score i{display:block;height:100%;background:var(--ok);border-radius:99px}
 .graph .node circle{transition:fill .15s}.graph .node:hover circle,.graph .node:focus-visible circle{fill:#f6dde2}.graph .node:focus-visible circle{stroke-width:3}
+/* 11/23：テスト一覧に前回の点数（全問正解は緑） */
+.trow>span:nth-of-type(1){white-space:nowrap;flex:none}
+.tscore{margin-left:auto;flex:none;font-size:12px;font-weight:700;border:1px solid var(--line2);border-radius:99px;padding:0 10px;color:var(--ink);background:#fff}.tscore.full{border-color:var(--ok);color:var(--ok)}

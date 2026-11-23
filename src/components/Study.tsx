@@ -12,7 +12,7 @@
 // ノートを書いている間は drafts（下書き）に入れておき、「保存」を押すと app.tsx の save() で本当に保存する
 // ボタンの流れ：画面 → controller.handleRequest("G004", イベントID) → LearningItemManager など → DAO → 端末に保存（→ Neon）
 // 11/21 道B：科目・学習項目・前提項目・ノートの部品・資料は beans のまま使う（lib/select.ts の関数で探す）
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType } from "../types";
 import { FT, bottomY, newPart } from "../lib/logic";
@@ -41,6 +41,12 @@ export function Study() {
   const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
   const sid = account?.studentId ?? "";
+  // 11/23：Ctrl＋S（Mac は ⌘＋S）でノートを保存する。ブラウザの「ページを保存」は出さない
+  const saveKey = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveKey.current(); } };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, []);
   if (!subject || !account) return <Redirect to={{ s: "G003" }} />;
   const item: LearningItem | undefined = its.find(i => i.itemId === route.itemId) ?? its[0];
   // ノートの部品：下書き（まだ保存していない変更）があれば下書き、なければ保存してあるノート
@@ -95,6 +101,7 @@ export function Study() {
     }
   };
   const doSave = async () => { if (item && drafts[item.itemId]) { if (await save(item.itemId)) toast("保存したよ"); } else toast("変更はありません"); };
+  saveKey.current = () => { void doSave(); };
   const openMat = (id: string) => go({ s: "G005", subjectId: subject.subjectId, itemId: item?.itemId, materialId: id });
   const toc = parts ? controller.tableOfContents(parts) : []; // 見出しと枠を上から順に（NoteManager.getTableOfContents）
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -132,7 +139,7 @@ export function Study() {
       <main className="ct">{item && parts ? (<>
         <div className="tabs"><button className={"chip" + (mode === "note" ? " on" : "")} onClick={() => setMode("note")}>ノート</button><button className={"chip" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>資料と並べる</button><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></div>
         {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
-        <div className="bar2 stick"><button className="btn pri lg" onClick={doSave}>保存</button>
+        <div className="bar2 stick"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
             {menu && <div className="pop" style={{ position: "absolute", bottom: "110%", left: 0, minWidth: 180, zIndex: 5 }}>{mats.map(m => <div key={m.materialId} className="ind mat" style={{ margin: "3px 0" }} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}</div>}</span>
           <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>AIでまとめる</button>
@@ -144,7 +151,7 @@ export function Study() {
         {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </div>
-    {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave}>保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
+    {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
       <div className="body" style={{ gridTemplateColumns: ref ? "1fr 1fr" : "1fr" }}><div>{canvas}</div>{ref && <SideMaterial id={ref} />}</div></div>}
   </div>);
 }
