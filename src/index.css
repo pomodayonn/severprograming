@@ -121,4 +121,9 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .trow input[type=checkbox]{flex:none;margin:0;width:16px;height:16px}
 /* 11/23：テスト一覧の1行は「名前」の下に小さく「種類・問題数・日時」。前回の点数は右はし */
 .tname{display:flex;flex-direction:column;min-width:0;flex:1}.tname small{font-size:12px;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 11/23：ノートが横にはみ出したとき。ノートの幅をいちばん右の部品まで広げて、.cscroll で横にスクロールする */
+.cscroll{overflow-x:auto;overflow-y:hidden;border-radius:14px}
+.cscroll .canvas{min-width:100%}
+.cover{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--mute);background:var(--soft);border-radius:10px;padding:6px 10px;margin:0 0 8px}
+.cover .btn{margin-left:auto}
 
