@@ -53,8 +53,12 @@ export function Study() {
   // 11/23：ノートの「元に戻す」（Ctrl＋Z）・「やり直す」（Ctrl＋Y か Ctrl＋Shift＋Z）。履歴は学習項目ごとに持つ（lib/history.ts）
   const hist = useRef<Record<string, History<NotePart[]>>>({}), [, setTick] = useState(0);
   const undoKey = useRef<(back: boolean) => void>(() => {});
+  const fullKey = useRef(false); fullKey.current = full;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 確認の窓（「保存していない変更があります」など）が出ている間は、うしろのノートを変えない（11/23 バグ修正）
+      if (document.querySelector(".ov")) return;
+      if (e.key === "Escape" && fullKey.current) { setFull(false); return; } // Esc で全画面を閉じる
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
       if (k === "s") { e.preventDefault(); saveKey.current(); return; }

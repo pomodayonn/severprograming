@@ -112,6 +112,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return p;
   }, []);
   const askName = useCallback((title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res })), []);
+  // 11/23 バグ修正：Esc で窓を閉じる（入力欄の外にフォーカスがあっても）。確認の窓は「やめる」「キャンセル」がある時だけ、それを選んだことにする
+  useEffect(() => {
+    if (!dlg && !pop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (pop) { e.preventDefault(); pop.res(null); setPop(null); return; }
+      const cancel = dlg?.buttons.find(b => b.value === "no" || b.value === "cancel");
+      if (dlg && cancel) { e.preventDefault(); dlg.res(cancel.value); setDlg(null); }
+    };
+    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+  }, [dlg, pop]);
   /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
   const save = useCallback(async (itemId: string) => {
     const dr = dRef.current[itemId], sid = aRef.current?.studentId; if (!dr || !sid) return false;
@@ -218,7 +229,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
       {dlg && <div className="ov"><div className="dlg" role="dialog"><p>{dlg.msg}</p><div className="row">{dlg.buttons.map(b => <button key={b.value} className={"btn" + (b.danger ? " danger" : b.primary ? " pri" : " line")} onClick={() => { dlg.res(b.value); setDlg(null); }}>{b.label}</button>)}</div></div></div>}
       {pop && <div className="ov"><div className="dlg" role="dialog"><h3>{pop.title}</h3>
-        <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter") submitPop(); else if (e.key === "Escape") { pop.res(null); setPop(null); } }} placeholder="50文字まで" />
+        <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter") submitPop(); }} placeholder="50文字まで" />
         {pop.err && <div className="err">{pop.err}</div>}
         <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
     </C.Provider>
