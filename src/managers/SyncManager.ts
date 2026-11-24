@@ -13,6 +13,10 @@
 // ・pullIfStale（古ければ受け取る）：ページを開き直したとき。前回受け取ってから30分たっていなければ受け取らず、端末のデータをそのまま使う（11/23）
 // ・pushChanges（送る）：保存したとき。前回送った時刻（lastSyncedAt）より新しいものと、消したものだけを送る
 //     → 毎回全部を送らないので速い
+// ・ノートの食い違い（11/24、UC-018 代替フロー(2)）：ノートは「アカウントの更新日時（updated_at）が、前回受け取った・送ったときのまま
+//     （noteBases に覚えておく）なら書き換える」という条件付きで送る。書き換わらなければ、別の端末で新しく保存されたということなので、送らずに
+//     「食い違っているノート」（noteConflicts）に入れ、画面に知らせる（NoteConflictListener）。どちらにするかは学生が選ぶ（keepMineNote・takeRemoteNote）
+//     保存したときだけでなく、ネットにつながり直して送ったとき・「最新にする」のときも、見つかったらすぐ知らせる
 // Neon の表は「subject_name」のような snake_case、beans は「subjectName」のような camelCase なので、ここで書き換えている。
 // 「自分のデータだけ」に絞るのは Neon の RLS（db/rls.sql）。JWT の中の学生IDを見て、他人の行は返さない
 import { Subject } from "../beans/Subject";
@@ -29,6 +33,8 @@ import { now } from "../beans/DateTime";
 import type { PartType } from "../enums/PartType";
 import type { TestType } from "../enums/TestType";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
+import type { LearningItem as Item } from "../beans/LearningItem";
+import type { NoteConflict, NoteConflictListener } from "../interfaces/NoteConflictListener";
 import { del, get, getAll, getAllBy, put, replaceStudentData, type Deletion } from "../dao/idb";
 import { isPullStale } from "../lib/logic";
 
@@ -39,6 +45,8 @@ export class SyncManager {
   /** 前回同期した日時（学生ごとに端末に保存する） */
   lastSyncedAt: string | null = null;
   private running: Promise<void> | null = null;
+  /** ノートの食い違いを知らせる相手（11/24。画面が Controller を通して渡す） */
+  private conflictListener: NoteConflictListener | null = null;
 
   constructor(private readonly authClient: NeonAuthClient, private readonly dataApiUrl: string | undefined = import.meta.env.VITE_NEON_DATA_API_URL) {}
 
@@ -62,14 +70,16 @@ export class SyncManager {
     const sub = subjects.map(r => new Subject({ subjectId: s(r.subject_id), studentId: sid, subjectName: s(r.subject_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const its = items.map(r => new LearningItem({ itemId: s(r.item_id), studentId: sid, subjectId: s(r.subject_id), itemName: s(r.item_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const pres = prereqs.map(r => new Prerequisite({ studentId: sid, itemId: s(r.item_id), prereqItemId: s(r.prereq_item_id), updatedAt: s(r.updated_at) }));
-    const nts = notes.map(r => new Note({
-      noteId: s(r.note_id), studentId: sid, itemId: s(r.item_id), lastSavedAt: n(r.last_saved_at), updatedAt: s(r.updated_at),
-      parts: (partsBy[s(r.note_id)] ?? []).map(p => new NotePart({
-        partId: s(p.part_id), studentId: sid, noteId: s(p.note_id), partType: s(p.part_type) as PartType, frameType: n(p.frame_type),
-        x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height), color: s(p.color), text: s(p.text), headingLevel: num(p.heading_level), updatedAt: s(p.updated_at),
-        words: (wordsBy[s(p.part_id)] ?? []).map(w => new Word({ wordId: s(w.word_id), studentId: sid, partId: s(w.part_id), term: s(w.term), meaning: s(w.meaning), updatedAt: s(w.updated_at) })),
-      })),
-    }));
+    const nts: Note[] = toNotes(notes, partsBy, wordsBy, sid);
+    // 11/24：食い違ったまま（どちらにするか、まだ選んでいない）ノートは、受け取りで消さずに、この端末の内容を残す。
+    // 覚えておく更新日時も前のままにする（そうしないと、次に保存したときに食い違いに気づけない）
+    const oldBases = await this.getBases(sid), bases: Record<string, string> = {}, conflicts: string[] = [];
+    for (const r of notes) bases[s(r.note_id)] = s(r.updated_at);
+    for (const id of await this.getConflicts(sid)) {
+      const i = nts.findIndex(x => x.noteId === id), mine = await get<Note>("notes", id);
+      if (i < 0 || !mine) continue; // 別の端末で学習項目ごと消されていたら、食い違いもなくなる
+      nts[i] = mine; bases[id] = oldBases[id] ?? bases[id]; conflicts.push(id);
+    }
     const tss = tests.map(r => new Test({
       testId: s(r.test_id), studentId: sid, itemId: s(r.item_id), testType: s(r.test_type) as TestType, questionCount: num(r.question_count),
       createdAt: s(r.created_at), lastTakenAt: n(r.last_taken_at), updatedAt: s(r.updated_at),
@@ -82,7 +92,7 @@ export class SyncManager {
     // ---- 端末のこの学生のデータを、受け取った内容に置き換える（11/23：1つのトランザクションで） ----
     const t = now();
     await replaceStudentData(sid, { subjects: sub, learningItems: its, prerequisites: pres, notes: nts, tests: tss },
-      { [`lastSyncedAt:${sid}`]: t, [`lastPulledAt:${sid}`]: t });
+      { [`lastSyncedAt:${sid}`]: t, [`lastPulledAt:${sid}`]: t, [`noteBases:${sid}`]: bases, [`noteConflicts:${sid}`]: conflicts });
     this.lastSyncedAt = t;
   }
 
@@ -126,6 +136,52 @@ export class SyncManager {
     try { await this.pushChanges(); return true; } catch { return false; }
   }
 
+  /** ノートの食い違いを知らせる相手を決める（11/24）。null なら知らせない */
+  setNoteConflictListener(listener: NoteConflictListener | null): void { this.conflictListener = listener; }
+
+  /**
+   * まだどちらにするか選んでいないノートがあれば、知らせ直す（11/24）。
+   * 選ぶ前にタブを閉じた場合などのために、ログインしたとき・ページを開き直したときに画面から呼ぶ
+   */
+  async notifyPendingConflicts(): Promise<void> {
+    const student = await this.authClient.getSession(); if (!student) return;
+    await this.notify(await this.getConflicts(student.studentId));
+  }
+
+  /**
+   * 「上書きして保存」を選んだとき（11/24）。アカウントの今の更新日時を「前回見た日時」にして、食い違いを外す。
+   * このあと NoteManager がノートを保存し直すと、この端末の内容がアカウントに送られる
+   */
+  async keepMineNote(noteId: string): Promise<void> {
+    const student = await this.authClient.getSession(); if (!student) return;
+    const sid = student.studentId, bases = await this.getBases(sid), remote = await this.remoteNoteVersion(noteId);
+    if (remote) bases[noteId] = remote; else delete bases[noteId];
+    await this.setBases(sid, bases);
+    await this.setConflicts(sid, (await this.getConflicts(sid)).filter(id => id !== noteId));
+  }
+
+  /**
+   * 「別の端末の内容にする」を選んだとき（11/24）。アカウントのノートを受け取って、この端末のノートを置き換える（この端末の変更は捨てる）。
+   * 受け取ったノートを返す。アカウントにノートがなければ（別の端末で消されていた）null
+   */
+  async takeRemoteNote(noteId: string): Promise<Note | null> {
+    const student = await this.authClient.getSession(); if (!student) return null;
+    const sid = student.studentId, id = enc(noteId);
+    const [row] = (await this.request("GET", `/note?select=*&note_id=eq.${id}`)) as Row[];
+    const bases = await this.getBases(sid);
+    let note: Note | null = null;
+    if (row) {
+      const parts = (await this.request("GET", `/note_part?select=*&note_id=eq.${id}`)) as Row[];
+      const words = parts.length ? (await this.request("GET", `/word?select=*&part_id=in.(${parts.map(p => quote(s(p.part_id))).join(",")})`)) as Row[] : [];
+      [note] = toNotes([row], group(parts, "note_id"), group(words, "part_id"), sid);
+      await put("notes", structuredClone(note));
+      bases[noteId] = s(row.updated_at);
+    } else delete bases[noteId];
+    await this.setBases(sid, bases);
+    await this.setConflicts(sid, (await this.getConflicts(sid)).filter(x => x !== noteId));
+    return note;
+  }
+
   // ======================= ここから private =======================
   private async push(): Promise<void> {
     const student = await this.authClient.getSession(); if (!student) return;
@@ -150,8 +206,22 @@ export class SyncManager {
     await this.upsert("prerequisite", prereqs.map(x => ({ item_id: x.itemId, prereq_item_id: x.prereqItemId })), "item_id,prereq_item_id");
 
     // ノート：変わったノートは、部品と単語を丸ごと送り直す（消した部品は Neon からも消す）
+    // 11/24：別の端末で新しく保存されていたら、送らずに noteConflicts に入れる（UC-018 代替フロー(2)）
+    const bases = await this.getBases(sid), found: string[] = [];
+    let conflicts = await this.getConflicts(sid);
     for (const note of newer(await getAll<Note>("notes"))) {
-      await this.upsert("note", [{ note_id: note.noteId, item_id: note.itemId, last_saved_at: note.lastSavedAt }]);
+      // return=representation：保存したあとの行（Neon が入れた updated_at）を返してもらい、次に送るときのために覚えておく
+      const base = bases[note.noteId];
+      const [saved] = (base
+        // 前回見た更新日時のときだけ書き換える。「確かめる」と「保存する」を1回の通信でするので、通信が増えず、その間に別の端末が保存するすき間もない
+        ? await this.request("PATCH", `/note?note_id=eq.${enc(note.noteId)}&updated_at=eq.${enc(base)}`, { item_id: note.itemId, last_saved_at: note.lastSavedAt }, "return=representation")
+        // まだ一度も受け取っても送ってもいないノート（新しく作ったノートなど）は、確かめずに送る
+        : await this.request("POST", "/note", [{ note_id: note.noteId, item_id: note.itemId, last_saved_at: note.lastSavedAt }], "resolution=merge-duplicates,return=representation")) as Row[];
+      if (!saved) { // 1行も書き換わらなかった＝アカウントの更新日時が変わっていた（別の端末で保存された）
+        if (!conflicts.includes(note.noteId)) { conflicts = [...conflicts, note.noteId]; await this.setConflicts(sid, conflicts); }
+        found.push(note.noteId);
+        continue;
+      }
       const ids = note.parts.map(p => p.partId);
       await this.request("DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
       await this.upsert("note_part", note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel })));
@@ -162,7 +232,10 @@ export class SyncManager {
         await this.request("DELETE", `/word?part_id=in.(${group.map(p => quote(p.partId)).join(",")})${wids.length ? `&word_id=not.in.(${wids.map(quote).join(",")})` : ""}`);
       }
       await this.upsert("word", note.parts.flatMap(p => p.words.map(w => ({ word_id: w.wordId, part_id: p.partId, term: w.term, meaning: w.meaning }))));
+      bases[note.noteId] = s(saved.updated_at); await this.setBases(sid, bases);
+      if (conflicts.includes(note.noteId)) { conflicts = conflicts.filter(x => x !== note.noteId); await this.setConflicts(sid, conflicts); }
     }
+    await this.notify(found); // 11/24：見つかったらすぐ画面に知らせる（残りのテストなどは、このあと続けて送る）
     // テスト：変わったテストは、問題・受験・解答を丸ごと送り直す
     for (const t of newer(await getAll<Test>("tests"))) {
       await this.upsert("test", [{ test_id: t.testId, item_id: t.itemId, test_type: t.testType, question_count: Math.max(1, t.questions.length), created_at: t.createdAt, last_taken_at: t.lastTakenAt }]);
@@ -197,6 +270,36 @@ export class SyncManager {
     const text = await res.text();
     return text ? JSON.parse(text) : null;
   }
+  /** 食い違っているノートを、どの学習項目のノートか分かる形にして画面に知らせる（11/24） */
+  private async notify(noteIds: string[]): Promise<void> {
+    if (!noteIds.length || !this.conflictListener) return;
+    const list: NoteConflict[] = [];
+    for (const noteId of noteIds) {
+      const note = await get<Note>("notes", noteId); if (!note) continue;
+      const item = await get<Item>("learningItems", note.itemId);
+      list.push({ noteId, itemId: note.itemId, itemName: item?.itemName ?? "" });
+    }
+    if (list.length) this.conflictListener.onNoteConflict(list);
+  }
+  /** アカウントのそのノートの更新日時（11/24。「上書きして保存」を選んだときだけ使う）。アカウントにまだなければ null */
+  private async remoteNoteVersion(noteId: string): Promise<string | null> {
+    const [row] = (await this.request("GET", `/note?select=updated_at&note_id=eq.${enc(noteId)}`)) as Row[];
+    return row ? s(row.updated_at) : null;
+  }
+  /** ノートごとの「前回受け取った・送ったときのアカウントの更新日時」（ノートID → 更新日時）（11/24） */
+  private async getBases(sid: string): Promise<Record<string, string>> {
+    return { ...((await get<Record<string, string>>("meta", `noteBases:${sid}`)) ?? {}) };
+  }
+  private async setBases(sid: string, bases: Record<string, string>): Promise<void> {
+    await put("meta", bases, `noteBases:${sid}`);
+  }
+  /** 食い違っていて送れていないノートのID（11/24） */
+  private async getConflicts(sid: string): Promise<string[]> {
+    return (await get<string[]>("meta", `noteConflicts:${sid}`)) ?? [];
+  }
+  private async setConflicts(sid: string, ids: string[]): Promise<void> {
+    await put("meta", ids, `noteConflicts:${sid}`);
+  }
   private async getLastSynced(sid: string): Promise<string | null> {
     this.lastSyncedAt = (await get<string>("meta", `lastSyncedAt:${sid}`)) ?? null; return this.lastSyncedAt;
   }
@@ -211,6 +314,17 @@ const quote = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
 const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const n = (v: unknown) => (v === null || v === undefined ? null : String(v));
 const num = (v: unknown) => Number(v ?? 0);
+/** Neon の note・note_part・word の行から、ノート（部品・単語入り）の beans を作る（pullAll と takeRemoteNote で使う） */
+function toNotes(notes: Row[], partsBy: Record<string, Row[]>, wordsBy: Record<string, Row[]>, sid: string): Note[] {
+  return notes.map(r => new Note({
+    noteId: s(r.note_id), studentId: sid, itemId: s(r.item_id), lastSavedAt: n(r.last_saved_at), updatedAt: s(r.updated_at),
+    parts: (partsBy[s(r.note_id)] ?? []).map(p => new NotePart({
+      partId: s(p.part_id), studentId: sid, noteId: s(p.note_id), partType: s(p.part_type) as PartType, frameType: n(p.frame_type),
+      x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height), color: s(p.color), text: s(p.text), headingLevel: num(p.heading_level), updatedAt: s(p.updated_at),
+      words: (wordsBy[s(p.part_id)] ?? []).map(w => new Word({ wordId: s(w.word_id), studentId: sid, partId: s(w.part_id), term: s(w.term), meaning: s(w.meaning), updatedAt: s(w.updated_at) })),
+    })),
+  }));
+}
 /** 配列を size 個ずつに分ける */
 const chunk = <T>(a: T[], size: number): T[][] => Array.from({ length: Math.ceil(a.length / size) }, (_, i) => a.slice(i * size, (i + 1) * size));
 const group = (rows: Row[], key: string) => rows.reduce<Record<string, Row[]>>((m, r) => { (m[s(r[key])] ??= []).push(r); return m; }, {});
