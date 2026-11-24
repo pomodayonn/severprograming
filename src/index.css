@@ -127,3 +127,14 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .cover{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--mute);background:var(--soft);border-radius:10px;padding:6px 10px;margin:0 0 8px}
 .cover .btn{margin-left:auto}
 
+/* 11/24：学習画面の上のタブ（ノート／資料と並べる・全画面）と「縮小して全体を見る」の帯は、スクロールしても上に残す
+   ・.ctop の高さは決めておき（--toph）、その下に .cover をくっつける
+   ・全画面（.fs）では上のタブがないので、.cover はいちばん上に残す */
+.ct{--toph:46px;--ctpad:14px} /* --ctpad：.ct の上下の余白（12行目の padding:14px）。sticky はこの余白の内側で止まるので、その分だけマイナスにして端にぴったりつける */
+.ctop{position:sticky;top:calc(-1 * var(--ctpad));z-index:4;height:var(--toph);display:flex;align-items:flex-end;background:var(--pn);margin-top:calc(-1 * var(--ctpad));padding-top:6px;margin-bottom:10px}
+.ctop .tabs{flex:1;min-width:0;margin:0;flex-wrap:nowrap;white-space:nowrap;border-bottom:1px solid var(--line)}
+.ctop .tabs b{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ct .cover{position:sticky;top:calc(var(--toph) - var(--ctpad));z-index:3}
+/* 11/24：下の帯（保存など・資料画面の修正／削除／戻る）も、画面の下の端にぴったりつける */
+.ct .stick{bottom:calc(-1 * var(--ctpad));padding-bottom:calc(4px + var(--ctpad));z-index:4}
+.fs .cover{top:0}
