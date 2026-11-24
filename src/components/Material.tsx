@@ -89,10 +89,11 @@ export function TranscriptEdit() {
     const n = (text ?? "").split(r.from).length - 1; if (!n) return setMsg("その文字は見つかりませんでした");
     setText(replaceText(text ?? "", r)); setMsg(`${n}か所を直しました`); setIns("");
   };
-  return <Shell center={<>
+  // 11/24：「元の資料」「文字起こし」の欄は、画面の下まで使って表示する（cls="tedit"。index.css の .tedit）
+  return <Shell cls="tedit" center={<>
     <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span></div>
     <div className="two"><div><h3>元の資料</h3><div className="vbox">{src ? <Viewer type={src.fileType} v={orig} /> : <p className="mute">元の資料がありません（文字起こしだけ表示しています）</p>}</div></div>
-      <div><h3>文字起こし</h3><textarea className="tx" style={{ height: 330 }} value={text ?? ""} onChange={e => setText(e.target.value)} /></div></div></>}
+      <div><h3>文字起こし</h3><textarea className="tx" value={text ?? ""} onChange={e => setText(e.target.value)} /></div></div></>}
     right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" onClick={async () => {
       const r = await controller.handleRequest("G006", "correctTranscript", { materialId: m.materialId, text: text ?? "" });
       if (r.error) return toast(r.error);
