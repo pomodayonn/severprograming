@@ -7,11 +7,13 @@
 // ・G005 の「削除」→ Controller（G005:deleteMaterial）→ MaterialManager.delete
 // ・G006 では「元の文字→直した文字」の形の指示で、文字起こしの文字をまとめて置き換えられる。「確定」→ Controller（G006:correctTranscript）
 // 11/21 道B：資料は beans の Material のまま使う（materialId・fileName・fileType・sourceMaterialId）
+// 11/24：G005 にも「資料と並べる」タブ。同じ学習項目のほかの資料を選んで、右に並べて見られる
 import { useEffect, useState } from "react";
 import { useApp } from "../state/app";
 import { controller } from "../controller/Controller";
 import { parseReplace, replaceText } from "../lib/logic";
 import { Shell } from "./Shell";
+import { Tabs } from "./Tabs";
 import { toast } from "./toast";
 
 /** 資料の中身を読む（screen は呼んでいる画面のID。Controller の「画面ID:getContent」に使う） */
@@ -38,10 +40,18 @@ export function Viewer({ type, v }: { type: string; v: ReturnType<typeof useMate
   if (type === "pdf") return <iframe title="PDF" src={v.url} className="pdf" />;
   return <img src={v.url} alt="資料" style={{ maxWidth: "100%" }} />;
 }
+/** G005 のタブ（値と、画面に出す名前）。学習画面の「ノート／資料と並べる」と同じ形 */
+const VMODES = [["one", "この資料"], ["side", "資料と並べる"]] as const;
+/** 「資料と並べる」の右側：選んだ資料を表示する */
+function SideView({ id }: { id: string | null }) {
+  const { materials } = useApp(); const s = materials.find(x => x.materialId === id); const v = useMaterialContent("G005", s?.materialId);
+  return <div className="vbox">{s ? <Viewer type={s.fileType} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
+}
 export function MaterialView() {
   const { materials, reload, route, go, ask, account } = useApp();
   const m = materials.find(x => x.materialId === route.materialId);
   const v = useMaterialContent("G005", m?.materialId);
+  const [mode, setMode] = useState<"one" | "side">("one"), [sideId, setSideId] = useState<string | null>(null);
   const back = () => go({ s: "G004", subjectId: route.subjectId, itemId: route.itemId });
   if (!m || !account) return <Shell center={<><p>資料がありません。</p><button className="btn" onClick={back}>戻る</button></>} />;
   const del = async () => {
@@ -52,9 +62,16 @@ export function MaterialView() {
     if (r.error) return toast(r.error);
     await reload(); toast("資料を削除したよ"); back();
   };
+  const others = materials.filter(x => x.itemId === m.itemId && x.materialId !== m.materialId); // 並べられる資料（同じ学習項目のほかの資料）
+  const side = others.some(x => x.materialId === sideId) ? sideId : null; // 選んでいた資料が消されたら、選んでいないことにする
+  const main = <div className="vbox"><Viewer type={m.fileType} v={v} /></div>;
   return <Shell center={<>
-    <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span></div>
-    <div className="vbox"><Viewer type={m.fileType} v={v} /></div>
+    {/* 11/24：上のタブはスクロールしても上に残す（.ctop。学習画面と同じ） */}
+    <div className="ctop"><Tabs tabs={VMODES} value={mode} onChange={setMode}><span className="sp" /><span className="fname">{m.fileName}</span></Tabs></div>
+    {/* 11/24：右の資料は .sidepin で包み、スクロールしても付いてくるようにした（長い資料は欄の中でスクロール） */}
+    {mode === "side" ? <div className="two">{main}
+      <div><div className="sidepin">{others.length ? <select className="inp" value={side ?? ""} onChange={e => setSideId(e.target.value || null)}><option value="">並べる資料を選ぶ…</option>{others.map(x => <option key={x.materialId} value={x.materialId}>{x.fileName}</option>)}</select>
+        : <p className="mute">この学習項目には、ほかの資料がありません。</p>}<SideView id={side} /></div></div></div> : main}
     {/* 11/24：「修正」「削除」「戻る」はスクロールしても下に残す（.stick）。「削除」は「修正」の右隣 */}
     <div className="bar2 stick"><span className="row">{m.fileType === "transcript" && <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button>}<button className="btn danger" onClick={del}>削除</button></span>
       <span className="sp" /><button className="btn" onClick={back}>戻る</button></div></>} />;

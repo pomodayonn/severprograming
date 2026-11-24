@@ -133,7 +133,7 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .ct{--toph:46px;--ctpad:14px} /* --ctpad：.ct の上下の余白（12行目の padding:14px）。sticky はこの余白の内側で止まるので、その分だけマイナスにして端にぴったりつける */
 .ctop{position:sticky;top:calc(-1 * var(--ctpad));z-index:4;height:var(--toph);display:flex;align-items:flex-end;background:var(--pn);margin-top:calc(-1 * var(--ctpad));padding-top:6px;margin-bottom:10px}
 .ctop .tabs{flex:1;min-width:0;margin:0;flex-wrap:nowrap;white-space:nowrap;border-bottom:1px solid var(--line)}
-.ctop .tabs b{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ctop .tabs b,.ctop .tabs .fname{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ct .cover{position:sticky;top:calc(var(--toph) - var(--ctpad));z-index:3}
 /* 11/24：下の帯（保存など・資料画面の修正／削除／戻る）も、画面の下の端にぴったりつける */
 .ct .stick{bottom:calc(-1 * var(--ctpad));padding-bottom:calc(4px + var(--ctpad));z-index:4}
@@ -141,3 +141,22 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 /* 11/24：「資料と並べる」で画面が上下にバウンドするバグの修正。
    1fr の列は中身（はみ出したノート）に押し広げられ、「はみ出す→広がる→はみ出さない→縮む→はみ出す…」をくり返していた。
    minmax(0,1fr) にして、列の幅を中身で変えない（41行目の .two と、Study.tsx の全画面も同じ） */
+/* 11/24：「資料と並べる」の右の資料（.sidepin）
+   ・スクロールしても、上のタブのすぐ下に付いてくる（sticky）。付いてくるのは左のノート・資料の終わりまで
+   ・高さは画面に見えている所まで（--sideh）。長い資料は欄の中でスクロールし、短い資料は引き伸ばさない
+   ・PDF は欄の高さいっぱいに表示する（PDF は自分の中でスクロールするため）
+   ・--sideh の cqh は「.ct の高さの1%」。広い画面では .ct の高さを測れるように container-type を付ける
+     （せまい画面では .ct の高さが中身で決まるので付けない。そのときは画面の高さが使われる） */
+@media(min-width:901px){.ct{container-type:size}}
+.ct{--sideh:calc(100cqh - var(--toph) - 64px)}
+.sidepin{position:sticky;top:calc(var(--toph) - var(--ctpad) + 4px);max-height:var(--sideh);display:flex;flex-direction:column;gap:6px}
+.sidepin>.inp,.sidepin>.mute{flex:none;margin:0}
+.sidepin .vbox{flex:1 1 auto;min-height:0;overflow:auto}
+.sidepin:has(.pdf){height:var(--sideh)}
+.sidepin .vbox:has(.pdf){display:flex}
+.sidepin .pdf{flex:1;height:auto;min-height:200px}
+/* 11/24：全画面（.fs）でも .sidepin を使う。全画面ではスクロールするのが .fs .body なので、
+   上のタブ（--toph）や .ct の余白（--ctpad）はなく、いちばん上（top:0）に付いてくる。高さは .fs .body の見えている高さまで */
+.fs .body{container-type:size}
+.fs{--sideh:100cqh}
+.fs .sidepin{top:0}

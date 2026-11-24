@@ -171,7 +171,8 @@ export function Study() {
       <main className="ct">{item && parts ? (<>
         {/* 11/24：上のタブ（ノート／資料と並べる・全画面）は、スクロールしても上に残す（.ctop） */}
         <div className="ctop"><Tabs tabs={MODES} value={mode} onChange={setMode}><button className="chip" onClick={() => setFull(true)}>全画面</button><span className="sp" /><b>{item.itemName}</b><span className="mute">　{drafts[item.itemId] ? "未保存の変更あり" : "保存済み"}</span></Tabs></div>
-        {mode === "side" ? <div className="two"><div>{canvas}</div><div>{matSelect}<SideMaterial id={ref} /></div></div> : canvas}
+        {/* 11/24：右の資料は .sidepin で包み、スクロールしても付いてくるようにした（長い資料は欄の中でスクロール） */}
+        {mode === "side" ? <div className="two"><div>{canvas}</div><div><div className="sidepin">{matSelect}<SideMaterial id={ref} /></div></div></div> : canvas}
         <div className="bar2 stick"><span className="row"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn undo" disabled={!h?.past.length} onClick={() => step(true)} title="元に戻す（Ctrl＋Z）" aria-label="元に戻す">↶</button><button className="btn undo" disabled={!h?.future.length} onClick={() => step(false)} title="やり直す（Ctrl＋Y）" aria-label="やり直す">↷</button></span>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
             {menu && <div className="pop" style={{ position: "absolute", bottom: "110%", left: 0, minWidth: 180, zIndex: 5 }}>{mats.map(m => <div key={m.materialId} className="ind mat" style={{ margin: "3px 0" }} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}</div>}</span>
@@ -184,7 +185,8 @@ export function Study() {
         {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </div>
+    {/* 11/24：全画面でも、右の資料は .sidepin で包んでスクロールしても付いてくるようにした */}
     {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
-      <div className="body" style={{ gridTemplateColumns: ref ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}><div>{canvas}</div>{ref && <SideMaterial id={ref} />}</div></div>}
+      <div className="body" style={{ gridTemplateColumns: ref ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}><div>{canvas}</div>{ref && <div><div className="sidepin"><SideMaterial id={ref} /></div></div>}</div></div>}
   </div>);
 }
