@@ -38,7 +38,7 @@ mark{background:linear-gradient(transparent 60%,color-mix(in srgb,var(--acc) 28%
 .wl{padding:2px 6px;overflow:auto}.wr{display:flex;gap:4px;margin-bottom:3px}.wr input{flex:1;min-width:0;border:1px solid #e3dccb;border-radius:6px;padding:1px 6px;background:#fff}.rs{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--acc) 50%);border-radius:0 0 8px 0}
 .toc{border:1px solid var(--line);background:#fff;text-align:left;padding:3px 10px;border-radius:99px}.toc:hover{border-color:var(--acc)}.graph{width:100%;height:auto}.graph .node{cursor:pointer;outline:none}
 .fs{position:fixed;inset:0;z-index:40;background:var(--pn);display:flex;flex-direction:column;padding:12px 16px}.fs .body{flex:1;min-height:0;overflow:auto;display:grid;gap:12px}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.txt{white-space:pre-wrap;margin:0;font:inherit}.tx{width:100%;border:1px solid var(--line2);border-radius:12px;padding:10px;height:100%;min-height:260px;background:#fff}.pdf{width:100%;height:420px;border:0}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.txt{white-space:pre-wrap;margin:0;font:inherit}.tx{width:100%;border:1px solid var(--line2);border-radius:12px;padding:10px;height:100%;min-height:260px;background:#fff}.pdf{width:100%;height:420px;border:0}
 .vbox{border:1px solid var(--line);border-radius:16px;padding:14px 16px;min-height:330px;background:#fff}.fname{text-align:right;font-size:12px;color:var(--mute)}
 .bar2{display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap}.stick{position:sticky;bottom:0;background:var(--pn);padding:10px 0 4px;margin-top:8px;border-top:1px solid var(--line)}
 .qtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.qn{display:flex;align-items:center;gap:8px;cursor:pointer;padding:3px 0}.qn i{width:16px;height:16px;border:2px solid var(--acc);border-radius:50%}.qn.on i{background:var(--acc)}
@@ -138,3 +138,6 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 /* 11/24：下の帯（保存など・資料画面の修正／削除／戻る）も、画面の下の端にぴったりつける */
 .ct .stick{bottom:calc(-1 * var(--ctpad));padding-bottom:calc(4px + var(--ctpad));z-index:4}
 .fs .cover{top:0}
+/* 11/24：「資料と並べる」で画面が上下にバウンドするバグの修正。
+   1fr の列は中身（はみ出したノート）に押し広げられ、「はみ出す→広がる→はみ出さない→縮む→はみ出す…」をくり返していた。
+   minmax(0,1fr) にして、列の幅を中身で変えない（41行目の .two と、Study.tsx の全画面も同じ） */
