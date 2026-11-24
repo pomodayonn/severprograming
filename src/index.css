@@ -168,3 +168,11 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .tedit .two .pdf{flex:1;height:auto}
 .tedit .two .vbox>img{align-self:flex-start}
 .tedit .two .tx{height:var(--teh);min-height:260px}
+/* 11/25：テスト一覧（G011）の上（科目のフォルダ・すべて選ぶ・並べかえ）は、スクロールしても上の端に残す
+   ・学習画面の .ctop と同じく、.ct の余白（--ctpad）の分だけ上にずらして、端にぴったりつける
+   ・科目の数で高さが変わるので、.ctop と違って高さは決めない（下に重ねて止めるものがないため） */
+.ltop{position:sticky;top:calc(-1 * var(--ctpad));z-index:4;background:var(--pn);margin-top:calc(-1 * var(--ctpad));padding:var(--ctpad) 0 8px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.ltop .tlhead{margin-bottom:0}
+/* 11/25：テスト一覧の科目のフォルダは1行に並べ、入りきらない分は横にスクロールする（科目が多くても上の部分が大きくならない） */
+.ltop .folders{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+.ltop .folder{flex:none}
