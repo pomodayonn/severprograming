@@ -160,3 +160,11 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .fs .body{container-type:size}
 .fs{--sideh:100cqh}
 .fs .sidepin{top:0}
+/* 11/24：文字起こし修正画面（G006）。「元の資料」と「文字起こし」の欄を、画面に見えている高さいっぱいにする
+   ・--teh：.ct の高さ（100cqh）から、上のファイル名の行と「元の資料」などの見出しの分（70px）を引いた高さ
+   ・長い資料・文字起こしは、それぞれの欄の中でスクロールする。PDF は欄いっぱいに表示する */
+.tedit .ct{--teh:calc(100cqh - 70px)}
+.tedit .two .vbox{height:var(--teh);min-height:260px;overflow:auto;display:flex;flex-direction:column}
+.tedit .two .pdf{flex:1;height:auto}
+.tedit .two .vbox>img{align-self:flex-start}
+.tedit .two .tx{height:var(--teh);min-height:260px}
