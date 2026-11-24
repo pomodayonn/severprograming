@@ -30,8 +30,11 @@ import { TestManager } from "../managers/TestManager";
 import { TestType } from "../enums/TestType";
 import { SubjectManager } from "../managers/SubjectManager";
 import { LearningItemManager } from "../managers/LearningItemManager";
-import { NoteManager, type TocEntry } from "../managers/NoteManager";
+import { NoteManager, type ConflictChoice, type TocEntry } from "../managers/NoteManager";
+export type { ConflictChoice }; // 画面は Manager を直接読まないので、Controller から渡す
 import { MaterialManager } from "../managers/MaterialManager";
+import type { NoteConflict, NoteConflictListener } from "../interfaces/NoteConflictListener";
+export type { NoteConflict, NoteConflictListener }; // 画面が実装して setNoteConflictListener に渡す
 import type { ProgressListener } from "../interfaces/ProgressListener";
 import { SubjectDAO } from "../dao/SubjectDAO";
 import { LearningItemDAO } from "../dao/LearningItemDAO";
@@ -99,6 +102,7 @@ export type RequestParams = {
   "G005:deleteMaterial": { materialId: string; withTranscript: boolean };
   "G006:correctTranscript": { materialId: string; text: string };
   "G004:saveNote": { studentId: string; itemId: string; parts: readonly NotePart[] };
+  "G004:resolveNoteConflict": { studentId: string; itemId: string; choice: ConflictChoice }; // 11/24：外部設計書に追加が必要（ノートの食い違い）
   "G007:summarize": { studentId: string; itemId: string; text: string; frameTypes: FrameType[]; parts: readonly NotePart[] };
   "G007:approve": { studentId: string; itemId: string; parts: readonly NotePart[]; suggestions: Suggestion[] };
   "G008:createWordTest": { studentId: string; itemId: string; testType: TestType.MEANING_TO_TERM | TestType.TERM_TO_MEANING; count: number; partIds?: string[] };
@@ -147,6 +151,14 @@ export class Controller {
     // 11/17：オフラインから戻ったら、その間に保存した分をアカウント（Neon）に送る
     if (typeof window !== "undefined") window.addEventListener("online", () => { void this.syncManager.pushChanges().catch(() => {}); });
   }
+
+  /**
+   * ノートの食い違いを知らせてもらう係を登録する（11/24、UC-018 代替フロー(2)）。Java の addActionListener と同じ考え方。
+   * 保存したとき・ネットにつながり直したとき・「最新にする」のときなど、アカウントに送って食い違いが見つかるたびに呼ばれる
+   */
+  setNoteConflictListener(listener: NoteConflictListener | null): void { this.syncManager.setNoteConflictListener(listener); }
+  /** まだどちらにするか選んでいないノートがあれば、知らせ直してもらう（ログインしたとき・ページを開き直したとき） */
+  async checkPendingNoteConflicts(): Promise<void> { await this.syncManager.notifyPendingConflicts().catch(() => {}); }
 
   /**
    * どの画面のどのボタンかを見て、担当の Manager を呼ぶ。
@@ -233,6 +245,11 @@ export class Controller {
         case "G004:saveNote": { // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。parts は下書きの部品
           const { studentId, itemId, parts } = p("G004:saveNote");
           await this.noteManager.saveParts(studentId, itemId, parts);
+          return {}; // 11/24：別の端末と食い違っていたら、送ったときに NoteConflictListener で画面に知らせが来る
+        }
+        case "G004:resolveNoteConflict": { // 11/24：食い違ったときに選んだ方にする（mine：上書きして保存、theirs：別の端末の内容にする）
+          const { studentId, itemId, choice } = p("G004:resolveNoteConflict");
+          await this.noteManager.resolveConflict(itemId, studentId, choice);
           return {};
         }
         // ---- G008 テスト作成 ----

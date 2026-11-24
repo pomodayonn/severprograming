@@ -108,6 +108,8 @@ export async function clearStudentData(studentId: string): Promise<void> {
   }
   await del("meta", `lastSyncedAt:${studentId}`);
   await del("meta", `lastPulledAt:${studentId}`); // 11/23：次にログインしたとき、必ず受け取り直すように
+  await del("meta", `noteBases:${studentId}`);    // 11/24：ノートの食い違いを見分けるための記録
+  await del("meta", `noteConflicts:${studentId}`);
 }
 
 /** replaceStudentData で入れ替える入れ物（学生IDの索引があり、Neon と同期するもの） */

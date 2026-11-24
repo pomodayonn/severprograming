@@ -26,7 +26,7 @@ import type { NotePart } from "../beans/NotePart";
 import type { Test } from "../beans/Test";
 import type { Material } from "../beans/Material";
 import { removeOldData } from "../services/db";
-import { controller, type StudentData } from "../controller/Controller";
+import { controller, type NoteConflict, type StudentData } from "../controller/Controller";
 import { toast } from "../components/toast";
 import { nameError } from "../lib/logic";
 
@@ -104,7 +104,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { live = false; };
   }, [open]);
 
-  const ask = useCallback((msg: string, buttons: Btn[]) => new Promise<string>(res => setDlg({ msg, buttons, res })), []);
+  // 11/24：確認画面は1つずつ出す。開いている間に別の確認（ノートの食い違いの知らせなど）が来たら、閉じてから出す
+  const dlgQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const ask = useCallback((msg: string, buttons: Btn[]) => {
+    const p = dlgQueue.current.then(() => new Promise<string>(res => setDlg({ msg, buttons, res })));
+    dlgQueue.current = p.catch(() => {});
+    return p;
+  }, []);
   const askName = useCallback((title: string, initial = "") => new Promise<string | null>(res => setPop({ title, val: initial, err: "", res })), []);
   /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
   const save = useCallback(async (itemId: string) => {
@@ -115,6 +121,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDrafts(p => { if (p[itemId] !== dr) return p; const n = { ...p }; delete n[itemId]; return n; }); // 保存中にさらに書いた分は残す
     return true;
   }, [reload]);
+  /**
+   * ノートの食い違い（11/24、UC-018 代替フロー(2)）。別の端末で、このノートがより新しく保存されていたら、どちらにするか選んでもらう。
+   * 保存したとき・ネットにつながり直したとき・「最新にする」のときなど、SyncManager が見つけたらすぐに知らせてくる（NoteConflictListener）
+   */
+  const asking = useRef(new Set<string>()); // 同じノートの確認を2重に出さない
+  const resolveConflict = useCallback(async (c: NoteConflict) => {
+    const sid = aRef.current?.studentId; if (!sid || asking.current.has(c.noteId)) return;
+    asking.current.add(c.noteId);
+    try {
+      const name = c.itemName ? `「${c.itemName}」の` : "";
+      const choice = await ask(`別の端末で、${name}ノートがより新しく保存されています。どちらにしますか（「別の端末の内容にする」を選ぶと、この端末で変えた分は消えます）`,
+        [{ label: "上書きして保存", value: "mine", primary: true }, { label: "別の端末の内容にする", value: "theirs", danger: true }]);
+      const r = await controller.handleRequest("G004", "resolveNoteConflict", { studentId: sid, itemId: c.itemId, choice: choice === "theirs" ? "theirs" : "mine" });
+      if (r.error) { toast(r.error); return; }
+      if (choice === "theirs") { setDrafts(p => { if (!(c.itemId in p)) return p; const n = { ...p }; delete n[c.itemId]; return n; }); toast("別の端末の内容にしたよ"); }
+      else toast("上書きして保存したよ");
+      await reload();
+    } finally { asking.current.delete(c.noteId); }
+  }, [ask, reload]);
+  useEffect(() => {
+    controller.setNoteConflictListener({ onNoteConflict: list => { for (const c of list) void resolveConflict(c); } });
+    return () => controller.setNoteConflictListener(null);
+  }, [resolveConflict]);
+  // ログインしたとき・ページを開き直したときに、まだ選んでいない食い違いがあれば出す（選ぶ前にタブを閉じたときのため）
+  useEffect(() => { if (account) void controller.checkPendingNoteConflicts(); }, [account]);
+
   /** 保存していないノートがあれば確認する（D04）。移ってよければ true */
   const guard = useCallback(async () => {
     const ids = Object.keys(dRef.current); if (!ids.length) return true;

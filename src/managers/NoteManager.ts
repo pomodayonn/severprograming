@@ -13,6 +13,18 @@ import type { NoteDAO } from "../dao/NoteDAO";
 import { newId, pushQuietly, type ChangePusher } from "./common";
 import type { SuggestionApplier } from "./AiSummaryManager";
 
+/**
+ * SyncManager のうち、NoteManager が使う部分（11/24：ノートの食い違い、UC-018 代替フロー(2)）。
+ * Java の interface と同じで、NoteManager は SyncManager の中身を知らなくても呼べる
+ */
+export interface NoteSyncer extends ChangePusher {
+  keepMineNote(noteId: string): Promise<void>;
+  takeRemoteNote(noteId: string): Promise<Note | null>;
+}
+
+/** 食い違ったときに、どちらのノートにするか。mine：この端末の内容で上書き、theirs：別の端末の内容にする */
+export type ConflictChoice = "mine" | "theirs";
+
 /** 目次の1行（右サイドバー用） */
 export interface TocEntry { partId: string; kind: "heading" | "frame"; level: number; label: string; y: number }
 
@@ -28,7 +40,7 @@ const toWords = (content: string): Word[] => textToWords(content).map(w => new W
 const frameName = (frameType: string | null) => (frameType && FT[frameType as FrameType]?.n) || "枠";
 
 export class NoteManager implements SuggestionApplier {
-  constructor(private readonly noteDAO: NoteDAO, private readonly syncManager: ChangePusher | null = null) {}
+  constructor(private readonly noteDAO: NoteDAO, private readonly syncManager: NoteSyncer | null = null) {}
 
   /** ノートを中の部品ごと返す。まだなければ空のノートを作る（学習項目を作る前のデータのため） */
   async getNote(itemId: string, studentId: string): Promise<Note> {
@@ -40,6 +52,22 @@ export class NoteManager implements SuggestionApplier {
     const saved = await this.noteDAO.save(note);
     await this.sync();
     return saved;
+  }
+
+  /**
+   * 食い違いを解決する（11/24、UC-018 代替フロー(2)）。食い違いの知らせは SyncManager から NoteConflictListener で画面に届く。
+   * ・mine  ：「上書きして保存」。この端末のノートを保存し直して、アカウントに送る
+   * ・theirs：「別の端末の内容にする」。アカウントのノートを受け取って、この端末のノートを置き換える（この端末の変更は捨てる）
+   * 解決したあとのノートを返す
+   */
+  async resolveConflict(itemId: string, studentId: string, choice: ConflictChoice): Promise<Note> {
+    const note = await this.getNote(itemId, studentId);
+    if (!this.syncManager) return note;
+    if (choice === "mine") {
+      await this.syncManager.keepMineNote(note.noteId);
+      return this.saveNote(note);
+    }
+    return (await this.syncManager.takeRemoteNote(note.noteId)) ?? note;
   }
 
   /**
