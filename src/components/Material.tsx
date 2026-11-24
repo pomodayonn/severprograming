@@ -53,9 +53,11 @@ export function MaterialView() {
     await reload(); toast("資料を削除したよ"); back();
   };
   return <Shell center={<>
-    <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span><button className="btn sm danger" onClick={del}>削除</button></div>
+    <div className="row"><span className="sp" /><span className="fname">{m.fileName}</span></div>
     <div className="vbox"><Viewer type={m.fileType} v={v} /></div>
-    <div className="bar2">{m.fileType === "transcript" ? <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button> : <span />}<button className="btn" onClick={back}>戻る</button></div></>} />;
+    {/* 11/24：「修正」「削除」「戻る」はスクロールしても下に残す（.stick）。「削除」は「修正」の右隣 */}
+    <div className="bar2 stick"><span className="row">{m.fileType === "transcript" && <button className="btn pri" onClick={() => go({ ...route, s: "G006" })}>修正</button>}<button className="btn danger" onClick={del}>削除</button></span>
+      <span className="sp" /><button className="btn" onClick={back}>戻る</button></div></>} />;
 }
 export function TranscriptEdit() {
   const { materials, route, nav, account } = useApp();
