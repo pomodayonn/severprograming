@@ -185,6 +185,6 @@ export function Study() {
       </aside>
     </div>
     {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
-      <div className="body" style={{ gridTemplateColumns: ref ? "1fr 1fr" : "1fr" }}><div>{canvas}</div>{ref && <SideMaterial id={ref} />}</div></div>}
+      <div className="body" style={{ gridTemplateColumns: ref ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}><div>{canvas}</div>{ref && <SideMaterial id={ref} />}</div></div>}
   </div>);
 }
