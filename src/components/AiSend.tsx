@@ -97,7 +97,7 @@ export function AiSend() {
   const refText = parts.find(p => p.id === ref)?.text;
   const tabs: [typeof tab, string][] = essay ? [["src", "元にする内容"], ["send", "送る内容"]] : [["src", "元にする内容"], ["send", "送る内容"], ["prop", "提案"]];
   return <Shell center={<>
-    <Tabs tabs={tabs} value={tab} onChange={setTab}><span className="sp" />{essay && <button className="btn pri" onClick={decide}>決定</button>}</Tabs>
+    <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === "src" && <div className="vbox">{parts.length === 0 && <p className="mute">元にできる内容がありません。資料をアップロードするか、ノートに枠を作ってください。</p>}
       {parts.length > 0 && <div className="row" style={{ marginBottom: 6 }}><button className="btn sm" onClick={() => choose(parts.map(p => p.id))}>すべて選択</button><button className="btn sm line" onClick={() => choose([])}>選択を外す</button></div>}
       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
@@ -111,10 +111,10 @@ export function AiSend() {
           <div>{cur && <div className="mute">提案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.content}
             onChange={e => setProps(props.map((x, j) => j !== i ? x : new Suggestion({ ...x, content: e.target.value })))} /></div></div></div>); })}</div>}
     {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
-    {set && essay && <div className="pop">記述テストに使う内容を決めます。AIの利用はテストを作るときです。</div>}
     <AiWait busy={busy} what="AIがまとめています" />
-    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
-    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "送信"}</button>}<button className="btn line" onClick={() => setSet(!set)}>設定</button>
+    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{essay && "　（記述テストでは、利用回数はテストを作るときに使います）"}{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
+    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "送信"}</button>}{/* 11/25：記述テストのときは「設定」（設定できるものがない）の代わりに「決定」を置く。前は「決定」だけ画面の上にあって迷いやすかった */}
+      {essay ? <button className="btn pri lg" onClick={decide}>決定</button> : <button className="btn line" onClick={() => setSet(!set)}>設定</button>}
       {!essay && <button className="btn pri lg" disabled={tab !== "prop"} onClick={approve}>承認</button>}</span>
       <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("提案をすべて捨てたよ"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.subjectId, itemId: item.itemId }); }}>キャンセル</button></div></>}
     right={<><h3>参照</h3><div className="mute">ストレージの資料とノートの枠。押すと中身を見られます（AIの提案と見比べるとき）</div>
