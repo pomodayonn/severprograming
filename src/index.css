@@ -219,3 +219,13 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .fbar .fb:disabled,.fbar .fsel:disabled{opacity:.4;cursor:default}.fbar .fb.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .fbar .fb.txt{font-size:12px}.fbar .fgrp{display:inline-flex;gap:2px;margin-left:4px}
 .fbar .fb.sw{min-width:22px;width:22px;padding:0}.fbar .fb.sw span{width:14px;height:14px;border-radius:50%;display:block}.fbar .fb.sw.mk span{border-radius:3px;border:1px solid rgba(0,0,0,.15)}
+/* 11/25 夕：矢印は部品いっぱいの svg に描く。両はしの丸（.ah）をドラッグして向きと長さを変える。丸は、矢印を選んでいるときかマウスを乗せたときに出す */
+.el.arrow .aw{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.el.arrow .eh{position:relative;z-index:1}
+.el.arrow .ah{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#fff;border:2px solid var(--acc);cursor:grab;opacity:0;transition:opacity .15s;z-index:2;touch-action:none}
+.el.arrow:hover .ah,.el.arrow.sel .ah{opacity:1}.el.arrow .ah{background:rgba(255,255,255,.55)}.el.arrow .ah.tip{border-style:dashed}
+/* 11/25 夕：文字の大きさ（pt）の入力欄 */
+.fbar .ptbox{display:inline-flex;align-items:center;gap:2px}.fbar .fsel.pt{width:62px;padding:0 6px}
+/* 11/25 夕：マーカーを消すボタン（白い四角に斜めの線） */
+.fbar .fb.sw.mk.none span{background:linear-gradient(to top right,#fff calc(50% - 1px),#cf3f5b calc(50% - 1px),#cf3f5b calc(50% + 1px),#fff calc(50% + 1px))}
+
