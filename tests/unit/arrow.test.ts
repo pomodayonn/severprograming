@@ -1,7 +1,7 @@
 // 単体テスト：arrowPoints・arrowFromPoints（矢印の向き）
 // 矢印の2つの点を text に入れて読み戻せるか、点を動かすと部品の位置と大きさが点を囲むように変わるか、古い矢印が今までどおり左→右になるか
 import { describe, expect, it } from "vitest";
-import { ARROW_PAD, ARROW_TOP, arrowFromPoints, arrowPoints, newPart } from "../../src/lib/logic";
+import { ARROW_PAD, ARROW_TOP, arrowFromPoints, arrowPoints, arrowStyleOf, newPart, withArrowStyle } from "../../src/lib/logic";
 import { PartType } from "../../src/enums/PartType";
 
 /** 部品の左上と、中の点から、ノートの上の点に直す */
@@ -18,4 +18,14 @@ describe("arrowFromPoints・arrowPoints：矢印の2つの点", () => {
     const p = newPart(PartType.ARROW, 250), q = arrowPoints(p);
     expect(p.y).toBe(250); expect(q.y1).toBe(q.y2); expect(q.x2 > q.x1).toBe(true);
   });
+});
+
+describe("矢印の太さと点線（11/25 夜）", () => {
+  const base = "arrow:14,38,150,38";
+  it("何も付いていなければ、ふつう・実線", () => expect(arrowStyleOf(base)).toEqual({ w: "normal", dash: false }));
+  it("太い・点線にできる", () => expect(withArrowStyle(base, { w: "bold", dash: true })).toBe(base + ";w=bold;dash"));
+  it("書いたものを読み戻せる", () => expect(arrowStyleOf(base + ";w=thin;dash")).toEqual({ w: "thin", dash: true }));
+  it("ふつう・実線に戻すと、後ろの印は消える", () => expect(withArrowStyle(base + ";w=bold;dash", { w: "normal", dash: false })).toBe(base));
+  it("太さを変えても点の位置は変わらない", () => expect(arrowPoints({ width: 200, height: 80, text: base + ";w=bold" })).toEqual({ x1: 14, y1: 38, x2: 150, y2: 38 }));
+  it("知らない値は、ふつうとして読む", () => expect(arrowStyleOf(base + ";w=huge").w).toBe("normal"));
 });

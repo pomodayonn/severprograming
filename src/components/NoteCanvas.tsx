@@ -16,7 +16,7 @@ import { NotePart, type ShapeKind } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
 import { PartType } from "../enums/PartType";
-import { arrowFromPoints, arrowPoints, canvasWidth, copyPart, findInParts, FT, moveLayers, newWord, stepZoom, type FindHit } from "../lib/logic";
+import { ARROW_W, arrowFromPoints, arrowPoints, arrowStyleOf, withArrowStyle, canvasWidth, copyPart, findInParts, FT, moveLayers, newWord, stepZoom, type FindHit } from "../lib/logic";
 import { FONTS, PT_MAX, PT_MIN, PT_SIZES, clampPt, clearFmt, continueList, toggleList, fromNodes, parseRich, stringifyRich, toHtml, type Align, type FontKey, type Rich } from "../lib/rich";
 import { controller } from "../controller/Controller";
 
@@ -140,10 +140,11 @@ function blurEditor(target: EventTarget) {
 /** 矢印（11/25 夕）：始まりの点から先の点へ。両はしの丸をドラッグすると、向きと長さが変わる */
 function Arrow({ part: p, h }: { part: NotePart; h: Handlers }) {
   const { x1, y1, x2, y2 } = arrowPoints(p), len = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / len, uy = (y2 - y1) / len;
-  const hx = x2 - ux * 12, hy = y2 - uy * 12; // 矢じりの根もと
-  const head = `${x2},${y2} ${hx - uy * 7},${hy + ux * 7} ${hx + uy * 7},${hy - ux * 7}`;
+  const st = arrowStyleOf(p.text), w = ARROW_W[st.w]; // 11/25 夜：太さ（細い・ふつう・太い）と点線
+  const hx = x2 - ux * w.len, hy = y2 - uy * w.len; // 矢じりの根もと
+  const head = `${x2},${y2} ${hx - uy * w.half},${hy + ux * w.half} ${hx + uy * w.half},${hy - ux * w.half}`;
   return (<>
-    <svg className="aw" width={p.width} height={p.height} aria-hidden="true"><line x1={x1} y1={y1} x2={hx} y2={hy} stroke={p.color} strokeWidth="3" strokeLinecap="round" /><polygon points={head} fill={p.color} /></svg>
+    <svg className="aw" width={p.width} height={p.height} aria-hidden="true"><line x1={x1} y1={y1} x2={hx} y2={hy} stroke={p.color} strokeWidth={w.line} strokeLinecap="round" strokeDasharray={st.dash ? `${w.line * 2.5} ${w.line * 2}` : undefined} /><polygon points={head} fill={p.color} /></svg>
     <span className="ah" style={{ left: x1, top: y1 }} onPointerDown={e => h.start(e, p, "p1")} title="ドラッグで始まりの位置を変える" />
     <span className="ah tip" style={{ left: x2, top: y2 }} onPointerDown={e => h.start(e, p, "p2")} title="ドラッグで矢印の向きと長さを変える" />
   </>);
@@ -160,6 +161,10 @@ const PartView = memo(function PartView({ part: p, h, sel }: { part: NotePart; h
       <div className="eh" style={{ color: p.color }} onPointerDown={e => h.start(e, p, "move")}>
         <span>{label}</span>
         {text && <select value={p.headingLevel} onPointerDown={stop} onChange={e => h.upd(p.partId, { headingLevel: Number(e.target.value) })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
+        {p.partType === PartType.ARROW && (() => { const st = arrowStyleOf(p.text); return (<>
+          <select value={st.w} onPointerDown={stop} onChange={e => h.upd(p.partId, { text: withArrowStyle(p.text, { w: e.target.value as keyof typeof ARROW_W }) })} aria-label="矢印の太さ" title="矢印の太さ">
+            {(Object.keys(ARROW_W) as (keyof typeof ARROW_W)[]).map(k => <option key={k} value={k}>{ARROW_W[k].n}</option>)}</select>
+          <button className={"dashb" + (st.dash ? " on" : "")} onPointerDown={stop} onClick={() => h.upd(p.partId, { text: withArrowStyle(p.text, { dash: !st.dash }) })} aria-pressed={st.dash} aria-label="点線" title="点線にする・実線に戻す">┄</button></>); })()}
         {shape && <select value={NotePart.shapeOf(p)} onPointerDown={stop} onChange={e => h.upd(p.partId, NotePart.shapePatch(e.target.value as ShapeKind))}><option value="rect">四角</option><option value="ellipse">丸</option></select>}
         <input type="color" value={p.color} onPointerDown={stop} onChange={e => h.upd(p.partId, { color: e.target.value })} aria-label="色" />
         <button onPointerDown={stop} onClick={() => h.remove(p.partId)} aria-label="削除">×</button>
@@ -419,7 +424,7 @@ export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { pa
       if (d.mode === "p1" || d.mode === "p2") { // 矢印の点：動かしていないほうの点はそのままで、部品の位置と大きさを作り直す
         const a = arrowPoints({ width: d.w, height: d.h, text: d.text }), ax = d.x + a.x1, ay = d.y + a.y1, bx = d.x + a.x2, by = d.y + a.y2;
         const n = d.mode === "p1" ? arrowFromPoints(ax + dx, ay + dy, bx, by) : arrowFromPoints(ax, ay, bx + dx, by + dy);
-        return new NotePart({ ...x, ...n, updatedAt: now() });
+        return new NotePart({ ...x, ...n, text: withArrowStyle(n.text, arrowStyleOf(d.text)), updatedAt: now() }); // 太さ・点線はそのまま
       }
       return new NotePart(d.mode === "move" ? { ...x, x: Math.max(0, d.x + dx), y: Math.max(0, d.y + dy), updatedAt: now() } : { ...x, width: Math.max(60, d.w + dx), height: Math.max(30, d.h + dy), updatedAt: now() });
     }).map(x => { // いくつも選んで動かすときは、ほかの選んだ部品も同じだけ動かす

@@ -251,4 +251,8 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .fsearch .fb{min-width:28px;height:28px;border:1px solid var(--line2);border-radius:8px;background:#fff}.fsearch .fb:disabled{opacity:.4}
 ::highlight(note-find){background-color:#ffd54a;color:inherit}
 .el .wr input.found{background:#ffe98a}
+/* 11/25 夜：矢印の太さ・点線の切りかえ（矢印の上の帯） */
+.el.arrow .eh select{font-size:11px;padding:0 2px;height:20px}
+.el.arrow .eh .dashb{border:1px solid currentColor;background:#fff;border-radius:5px;font-size:12px;line-height:1;height:20px;min-width:22px;padding:0 3px;color:inherit;opacity:.55}.el.arrow .eh .dashb.on{opacity:1;background:var(--ink);border-color:var(--ink);color:#fff}
+.el.arrow .eh>span:first-child{white-space:nowrap}
 
