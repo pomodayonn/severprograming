@@ -75,9 +75,12 @@ CREATE TABLE IF NOT EXISTS note_part (
   color         text,
   text          text NOT NULL DEFAULT '',
   heading_level integer NOT NULL DEFAULT 0 CHECK (heading_level BETWEEN 0 AND 3),
+  style         text NOT NULL DEFAULT '',  -- 11/25：文字の書式（JSON。形は src/lib/rich.ts）。書式がなければ ''
   updated_at    timestamptz NOT NULL DEFAULT now(),
   CHECK (part_type = 'FRAME' OR frame_type IS NULL)
 );
+-- 11/25：もう note_part の表があるデータベースに、style 列を足す（何回流しても大丈夫）
+ALTER TABLE note_part ADD COLUMN IF NOT EXISTS style text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS note_part_note_idx ON note_part (note_id);
 CREATE INDEX IF NOT EXISTS note_part_student_idx ON note_part (student_id);
 

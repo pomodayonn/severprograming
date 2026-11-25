@@ -39,6 +39,9 @@ export class NotePart {
   text: string = "";
   /** 見出しレベル（0＝見出しでない、1〜3） */
   headingLevel: number = 0;
+  /** 文字の書式（11/25 追加）。文字ごとの太字・色・文字の種類などと、そろえ方を JSON の文字列で入れる。書式がなければ ""。
+   *  形と読み書きは lib/rich.ts。text は今までどおり書式なしの文字なので、AI・単語テスト・検索はそのまま text を使えばよい */
+  style: string = "";
   /** 最終更新日時 */
   updatedAt: DateTime = "";
   /** 単語のリスト（単語枠だけ） */
