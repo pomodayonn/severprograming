@@ -1,6 +1,7 @@
 // ノートの文字の書式（11/25）：文字ごとの 太字・斜体・下線・文字の色・マーカー・文字の種類・大きさ と、部品ごとのそろえ方
 //
 // 【このファイルで何が起きているか】
+// 11/25 夕：文字の大きさを「小・中・大・特大」から、Word と同じポイント（pt）にした。前の「小〜特大」で保存したものは pt に読みかえる。
 // 文字そのものは今までどおり NotePart.text に「書式なしの文字」で入れる（AIのまとめ・単語テスト・検索はそのまま使える）。
 // 書式は NotePart.style に JSON の文字列で入れる。形は { align, runs: [{ s, e, b, i, u, c, bg, f, z }] }。
 //   s〜e は text の何文字目から何文字目まで（e は含まない）。b 太字・i 斜体・u 下線・c 文字の色・bg マーカーの色・f 文字の種類・z 大きさ
@@ -16,20 +17,27 @@ export const FONTS = {
   mono: { n: "等幅", css: 'ui-monospace,"Cascadia Mono",Consolas,monospace' },
 } as const;
 export type FontKey = keyof typeof FONTS;
-/** 文字の大きさ（画面の選択肢の名前と、px） */
-export const SIZES = { s: { n: "小", px: 12 }, m: { n: "中", px: 15 }, l: { n: "大", px: 20 }, xl: { n: "特大", px: 26 } } as const;
-export type SizeKey = keyof typeof SIZES;
+/** 文字の大きさの選択肢（ポイント。Word と同じ並び）。この間の数（6〜96pt、0.5pt きざみ）なら、手で打ってもよい */
+export const PT_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72] as const;
+export const PT_MIN = 6, PT_MAX = 96;
+/** 前の「小・中・大・特大」で保存した大きさ（px）。読むときに pt に直す */
+const OLD_PX: Record<string, number> = { s: 12, m: 15, l: 20, xl: 26 };
+/** pt を 0.5 きざみにして、6〜96pt に収める。数でなければ undefined */
+export function clampPt(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(PT_MAX, Math.max(PT_MIN, Math.round(n * 2) / 2));
+}
 export type Align = "left" | "center" | "right";
 
 /** 書式の1かたまり（text の s 文字目から e 文字目の手前まで） */
-export interface Run { s: number; e: number; b?: boolean; i?: boolean; u?: boolean; c?: string; bg?: string; f?: FontKey; z?: SizeKey }
+export interface Run { s: number; e: number; b?: boolean; i?: boolean; u?: boolean; c?: string; bg?: string; f?: FontKey; z?: number }
 export interface Rich { align?: Align; runs: Run[] }
 /** 1文字分の書式（Run から s・e を除いたもの） */
 export type Fmt = Omit<Run, "s" | "e">;
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const isFont = (v: unknown): v is FontKey => typeof v === "string" && v in FONTS;
-const isSize = (v: unknown): v is SizeKey => typeof v === "string" && v in SIZES;
 
 /** 書式の中の、決まった値だけを残す（それ以外は捨てる） */
 export function cleanFmt(f: Partial<Record<keyof Fmt, unknown>>): Fmt {
@@ -40,7 +48,8 @@ export function cleanFmt(f: Partial<Record<keyof Fmt, unknown>>): Fmt {
   if (typeof f.c === "string" && HEX.test(f.c)) o.c = f.c.toLowerCase();
   if (typeof f.bg === "string" && HEX.test(f.bg)) o.bg = f.bg.toLowerCase();
   if (isFont(f.f) && f.f !== "sans") o.f = f.f; // ゴシックはふつうの文字なので書かない
-  if (isSize(f.z) && f.z !== "m") o.z = f.z; // 中はふつうの大きさなので書かない
+  const z = typeof f.z === "string" && f.z in OLD_PX ? clampPt(OLD_PX[f.z] * 0.75) : clampPt(f.z); // 前の「小〜特大」は pt に直す
+  if (z !== undefined) o.z = z;
   return o;
 }
 const same = (a: Fmt, b: Fmt) => a.b === b.b && a.i === b.i && a.u === b.u && a.c === b.c && a.bg === b.bg && a.f === b.f && a.z === b.z;
@@ -57,6 +66,23 @@ export function normalize(runs: readonly Run[], length: number): Run[] {
     if (last && last.e === s && same(last, r)) last.e = r.e; else out.push({ ...r, s });
   }
   return out;
+}
+
+/**
+ * text の a〜b 文字目の書式を消す（11/25 夕）。keys を渡せば、その書式だけ（例：["bg"] でマーカーだけ）消す。渡さなければ全部消す。
+ * ブラウザのコマンドではマーカーがきれいに消えないことがあるので、保存の形（runs）のほうを直して、画面を作り直す
+ */
+export function clearFmt(runs: readonly Run[], a: number, b: number, keys?: readonly (keyof Fmt)[]): Run[] {
+  if (b <= a) return [...runs];
+  const out: Run[] = [];
+  for (const r of runs) {
+    if (r.e <= a || r.s >= b) { out.push(r); continue; } // 消す範囲の外
+    if (r.s < a) out.push({ ...r, e: a });               // 範囲の前の部分はそのまま
+    const mid: Run = { ...r, s: Math.max(r.s, a), e: Math.min(r.e, b) };
+    if (keys) { for (const k of keys) delete mid[k]; out.push(mid); }  // 決めた書式だけ消す
+    if (r.e > b) out.push({ ...r, s: b });               // 範囲の後の部分はそのまま
+  }
+  return normalize(out, Infinity);
 }
 
 /** 保存されている JSON を読む。読めなければ書式なし */
@@ -86,7 +112,7 @@ export function fmtCss(f: Fmt): string {
   if (f.c) css.push(`color:${f.c}`);
   if (f.bg) css.push(`background-color:${f.bg}`);
   if (f.f) css.push(`font-family:${FONTS[f.f].css.replace(/"/g, "'")}`);
-  if (f.z) css.push(`font-size:${SIZES[f.z].px}px`);
+  if (f.z) css.push(`font-size:${f.z}pt`);
   return css.join(";");
 }
 /** text と書式から HTML を作る。書式のある所は <span style="…">、改行は <br>（読み戻すときは style を読む） */
@@ -119,13 +145,13 @@ export function toHex(v: string | undefined | null): string | undefined {
   if (/^#[0-9a-f]{3}$/i.test(v)) return "#" + [...v.slice(1)].map(c => c + c).join("").toLowerCase();
   return HEX.test(v) ? v.toLowerCase() : undefined;
 }
-/** CSS の font-size（"20px" や "x-large"、<font size="5"> の数字）を大きさの名前にする */
-export function toSize(v: string | undefined | null): SizeKey | undefined {
+/** CSS の font-size（"12pt"・"20px"・"x-large"、<font size="5"> の数字）を pt にする */
+export function toSize(v: string | undefined | null): number | undefined {
   if (!v) return undefined;
-  const k: Record<string, SizeKey> = { "x-small": "s", small: "s", "1": "s", "2": "s", medium: "m", "3": "m", large: "l", "x-large": "l", "4": "l", "5": "l", "xx-large": "xl", "xxx-large": "xl", "6": "xl", "7": "xl" };
-  if (k[v]) return k[v];
-  const px = parseFloat(v); if (!Number.isFinite(px)) return undefined;
-  return px < 13.5 ? "s" : px < 17.5 ? "m" : px < 23 ? "l" : "xl";
+  const k: Record<string, number> = { "xx-small": 7, "x-small": 7.5, small: 10, medium: 12, large: 13.5, "x-large": 18, "xx-large": 24, "xxx-large": 36, "1": 7.5, "2": 10, "3": 12, "4": 13.5, "5": 18, "6": 24, "7": 36 };
+  if (k[v] !== undefined) return k[v];
+  const m = v.match(/^([\d.]+)(pt|px)$/); if (!m) return undefined;
+  return clampPt(m[2] === "pt" ? Number(m[1]) : Number(m[1]) * 0.75);
 }
 /** CSS の font-family から文字の種類を見分ける */
 export function toFont(v: string | undefined | null): FontKey | undefined {
@@ -139,7 +165,7 @@ export function toFont(v: string | undefined | null): FontKey | undefined {
 const BLOCK = /^(DIV|P|LI|H[1-6])$/;
 
 /** 画面（contenteditable）の中身から、text と書式を読み戻す。ブラウザが作る <b> <i> <u> <font> <span style> <div> <br> を読む */
-export function fromNodes(root: NodeLike): { text: string; runs: Run[] } {
+export function fromNodes(root: NodeLike, opt: { keepLastBr?: boolean } = {}): { text: string; runs: Run[] } {
   let text = "", pending = false; // pending：<div> が終わったところ。次に文字か <div> が来たら、改行を1つ入れる
   const runs: Run[] = [];
   const flush = () => { if (pending) { text += "\n"; pending = false; } };
@@ -174,6 +200,7 @@ export function fromNodes(root: NodeLike): { text: string; runs: Run[] } {
         if (deco) { if (deco.includes("underline")) g.u = true; else if (deco === "none") delete g.u; }
         const c = toHex(st.color); if (c) g.c = c;
         const bg = toHex(st.backgroundColor); if (bg) g.bg = bg;
+        else if (st.backgroundColor && /^(transparent|initial|rgba\(.*,\s*0\))$/.test(st.backgroundColor)) delete g.bg; // マーカーなし（11/25 夕）
         const fo = toFont(st.fontFamily); if (fo) g.f = fo;
         const z = toSize(st.fontSize); if (z) g.z = z;
       }
@@ -187,6 +214,6 @@ export function fromNodes(root: NodeLike): { text: string; runs: Run[] } {
   walk(root, {});
   // いちばん最後の <br> は、最後の行を見せるためにブラウザ（と toHtml）が足したものなので、改行に数えない
   const kids = Array.from(root.childNodes), last = kids[kids.length - 1];
-  if (last && last.nodeType === 1 && last.nodeName.toUpperCase() === "BR" && text.endsWith("\n")) text = text.slice(0, -1);
+  if (!opt.keepLastBr && last && last.nodeType === 1 && last.nodeName.toUpperCase() === "BR" && text.endsWith("\n")) text = text.slice(0, -1);
   return { text, runs: normalize(runs, text.length) };
 }
