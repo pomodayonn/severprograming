@@ -232,6 +232,19 @@ function PtBox({ disabled }: { disabled: boolean }) {
       onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); apply(v); } }} /><span className="mute">pt</span>
     <datalist id="pt-sizes">{PT_SIZES.map(n => <option key={n} value={n} />)}</datalist></span>);
 }
+/** 部品を置くボタン（11/25 夕。前は左の欄の「ノートの部品」タブにあったものを、書式のボタンの並びに移した）。
+ *  枠は種類を選んでから「＋」。文字・図形・矢印はボタン1つで置く。置いた部品は、そのまま選ばれた状態になる */
+function InsertBar({ onAdd }: { onAdd: (type: PartType, ft?: FrameType) => void }) {
+  const [ft, setFt] = useState<FrameType>("word");
+  return (<div className="ibar" role="toolbar" aria-label="ノートに部品を置く">
+    <span className="ilabel">置く</span>
+    <span className="fgrp"><select className="fsel" value={ft} onChange={e => setFt(e.target.value as FrameType)} aria-label="枠の種類" title="置く枠の種類">{(Object.keys(FT) as FrameType[]).map(k => <option key={k} value={k}>{FT[k].n}</option>)}</select>
+      <button className="fb txt pri" onClick={() => onAdd(PartType.FRAME, ft)} title={`${FT[ft].n}を置く`}>＋ 枠</button></span>
+    <span className="fgrp"><button className="fb txt" onClick={() => onAdd(PartType.TEXT)} title="文字を置く（見出しにもできます）">＋ 文字</button>
+      <button className="fb txt" onClick={() => onAdd(PartType.SHAPE)} title="図形（四角・丸）を置く">＋ 図形</button>
+      <button className="fb txt" onClick={() => onAdd(PartType.ARROW)} title="矢印を置く（両はしの丸をドラッグして向きを変えます）">＋ 矢印</button></span>
+  </div>);
+}
 /** Ctrl＋C で覚えた部品（このタブの中だけ。別の学習項目のノートにも貼れる） */
 let clip: NotePart | null = null;
 
@@ -240,7 +253,7 @@ const ZOOM_KEY = "runndesu:noteZoom";
 function loadZoom(): number | "fit" { try { const v = localStorage.getItem(ZOOM_KEY); if (v === "fit") return v; const n = Number(v); return n >= 0.5 && n <= 1.5 ? n : 1; } catch { return 1; } }
 function saveZoom(v: number | "fit") { try { localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* 保存できなくても大きさは変えられる */ } }
 
-export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void }) {
+export function NoteCanvas({ parts, onChange, onAdd }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void; onAdd?: (type: PartType, ft?: FrameType) => NotePart | void }) {
   const ref = useRef({ parts, onChange }); ref.current = { parts, onChange };
   const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number; z: number; w0: number; text: string } | null>(null);
   // 11/23：全画面で右のほうに置いた部品が、ふつうの画面で切れて見えなくなっていた。
@@ -323,6 +336,7 @@ export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (
   let H = 520; for (const p of parts) H = Math.max(H, p.y + p.height + 160);
   return (<div className="cwrap">
     <div className="cover zbar">
+      {onAdd && <InsertBar onAdd={(t, f) => { const n = onAdd(t, f); if (n) setSelId(n.partId); }} />}
       <FormatBar sel={selPart} onAlign={setAlign} onCopy={() => selPart && paste(selPart)} onLayer={layer} />
       {over && z * W > cw + 1 && <span className="mute">右にはみ出した部品があります。横にスクロールするか「全体」で見られます。</span>}<span className="sp" />
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, -1))} disabled={z <= 0.5} aria-label="ノートを小さく" title="小さく">−</button>
