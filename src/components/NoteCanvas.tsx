@@ -16,7 +16,7 @@ import { NotePart, type ShapeKind } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
 import { PartType } from "../enums/PartType";
-import { arrowFromPoints, arrowPoints, canvasWidth, copyPart, FT, moveLayers, newWord, stepZoom } from "../lib/logic";
+import { arrowFromPoints, arrowPoints, canvasWidth, copyPart, findInParts, FT, moveLayers, newWord, stepZoom, type FindHit } from "../lib/logic";
 import { FONTS, PT_MAX, PT_MIN, PT_SIZES, clampPt, clearFmt, continueList, toggleList, fromNodes, parseRich, stringifyRich, toHtml, type Align, type FontKey, type Rich } from "../lib/rich";
 import { controller } from "../controller/Controller";
 
@@ -108,6 +108,11 @@ function charsBefore(box: HTMLElement, node: Node, offset: number): number {
 }
 /** 作り直した欄（toHtml の形：文字・<span>・<br>）で、a〜b 文字目を選ぶ */
 function selectChars(box: HTMLElement, a: number, b: number) {
+  const r = rangeOfChars(box, a, b);
+  box.focus(); const s = document.getSelection(); s?.removeAllRanges(); s?.addRange(r);
+}
+/** 欄の a〜b 文字目を指す Range（選びはしない。検索の印にも使う） */
+function rangeOfChars(box: HTMLElement, a: number, b: number): Range {
   const at = (pos: number): [Node, number] => {
     let n = 0; const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
     for (let x = w.nextNode(); x; x = w.nextNode()) {
@@ -118,7 +123,7 @@ function selectChars(box: HTMLElement, a: number, b: number) {
   };
   const r = document.createRange(), [sn, so] = at(a), [en, eo] = at(b);
   r.setStart(sn, so); r.setEnd(en, eo);
-  box.focus(); const s = document.getSelection(); s?.removeAllRanges(); s?.addRange(r);
+  return r;
 }
 /** 今選んでいる欄の書式を、保存の形のほうで直す */
 function editSel(fn: EditFn) {
@@ -207,33 +212,6 @@ function currentPt(): number | null {
   return clampPt(parseFloat(getComputedStyle(el).fontSize) * 0.75) ?? null;
 }
 
-/** ノートの上の書式のボタン（11/25）。文字の種類・大きさ・太字・斜体・下線・文字の色・マーカー・そろえ方・書式を消す・複製・重なり順 */
-function FormatBar({ sel, count, onAlign, onCopy, onLayer, onRemove }: { sel: NotePart | undefined; count: number; onAlign: (a: Align) => void; onCopy: () => void; onLayer: (to: "front" | "back") => void; onRemove: () => void }) {
-  const keep = (e: React.MouseEvent) => e.preventDefault(); // ボタンを押しても、文字の選択を外さない
-  const canText = !!sel && (sel.partType === PartType.TEXT || (sel.partType === PartType.FRAME && sel.frameType !== "word"));
-  const align = sel ? parseRich(sel.style).align ?? "left" : "left";
-  const B = ({ cmd, v, label, title, cls = "" }: { cmd: string; v?: string; label: React.ReactNode; title: string; cls?: string }) =>
-    <button className={"fb " + cls} disabled={!canText} onMouseDown={keep} onClick={() => exec(cmd, v)} title={title} aria-label={title}>{label}</button>;
-  return (<div className="fbar" role="toolbar" aria-label="文字の書式">
-    <select className="fsel" disabled={!canText} value="" onChange={e => { exec("fontName", FONTS[e.target.value as FontKey].css); e.target.value = ""; }} aria-label="文字の種類" title="文字の種類">
-      <option value="" disabled>文字の種類</option>{(Object.keys(FONTS) as FontKey[]).map(k => <option key={k} value={k}>{FONTS[k].n}</option>)}</select>
-    <PtBox disabled={!canText} />
-    <B cmd="bold" label={<b>B</b>} title="太字（Ctrl＋B）" /><B cmd="italic" label={<i>I</i>} title="斜体（Ctrl＋I）" /><B cmd="underline" label={<u>U</u>} title="下線（Ctrl＋U）" />
-    <span className="fgrp" aria-label="文字の色">{INK.map(c => <B key={c} cmd="foreColor" v={c} cls="sw" label={<span style={{ background: c }} />} title={`文字の色 ${c}`} />)}</span>
-    <span className="fgrp" aria-label="マーカー">{MARK.map(c => <B key={c} cmd="hiliteColor" v={c} cls="sw mk" label={<span style={{ background: c }} />} title={`マーカー ${c}`} />)}
-      <button className="fb sw mk none" disabled={!canText} onMouseDown={keep} onClick={() => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b, ["bg"]) } }))} title="選んだ文字のマーカーを消す" aria-label="マーカーを消す"><span /></button></span>
-    <span className="fgrp" aria-label="そろえ方">{(["left", "center", "right"] as Align[]).map(a => <button key={a} className={"fb" + (canText && align === a ? " on" : "")} disabled={!canText} onMouseDown={keep} onClick={() => onAlign(a)} title={{ left: "左にそろえる", center: "まん中にそろえる", right: "右にそろえる" }[a]} aria-label={{ left: "左にそろえる", center: "まん中にそろえる", right: "右にそろえる" }[a]}>{{ left: "⇤", center: "≡", right: "⇥" }[a]}</button>)}</span>
-    <span className="fgrp" aria-label="箇条書きと番号">{(["ul", "ol"] as const).map(k => <button key={k} className="fb" disabled={!canText} onMouseDown={keep}
-      onClick={() => editSel((t, r, a, b) => { const x = toggleList(t, r.runs, a, b, k); return { text: x.text, rich: { ...r, runs: x.runs }, sel: x.sel }; })}
-      title={k === "ul" ? "箇条書き（・）を付ける・外す" : "番号（1. 2. …）を付ける・外す"} aria-label={k === "ul" ? "箇条書き" : "番号付きリスト"}>{k === "ul" ? "・≡" : "1."}</button>)}</span>
-    <button className="fb txt" disabled={!canText} onMouseDown={keep} onClick={() => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b) } }))} title="選んだ文字の書式（太字・色・マーカー・大きさなど）を全部消す">書式を消す</button>
-    <span className="fgrp" aria-label="部品">{count > 1 && <span className="fcount">{count}個を選択中</span>}
-      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={onCopy} title="選んでいる部品を複製（Ctrl＋C → Ctrl＋V でもできます）">複製</button>
-      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={() => onLayer("front")} title="選んでいる部品をいちばん前に">前面へ</button>
-      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={() => onLayer("back")} title="選んでいる部品をいちばん後ろに">背面へ</button>
-      <button className="fb txt del" disabled={!count} onMouseDown={keep} onClick={onRemove} title="選んでいる部品を消す（Delete キーでもできます。Ctrl＋Z で戻せます）">削除</button></span>
-  </div>);
-}
 /** 文字の大きさ（pt）の入力欄（11/25 夕）。一覧から選ぶか、数を打って Enter。今カーソルのある所の大きさを出しておく */
 function PtBox({ disabled }: { disabled: boolean }) {
   const [v, setV] = useState(""), editing = useRef(false);
@@ -249,17 +227,117 @@ function PtBox({ disabled }: { disabled: boolean }) {
       onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); apply(v); } }} /><span className="mute">pt</span>
     <datalist id="pt-sizes">{PT_SIZES.map(n => <option key={n} value={n} />)}</datalist></span>);
 }
-/** 部品を置くボタン（11/25 夕。前は左の欄の「ノートの部品」タブにあったものを、書式のボタンの並びに移した）。
- *  枠は種類を選んでから「＋」。文字・図形・矢印はボタン1つで置く。置いた部品は、そのまま選ばれた状態になる */
-function InsertBar({ onAdd }: { onAdd: (type: PartType, ft?: FrameType) => void }) {
-  const [ft, setFt] = useState<FrameType>("word");
-  return (<div className="ibar" role="toolbar" aria-label="ノートに部品を置く">
-    <span className="ilabel">置く</span>
-    <span className="fgrp"><select className="fsel" value={ft} onChange={e => setFt(e.target.value as FrameType)} aria-label="枠の種類" title="置く枠の種類">{(Object.keys(FT) as FrameType[]).map(k => <option key={k} value={k}>{FT[k].n}</option>)}</select>
-      <button className="fb txt pri" onClick={() => onAdd(PartType.FRAME, ft)} title={`${FT[ft].n}を置く`}>＋ 枠</button></span>
-    <span className="fgrp"><button className="fb txt" onClick={() => onAdd(PartType.TEXT)} title="文字を置く（見出しにもできます）">＋ 文字</button>
-      <button className="fb txt" onClick={() => onAdd(PartType.SHAPE)} title="図形（四角・丸）を置く">＋ 図形</button>
-      <button className="fb txt" onClick={() => onAdd(PartType.ARROW)} title="矢印を置く（両はしの丸をドラッグして向きを変えます）">＋ 矢印</button></span>
+/**
+ * ノートの中の検索（11/25 夜）。Ctrl＋F か「検索」で開く。Enter で次、Shift＋Enter で前、Esc で閉じる。
+ * 見つけた部品を選んで、見える所までスクロールし、文字の所に黄色い印を付ける（印は CSS Custom Highlight。使えないブラウザでは部品の枠だけ）
+ */
+function FindBar({ parts, root, onPick, onClose, inputRef }: { parts: NotePart[]; root: () => HTMLElement | null; onPick: (partId: string) => void; onClose: () => void; inputRef: React.RefObject<HTMLInputElement | null> }) {
+  const [q, setQ] = useState(""), [i, setI] = useState(0);
+  const hits = q.trim() ? findInParts(parts, q) : [], n = hits.length, cur = n ? hits[Math.min(i, n - 1)] : null;
+  useEffect(() => { setI(0); }, [q]);
+  useEffect(() => { // 見つけた所に印を付けて、見える所までスクロールする
+    const reg = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights, HL = (globalThis as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    reg?.delete("note-find");
+    if (!cur) return;
+    onPick(cur.partId);
+    const el = root()?.querySelector<HTMLElement>(`[data-id="${cur.partId}"]`); if (!el) return;
+    el.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+    const target = hitTarget(el, cur);
+    if (target instanceof HTMLElement && target.classList.contains("rt-edit") && reg && HL) reg.set("note-find", new HL(rangeOfChars(target, cur.start, cur.end)));
+    if (target instanceof HTMLInputElement) target.classList.add("found");
+    return () => { reg?.delete("note-find"); if (target instanceof HTMLInputElement) target.classList.remove("found"); };
+  }, [cur?.partId, cur?.field, cur?.word, cur?.start, q]);
+  const step = (d: 1 | -1) => n && setI(x => (Math.min(x, n - 1) + d + n) % n);
+  return (<span className="fsearch" role="search">
+    <input ref={inputRef} className="fsel" value={q} placeholder="ノートの中を検索" aria-label="ノートの中を検索" onChange={e => setQ(e.target.value)}
+      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); } else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } }} />
+    <span className="fcnt" aria-live="polite">{q.trim() ? (n ? `${Math.min(i, n - 1) + 1}/${n}` : "0件") : ""}</span>
+    <button className="fb" disabled={!n} onClick={() => step(-1)} title="前（Shift＋Enter）" aria-label="前を探す">↑</button>
+    <button className="fb" disabled={!n} onClick={() => step(1)} title="次（Enter）" aria-label="次を探す">↓</button>
+    <button className="fb" onClick={onClose} title="検索を閉じる（Esc）" aria-label="検索を閉じる">×</button>
+  </span>);
+}
+/** 見つけた場所の入力欄（文字の欄・単語の用語・意味） */
+function hitTarget(el: HTMLElement, h: FindHit): Element | null {
+  if (h.field === "text") return el.querySelector(".rt-edit");
+  const row = el.querySelectorAll(".wr")[h.word ?? 0]; return row?.querySelectorAll("input")[h.field === "term" ? 0 : 1] ?? null;
+}
+
+/**
+ * 小さなメニュー（11/25 夜）。ボタンを押すと下に開き、外を押すか、中のボタンを押すと閉じる。
+ * 中のボタンを押しても文字の選択が外れないように、mousedown は止める
+ */
+function Menu({ label, title, disabled, children, cls = "" }: { label: React.ReactNode; title: string; disabled?: boolean; children: (close: () => void) => React.ReactNode; cls?: string }) {
+  const [open, setOpen] = useState(false), box = useRef<HTMLSpanElement>(null), pop = useRef<HTMLSpanElement>(null);
+  // 開いたメニューが真ん中の欄の右からはみ出すときは、ボタンの右はしにそろえて開く
+  useLayoutEffect(() => {
+    const el = pop.current; if (!open || !el) return;
+    el.style.left = ""; el.style.right = "";
+    const edge = (el.closest(".ct, .fs")?.getBoundingClientRect().right ?? window.innerWidth) - 8; // 真ん中の欄（全画面なら画面）の右はし
+    if (el.getBoundingClientRect().right > edge) { el.style.left = "auto"; el.style.right = "0"; }
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", off); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", off); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (<span className="fmenu" ref={box}>
+    <button className={"fb " + cls + (open ? " on" : "")} disabled={disabled} onMouseDown={e => e.preventDefault()} onClick={() => setOpen(!open)} title={title} aria-label={title} aria-expanded={open}>{label}<span className="caret">▾</span></button>
+    {open && <span className="fpop" ref={pop} role="menu" onMouseDown={e => e.preventDefault()}>{children(() => setOpen(false))}</span>}
+  </span>);
+}
+
+/**
+ * ノートの上の操作のボタン（11/25 夜：4行あったものを1行にまとめた）。よく使うものは並べ、あまり使わないものは ▾・⋯ の中にしまう。
+ *   ＋置く▾（枠・文字・図形・矢印）｜文字の種類・大きさ（pt）・太字・斜体・下線｜文字の色▾・マーカー▾｜そろえ方▾｜箇条書き・番号｜⋯（書式を消す・複製・前面へ・背面へ・削除・印刷）
+ */
+function FormatBar({ sel, count, onAdd, onAlign, onCopy, onLayer, onRemove, onPrint }: {
+  sel: NotePart | undefined; count: number; onAdd?: (type: PartType, ft?: FrameType) => void; onAlign: (a: Align) => void;
+  onCopy: () => void; onLayer: (to: "front" | "back") => void; onRemove: () => void; onPrint: () => void;
+}) {
+  const keep = (e: React.MouseEvent) => e.preventDefault(); // ボタンを押しても、文字の選択を外さない
+  const canText = !!sel && (sel.partType === PartType.TEXT || (sel.partType === PartType.FRAME && sel.frameType !== "word"));
+  const align = sel ? parseRich(sel.style).align ?? "left" : "left";
+  const B = ({ cmd, v, label, title, cls = "", after }: { cmd: string; v?: string; label: React.ReactNode; title: string; cls?: string; after?: () => void }) =>
+    <button className={"fb " + cls} disabled={!canText} onMouseDown={keep} onClick={() => { exec(cmd, v); after?.(); }} title={title} aria-label={title}>{label}</button>;
+  const AL = { left: ["⇤", "左にそろえる"], center: ["≡", "まん中にそろえる"], right: ["⇥", "右にそろえる"] } as const;
+  const item = (label: string, onClick: () => void, close: () => void, opt: { disabled?: boolean; cls?: string; title?: string } = {}) =>
+    <button className={"fitem " + (opt.cls ?? "")} role="menuitem" disabled={opt.disabled} onMouseDown={keep} onClick={() => { close(); onClick(); }} title={opt.title}>{label}</button>;
+  return (<div className="fbar" role="toolbar" aria-label="ノートの操作">
+    {onAdd && <Menu label="＋ 置く" title="ノートに部品を置く" cls="put">{close => (<>
+      <span className="fhead">枠</span>
+      {(Object.keys(FT) as FrameType[]).map(k => <button key={k} className="fitem" role="menuitem" onClick={() => { close(); onAdd(PartType.FRAME, k); }}><i className="fdot" style={{ background: FT[k].c }} />{FT[k].n}</button>)}
+      <span className="fhead">そのほか</span>
+      {item("文字", () => onAdd(PartType.TEXT), close, { title: "文字を置く（見出しにもできます）" })}
+      {item("図形", () => onAdd(PartType.SHAPE), close, { title: "図形（四角・丸）を置く" })}
+      {item("矢印", () => onAdd(PartType.ARROW), close, { title: "矢印を置く（両はしの丸をドラッグして向きを変えます）" })}
+    </>)}</Menu>}
+    <span className="fsep" />
+    <select className="fsel" disabled={!canText} value="" onChange={e => { exec("fontName", FONTS[e.target.value as FontKey].css); e.target.value = ""; }} aria-label="文字の種類" title="文字の種類">
+      <option value="" disabled>種類</option>{(Object.keys(FONTS) as FontKey[]).map(k => <option key={k} value={k}>{FONTS[k].n}</option>)}</select>
+    <PtBox disabled={!canText} />
+    <B cmd="bold" label={<b>B</b>} title="太字（Ctrl＋B）" /><B cmd="italic" label={<i>I</i>} title="斜体（Ctrl＋I）" /><B cmd="underline" label={<u>U</u>} title="下線（Ctrl＋U）" />
+    <Menu label={<span className="ink">A</span>} title="文字の色" disabled={!canText}>{close => <span className="fpal">{INK.map(c => <B key={c} cmd="foreColor" v={c} cls="sw" label={<span style={{ background: c }} />} title={`文字の色 ${c}`} after={close} />)}</span>}</Menu>
+    <Menu label={<span className="hl">A</span>} title="マーカー" disabled={!canText}>{close => (<span className="fpal">{MARK.map(c => <B key={c} cmd="hiliteColor" v={c} cls="sw mk" label={<span style={{ background: c }} />} title={`マーカー ${c}`} after={close} />)}
+      <button className="fb sw mk none" onMouseDown={keep} onClick={() => { editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b, ["bg"]) } })); close(); }} title="選んだ文字のマーカーを消す" aria-label="マーカーを消す"><span /></button></span>)}</Menu>
+    <Menu label={AL[align][0]} title="そろえ方" disabled={!canText}>{close => <span className="fpal">{(["left", "center", "right"] as Align[]).map(a =>
+      <button key={a} className={"fb" + (align === a ? " on" : "")} onMouseDown={keep} onClick={() => { onAlign(a); close(); }} title={AL[a][1]} aria-label={AL[a][1]}>{AL[a][0]}</button>)}</span>}</Menu>
+    {(["ul", "ol"] as const).map(k => <button key={k} className="fb" disabled={!canText} onMouseDown={keep}
+      onClick={() => editSel((t, r, a, b) => { const x = toggleList(t, r.runs, a, b, k); return { text: x.text, rich: { ...r, runs: x.runs }, sel: x.sel }; })}
+      title={k === "ul" ? "箇条書き（・）を付ける・外す" : "番号（1. 2. …）を付ける・外す"} aria-label={k === "ul" ? "箇条書き" : "番号付きリスト"}>{k === "ul" ? "・≡" : "1."}</button>)}
+    {count > 1 && <span className="fcount">{count}個を選択中</span>}
+    <Menu label="⋯" title="そのほかの操作" cls="more">{close => (<>
+      {item("書式を消す", () => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b) } })), close, { disabled: !canText, title: "選んだ文字の書式（太字・色・マーカー・大きさなど）を全部消す" })}
+      <span className="fhead">選んでいる部品{count > 1 ? `（${count}個）` : ""}</span>
+      {item("複製", onCopy, close, { disabled: !count, title: "Ctrl＋C → Ctrl＋V でもできます" })}
+      {item("前面へ", () => onLayer("front"), close, { disabled: !count })}
+      {item("背面へ", () => onLayer("back"), close, { disabled: !count })}
+      {item("削除", onRemove, close, { disabled: !count, cls: "del", title: "Delete キーでもできます。Ctrl＋Z で戻せます" })}
+      <span className="fhead">ノート</span>
+      {item("印刷・PDF", onPrint, close, { title: "ノートだけを印刷します。PDF にするときは、印刷の画面で「PDF に保存」を選んでください" })}
+    </>)}</Menu>
   </div>);
 }
 /**
@@ -285,10 +363,13 @@ h1.ptitle{font:700 15px "Zen Maru Gothic",sans-serif;margin:0 0 6px}
   f.setAttribute("aria-hidden", "true"); f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
   f.onload = () => {
     const w = f.contentWindow; if (!w) return;
-    const done = () => setTimeout(() => f.remove(), 500);
-    w.addEventListener("afterprint", done);
-    // 文字（Web フォント）を読み終わってから印刷する
-    void (w.document.fonts?.ready ?? Promise.resolve()).then(() => { w.focus(); w.print(); setTimeout(done, 60000); });
+    // 印刷が終わったら iframe を消して、キーボードの操作（Esc・Ctrl＋Z など）がアプリに戻るようにする（11/25 夜 バグ修正）
+    const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    let gone = false;
+    const done = () => { if (gone) return; gone = true; f.remove(); if (prev?.isConnected) prev.focus(); else window.focus(); };
+    w.addEventListener("afterprint", () => setTimeout(done, 300));
+    // 文字（Web フォント）を読み終わってから印刷する。print() は印刷の画面を閉じるまで待つので、そのあとでも片づける
+    void (w.document.fonts?.ready ?? Promise.resolve()).then(() => { w.focus(); w.print(); setTimeout(done, 1000); });
   };
   f.srcdoc = html; document.body.appendChild(f);
 }
@@ -313,6 +394,9 @@ export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { pa
   const [selIds, setSelIds] = useState<string[]>([]), selRef = useRef(selIds); selRef.current = selIds;
   const selId = selIds[selIds.length - 1] ?? null, setSelId = (id: string | null) => setSelIds(id ? [id] : []);
   const selPart = parts.find(x => x.partId === selId), selParts = parts.filter(x => selIds.includes(x.partId));
+  const [finding, setFinding] = useState(false), findInput = useRef<HTMLInputElement>(null);
+  /** 全画面を開いているときは、全画面のノートだけがキーボードの操作を受ける（うしろのノートが同じ操作を二重にしないように） */
+  const isTop = () => { const fs = document.querySelector(".fs"); return !fs || !!wrap.current?.closest(".fs"); };
   const changeZoom = (v: number | "fit") => { setZm(v); saveZoom(v); };
   useEffect(() => {
     const el = wrap.current; if (!el) return;
@@ -378,7 +462,8 @@ export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { pa
   // Ctrl＋C・Ctrl＋V：文字を書いているとき（入力欄の中）は、ふつうの文字のコピー・貼り付けにする。部品を選んでいるときだけ部品をコピーする
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector(".ov")) return;
+      if (document.querySelector(".ov") || !isTop()) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); setFinding(true); setTimeout(() => findInput.current?.select(), 0); return; } // ノートの中を検索
       const a = document.activeElement as HTMLElement | null;
       if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return;
       if (!e.ctrlKey && !e.metaKey) { // 11/25 夜：Delete で選んだ部品を消す（Ctrl＋Z で戻せる）。Esc で選ぶのをやめる
@@ -396,14 +481,15 @@ export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { pa
   let H = 520; for (const p of parts) H = Math.max(H, p.y + p.height + 160);
   return (<div className="cwrap">
     <div className="cover zbar">
-      {onAdd && <InsertBar onAdd={(t, f) => { const n = onAdd(t, f); if (n) setSelId(n.partId); }} />}
-      <FormatBar sel={selPart} count={selParts.length} onAlign={setAlign} onCopy={() => paste(selParts)} onLayer={layer} onRemove={removeSel} />
+      <FormatBar sel={selPart} count={selParts.length} onAdd={onAdd && ((t, f) => { const n = onAdd(t, f); if (n) setSelId(n.partId); })} onAlign={setAlign}
+        onCopy={() => paste(selParts)} onLayer={layer} onRemove={removeSel} onPrint={() => { const c = wrap.current?.querySelector<HTMLElement>(".canvas"); if (c) printNote(c, Math.max(W, 400), title); }} />
       {over && z * W > cw + 1 && <span className="mute">右にはみ出した部品があります。横にスクロールするか「全体」で見られます。</span>}<span className="sp" />
+      {finding ? <FindBar parts={parts} root={() => wrap.current} inputRef={findInput} onPick={id => setSelIds([id])} onClose={() => setFinding(false)} />
+        : <button className="btn sm line" onClick={() => { setFinding(true); setTimeout(() => findInput.current?.focus(), 0); }} title="ノートの中を検索（Ctrl＋F）">検索</button>}
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, -1))} disabled={z <= 0.5} aria-label="ノートを小さく" title="小さく">−</button>
       <button className="link zval" onClick={() => changeZoom(1)} title="100% に戻す">{Math.round(z * 100)}%</button>
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, 1))} disabled={z >= 1.5} aria-label="ノートを大きく" title="大きく">＋</button>
       <button className={"btn sm line" + (zm === "fit" ? " on" : "")} onClick={() => changeZoom(zm === "fit" ? 1 : "fit")} title="欄の幅に全体を合わせる">全体</button>
-      <button className="btn sm line" onClick={e => { const c = (e.currentTarget.closest(".cwrap") as HTMLElement | null)?.querySelector<HTMLElement>(".canvas"); if (c) printNote(c, Math.max(W, 400), title); }} title="ノートだけを印刷します。PDF にするときは、印刷の画面で「PDF に保存」を選んでください">印刷・PDF</button>
     </div>
     <div className="cscroll" ref={wrap}>
       <div className="canvas" id="note-canvas" style={{ height: H, width: cw ? Math.max(W, cw / z) : undefined, zoom: z === 1 ? undefined : z }}
