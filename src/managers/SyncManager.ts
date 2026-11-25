@@ -42,6 +42,8 @@ type Row = Record<string, unknown>;
 export class SyncError extends Error {}
 
 export class SyncManager {
+  /** Neon に note_part.style 列がまだないと分かったら true（11/25）。そのあとは style をのぞいて送る */
+  private noStyleColumn = false;
   /** 前回同期した日時（学生ごとに端末に保存する） */
   lastSyncedAt: string | null = null;
   private running: Promise<void> | null = null;
@@ -224,7 +226,14 @@ export class SyncManager {
       }
       const ids = note.parts.map(p => p.partId);
       await this.request("DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
-      await this.upsert("note_part", note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel })));
+      const partRows = note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel, style: p.style ?? "" }));
+      // 11/25：文字の書式（style 列）も送る。Neon にまだ style 列がないとき（db/schema.sql の ALTER TABLE をまだ流していないとき）は、
+      // 断られるので、style をのぞいて（undefined は JSON に入らない）もう一度送る（書式は端末には残る。列を足したあとの保存で送られる）
+      try { await this.upsert("note_part", this.noStyleColumn ? partRows.map(r => ({ ...r, style: undefined })) : partRows); }
+      catch (e) {
+        if (this.noStyleColumn || !(e instanceof SyncError) || !e.message.includes("400")) throw e;
+        this.noStyleColumn = true; await this.upsert("note_part", partRows.map(r => ({ ...r, style: undefined })));
+      }
       // 消した単語を Neon からも消す。11/21：前は部品1つごとに1回送っていたが、部品20個ずつまとめて1回で送るようにした
       // （全部を1回にしないのは、URL が長くなりすぎてサーバーに断られないようにするため）
       for (const group of chunk(note.parts, 20)) {
@@ -320,7 +329,7 @@ function toNotes(notes: Row[], partsBy: Record<string, Row[]>, wordsBy: Record<s
     noteId: s(r.note_id), studentId: sid, itemId: s(r.item_id), lastSavedAt: n(r.last_saved_at), updatedAt: s(r.updated_at),
     parts: (partsBy[s(r.note_id)] ?? []).map(p => new NotePart({
       partId: s(p.part_id), studentId: sid, noteId: s(p.note_id), partType: s(p.part_type) as PartType, frameType: n(p.frame_type),
-      x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height), color: s(p.color), text: s(p.text), headingLevel: num(p.heading_level), updatedAt: s(p.updated_at),
+      x: num(p.x), y: num(p.y), width: num(p.width), height: num(p.height), color: s(p.color), text: s(p.text), headingLevel: num(p.heading_level), style: s(p.style), updatedAt: s(p.updated_at),
       words: (wordsBy[s(p.part_id)] ?? []).map(w => new Word({ wordId: s(w.word_id), studentId: sid, partId: s(w.part_id), term: s(w.term), meaning: s(w.meaning), updatedAt: s(w.updated_at) })),
     })),
   }));
