@@ -217,3 +217,58 @@ export function fromNodes(root: NodeLike, opt: { keepLastBr?: boolean } = {}): {
   if (!opt.keepLastBr && last && last.nodeType === 1 && last.nodeName.toUpperCase() === "BR" && text.endsWith("\n")) text = text.slice(0, -1);
   return { text, runs: normalize(runs, text.length) };
 }
+
+// ---- 箇条書き・番号付きリスト（11/25 夜）----
+// 箇条書きは、行の頭に「・ 」、番号付きは「1. 」「2. 」…を、ふつうの文字として入れる（AI・単語テスト・検索にもそのまま読める）。
+// ボタンで付け外しでき、箇条書きの行で Enter を押すと、次の行にも同じ印（番号は次の数）が付く。印だけの行で Enter を押すと、箇条書きが終わる
+export type ListKind = "ul" | "ol";
+const LIST = /^(・ |\d{1,3}\. )/;
+/** 行の頭の印の種類（なければ null） */
+export function listOf(line: string): ListKind | null { const m = line.match(LIST); return m ? (m[1] === "・ " ? "ul" : "ol") : null; }
+
+/** text の pos 文字目から del 文字を消して ins を入れる。書式（runs）も、ずれた分だけ動かす（入れた文字は書式なし） */
+export function spliceRich(text: string, runs: readonly Run[], pos: number, del: number, ins: string): { text: string; runs: Run[] } {
+  const d = ins.length - del, end = pos + del, out: Run[] = [];
+  for (const r of runs) {
+    if (r.e <= pos) { out.push(r); continue; }                         // 前はそのまま
+    if (r.s >= end) { out.push({ ...r, s: r.s + d, e: r.e + d }); continue; } // 後ろはずらす
+    if (r.s < pos) out.push({ ...r, e: pos });                         // 消す所の前の部分
+    if (r.e > end) out.push({ ...r, s: pos + ins.length, e: r.e + d }); // 消す所の後の部分
+  }
+  const t = text.slice(0, pos) + ins + text.slice(end);
+  return { text: t, runs: normalize(out, t.length) };
+}
+/** 行の始まりの位置の一覧 */
+const lineStarts = (text: string) => { const a = [0]; for (let i = 0; i < text.length; i++) if (text[i] === "\n") a.push(i + 1); return a; };
+
+/**
+ * a〜b 文字目にかかる行に、箇条書き（ul）か番号（ol）を付ける。全部の行がもうその印なら、外す。
+ * 返す sel は、同じ行を選び直すための範囲
+ */
+export function toggleList(text: string, runs: readonly Run[], a: number, b: number, kind: ListKind): { text: string; runs: Run[]; sel: [number, number] } {
+  const starts = lineStarts(text), first = Math.max(0, starts.filter(s => s <= a).length - 1), last = Math.max(first, starts.filter(s => s <= Math.max(a, b - (b > a && text[b - 1] === "\n" ? 1 : 0))).length - 1);
+  const lines = text.split("\n"), off = lines.slice(first, last + 1).every(l => listOf(l) === kind);
+  let t = text, rs: Run[] = [...runs], shift = 0, n = 0;
+  for (let i = first; i <= last; i++) {
+    const pos = starts[i] + shift, m = lines[i].match(LIST), oldLen = m ? m[1].length : 0;
+    const ins = off ? "" : kind === "ul" ? "・ " : `${++n}. `;
+    ({ text: t, runs: rs } = spliceRich(t, rs, pos, oldLen, ins));
+    shift += ins.length - oldLen;
+  }
+  const s2 = lineStarts(t), endLine = last + 1 < s2.length ? s2[last + 1] - 1 : t.length;
+  return { text: t, runs: rs, sel: [s2[first], endLine] };
+}
+/**
+ * 箇条書きの行で Enter を押したときの形。箇条書きでない行なら null（ふつうの改行にする）。
+ * 印だけの行なら印を消して箇条書きを終わる。そうでなければ、改行と次の印（番号は次の数）を入れる。caret は、その後のカーソルの位置
+ */
+export function continueList(text: string, runs: readonly Run[], pos: number): { text: string; runs: Run[]; caret: number } | null {
+  const ls = text.lastIndexOf("\n", pos - 1) + 1, le = text.indexOf("\n", pos) < 0 ? text.length : text.indexOf("\n", pos);
+  const line = text.slice(ls, le), m = line.match(LIST); if (!m) return null;
+  if (pos - ls < m[1].length) return null; // 印の途中なら、ふつうの改行
+  if (line.length === m[1].length) { const r = spliceRich(text, runs, ls, m[1].length, ""); return { ...r, caret: ls }; } // 印だけ：終わる
+  const next = m[1] === "・ " ? "・ " : `${parseInt(m[1], 10) + 1}. `;
+  const r = spliceRich(text, runs, pos, 0, "\n" + next);
+  return { ...r, caret: pos + 1 + next.length };
+}
+

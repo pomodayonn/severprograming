@@ -132,4 +132,9 @@ export function arrowFromPoints(ax: number, ay: number, bx: number, by: number) 
   const r = (n: number) => Math.round(n);
   return { x: r(x), y: r(y), width: r(width), height: r(height), text: `arrow:${r(ax - x)},${r(ay - y)},${r(bx - x)},${r(by - y)}` };
 }
+/** いくつかの部品の重なり順を、まとめて変える（11/25 夜）。選んだ部品どうしの順番はそのまま */
+export function moveLayers(parts: readonly NotePart[], ids: readonly string[], to: "front" | "back"): NotePart[] {
+  const set = new Set(ids), picked = parts.filter(x => set.has(x.partId)), rest = parts.filter(x => !set.has(x.partId));
+  return to === "front" ? [...rest, ...picked] : [...picked, ...rest];
+}
 

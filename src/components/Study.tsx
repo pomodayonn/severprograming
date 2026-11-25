@@ -118,7 +118,11 @@ export function Study() {
   // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
   const upload = async (files: FileList | null) => {
     if (!files || !item) return; setMsg("");
+    // 11/25 夕：同じ名前の資料がもうあるときは、追加する前に聞く（同じ画像を何回も入れてしまうのを防ぐ）
+    const names = new Set(mats.map(m => m.fileName));
     for (const f of Array.from(files)) {
+      if (names.has(f.name) && await ask(`同じ名前の資料「${f.name}」がもうあります。もう1つ追加しますか？`, [{ label: "追加する", value: "ok" }, { label: "やめる", value: "no" }]) !== "ok") continue;
+      names.add(f.name);
       const u = await controller.handleRequest("G004", "uploadMaterial", { itemId: item.itemId }, { file: f });
       if (u.error) { setMsg(u.error); continue; } // 形式・大きさ・保存容量のエラー
       const m = u.data as Material;
@@ -138,7 +142,7 @@ export function Study() {
   const toc = parts ? controller.tableOfContents(parts) : []; // 見出しと枠を上から順に（NoteManager.getTableOfContents）
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const matSelect = <select className="inp" style={{ margin: 0 }} value={ref ?? ""} onChange={e => setRef(e.target.value || null)}><option value="">資料を選ぶ…</option>{mats.map(m => <option key={m.materialId} value={m.materialId}>{m.fileName}</option>)}</select>;
-  const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} onAdd={addPart} /> : null;
+  const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} onAdd={addPart} title={item ? `${subject?.subjectName ?? ""}　${item.itemName}` : "ノート"} /> : null;
   const extra = (id: string) => id === item?.itemId ? (<><div className="ind">ノート</div><div className="ind">ストレージ</div>
     {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
     <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;

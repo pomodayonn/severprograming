@@ -16,8 +16,8 @@ import { NotePart, type ShapeKind } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
 import { PartType } from "../enums/PartType";
-import { arrowFromPoints, arrowPoints, canvasWidth, copyPart, FT, moveLayer, newWord, stepZoom } from "../lib/logic";
-import { FONTS, PT_MAX, PT_MIN, PT_SIZES, clampPt, clearFmt, fromNodes, parseRich, stringifyRich, toHtml, type Align, type FontKey, type Rich } from "../lib/rich";
+import { arrowFromPoints, arrowPoints, canvasWidth, copyPart, FT, moveLayers, newWord, stepZoom } from "../lib/logic";
+import { FONTS, PT_MAX, PT_MIN, PT_SIZES, clampPt, clearFmt, continueList, toggleList, fromNodes, parseRich, stringifyRich, toHtml, type Align, type FontKey, type Rich } from "../lib/rich";
 import { controller } from "../controller/Controller";
 
 /** 部品の種類ごとの名前（部品の上に出す） */
@@ -37,7 +37,7 @@ interface Handlers {
   remove: (partId: string) => void;
   start: (e: React.PointerEvent, part: NotePart, mode: Mode) => void;
   /** 部品を選ぶ（11/25。書式のボタン・複製・重なり順は、選んでいる部品に効く） */
-  select: (partId: string) => void;
+  select: (partId: string, add?: boolean) => void; // add：Shift・Ctrl を押しながら（選んでいる部品に足す・外す。11/25 夜）
 }
 
 /**
@@ -63,10 +63,11 @@ const RichText = memo(function RichText({ part: p, h, placeholder }: { part: Not
     editors.set(el, fn => {
       const q = cur.current, r = savedRange; if (!r || !el.contains(r.startContainer)) return;
       const a = charsBefore(el, r.startContainer, r.startOffset), b = charsBefore(el, r.endContainer, r.endOffset);
-      const style = stringifyRich(fn(parseRich(q.style, q.text.length), Math.min(a, b), Math.max(a, b)), q.text.length);
-      if (style === q.style) return;
-      keepSel.current = [Math.min(a, b), Math.max(a, b)];
-      h.upd(q.partId, { style });
+      const res = fn(q.text, parseRich(q.style, q.text.length), Math.min(a, b), Math.max(a, b)), text = res.text ?? q.text;
+      const style = stringifyRich(res.rich, text.length);
+      if (style === q.style && text === q.text) return;
+      keepSel.current = res.sel ?? [Math.min(a, b), Math.max(a, b)];
+      h.upd(q.partId, { text, style });
     });
     return () => { editors.delete(el); };
   }, [h]);
@@ -83,12 +84,23 @@ const RichText = memo(function RichText({ part: p, h, placeholder }: { part: Not
   const align = parseRich(p.style).align ?? "left";
   return <div ref={ref} className={`rt-edit h${p.headingLevel}`} contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={placeholder}
     data-ph={placeholder} style={{ textAlign: align }} onInput={onInput} onFocus={() => h.select(p.partId)}
-    onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); document.execCommand("insertLineBreak"); } }}
+    onKeyDown={e => {
+      if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+      e.preventDefault();
+      // 11/25 夜：箇条書き・番号の行なら、次の行にも印を付ける（印だけの行なら箇条書きを終わる）
+      const el = ref.current, s = document.getSelection(), q = cur.current;
+      if (el && s && s.rangeCount && s.isCollapsed && el.contains(s.anchorNode)) {
+        const pos = charsBefore(el, s.anchorNode!, s.anchorOffset), rich = parseRich(q.style, q.text.length), r = continueList(q.text, rich.runs, pos);
+        if (r) { keepSel.current = [r.caret, r.caret]; h.upd(q.partId, { text: r.text, style: stringifyRich({ ...rich, runs: r.runs }, r.text.length) }); return; }
+      }
+      document.execCommand("insertLineBreak");
+    }}
     onPaste={e => { e.preventDefault(); document.execCommand("insertText", false, e.clipboardData.getData("text/plain")); }} />;
 });
 
 /** 書式つきの欄ごとの「選んだ範囲の書式を直す」関数（11/25 夕） */
-const editors = new WeakMap<HTMLElement, (fn: (rich: Rich, a: number, b: number) => Rich) => void>();
+type EditFn = (text: string, rich: Rich, a: number, b: number) => { text?: string; rich: Rich; sel?: [number, number] };
+const editors = new WeakMap<HTMLElement, (fn: EditFn) => void>();
 /** 欄の先頭から、その位置までの文字数（text の何文字目か）。lib/rich.ts の fromNodes と同じ数え方 */
 function charsBefore(box: HTMLElement, node: Node, offset: number): number {
   const r = document.createRange(); r.setStart(box, 0); r.setEnd(node, offset);
@@ -109,7 +121,7 @@ function selectChars(box: HTMLElement, a: number, b: number) {
   box.focus(); const s = document.getSelection(); s?.removeAllRanges(); s?.addRange(r);
 }
 /** 今選んでいる欄の書式を、保存の形のほうで直す */
-function editSel(fn: (rich: Rich, a: number, b: number) => Rich) {
+function editSel(fn: EditFn) {
   const r = savedRange, el = r && (r.startContainer instanceof Element ? r.startContainer : r.startContainer.parentElement)?.closest(".rt-edit");
   if (el instanceof HTMLElement) editors.get(el)?.(fn);
 }
@@ -139,7 +151,7 @@ const PartView = memo(function PartView({ part: p, h, sel }: { part: NotePart; h
   const words = p.words, wordFrame = frame && p.frameType === "word";
   const setWord = (i: number, patch: Partial<Word>) => h.upd(p.partId, { words: words.map((w, j) => j === i ? new Word({ ...w, ...patch, updatedAt: now() }) : w) });
   return (
-    <div data-id={p.partId} className={`el ${CLS[p.partType]}${sel ? " sel" : ""}`} onPointerDownCapture={e => { h.select(p.partId); blurEditor(e.target); }} style={{ left: p.x, top: p.y, width: p.width, height: p.height, borderColor: p.color, background: frame ? p.color + "14" : undefined, borderRadius: shape && NotePart.shapeOf(p) === "ellipse" ? "50%" : undefined }}>
+    <div data-id={p.partId} className={`el ${CLS[p.partType]}${sel ? " sel" : ""}`} onPointerDownCapture={e => { h.select(p.partId, e.shiftKey || e.ctrlKey || e.metaKey); blurEditor(e.target); }} style={{ left: p.x, top: p.y, width: p.width, height: p.height, borderColor: p.color, background: frame ? p.color + "14" : undefined, borderRadius: shape && NotePart.shapeOf(p) === "ellipse" ? "50%" : undefined }}>
       <div className="eh" style={{ color: p.color }} onPointerDown={e => h.start(e, p, "move")}>
         <span>{label}</span>
         {text && <select value={p.headingLevel} onPointerDown={stop} onChange={e => h.upd(p.partId, { headingLevel: Number(e.target.value) })}><option value={0}>本文</option><option value={1}>見出し1</option><option value={2}>見出し2</option><option value={3}>見出し3</option></select>}
@@ -196,7 +208,7 @@ function currentPt(): number | null {
 }
 
 /** ノートの上の書式のボタン（11/25）。文字の種類・大きさ・太字・斜体・下線・文字の色・マーカー・そろえ方・書式を消す・複製・重なり順 */
-function FormatBar({ sel, onAlign, onCopy, onLayer }: { sel: NotePart | undefined; onAlign: (a: Align) => void; onCopy: () => void; onLayer: (to: "front" | "back") => void }) {
+function FormatBar({ sel, count, onAlign, onCopy, onLayer, onRemove }: { sel: NotePart | undefined; count: number; onAlign: (a: Align) => void; onCopy: () => void; onLayer: (to: "front" | "back") => void; onRemove: () => void }) {
   const keep = (e: React.MouseEvent) => e.preventDefault(); // ボタンを押しても、文字の選択を外さない
   const canText = !!sel && (sel.partType === PartType.TEXT || (sel.partType === PartType.FRAME && sel.frameType !== "word"));
   const align = sel ? parseRich(sel.style).align ?? "left" : "left";
@@ -209,12 +221,17 @@ function FormatBar({ sel, onAlign, onCopy, onLayer }: { sel: NotePart | undefine
     <B cmd="bold" label={<b>B</b>} title="太字（Ctrl＋B）" /><B cmd="italic" label={<i>I</i>} title="斜体（Ctrl＋I）" /><B cmd="underline" label={<u>U</u>} title="下線（Ctrl＋U）" />
     <span className="fgrp" aria-label="文字の色">{INK.map(c => <B key={c} cmd="foreColor" v={c} cls="sw" label={<span style={{ background: c }} />} title={`文字の色 ${c}`} />)}</span>
     <span className="fgrp" aria-label="マーカー">{MARK.map(c => <B key={c} cmd="hiliteColor" v={c} cls="sw mk" label={<span style={{ background: c }} />} title={`マーカー ${c}`} />)}
-      <button className="fb sw mk none" disabled={!canText} onMouseDown={keep} onClick={() => editSel((r, a, b) => ({ ...r, runs: clearFmt(r.runs, a, b, ["bg"]) }))} title="選んだ文字のマーカーを消す" aria-label="マーカーを消す"><span /></button></span>
+      <button className="fb sw mk none" disabled={!canText} onMouseDown={keep} onClick={() => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b, ["bg"]) } }))} title="選んだ文字のマーカーを消す" aria-label="マーカーを消す"><span /></button></span>
     <span className="fgrp" aria-label="そろえ方">{(["left", "center", "right"] as Align[]).map(a => <button key={a} className={"fb" + (canText && align === a ? " on" : "")} disabled={!canText} onMouseDown={keep} onClick={() => onAlign(a)} title={{ left: "左にそろえる", center: "まん中にそろえる", right: "右にそろえる" }[a]} aria-label={{ left: "左にそろえる", center: "まん中にそろえる", right: "右にそろえる" }[a]}>{{ left: "⇤", center: "≡", right: "⇥" }[a]}</button>)}</span>
-    <button className="fb txt" disabled={!canText} onMouseDown={keep} onClick={() => editSel((r, a, b) => ({ ...r, runs: clearFmt(r.runs, a, b) }))} title="選んだ文字の書式（太字・色・マーカー・大きさなど）を全部消す">書式を消す</button>
-    <span className="fgrp" aria-label="部品"><button className="fb txt" disabled={!sel} onMouseDown={keep} onClick={onCopy} title="選んでいる部品を複製（Ctrl＋C → Ctrl＋V でもできます）">複製</button>
-      <button className="fb txt" disabled={!sel} onMouseDown={keep} onClick={() => onLayer("front")} title="選んでいる部品をいちばん前に">前面へ</button>
-      <button className="fb txt" disabled={!sel} onMouseDown={keep} onClick={() => onLayer("back")} title="選んでいる部品をいちばん後ろに">背面へ</button></span>
+    <span className="fgrp" aria-label="箇条書きと番号">{(["ul", "ol"] as const).map(k => <button key={k} className="fb" disabled={!canText} onMouseDown={keep}
+      onClick={() => editSel((t, r, a, b) => { const x = toggleList(t, r.runs, a, b, k); return { text: x.text, rich: { ...r, runs: x.runs }, sel: x.sel }; })}
+      title={k === "ul" ? "箇条書き（・）を付ける・外す" : "番号（1. 2. …）を付ける・外す"} aria-label={k === "ul" ? "箇条書き" : "番号付きリスト"}>{k === "ul" ? "・≡" : "1."}</button>)}</span>
+    <button className="fb txt" disabled={!canText} onMouseDown={keep} onClick={() => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b) } }))} title="選んだ文字の書式（太字・色・マーカー・大きさなど）を全部消す">書式を消す</button>
+    <span className="fgrp" aria-label="部品">{count > 1 && <span className="fcount">{count}個を選択中</span>}
+      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={onCopy} title="選んでいる部品を複製（Ctrl＋C → Ctrl＋V でもできます）">複製</button>
+      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={() => onLayer("front")} title="選んでいる部品をいちばん前に">前面へ</button>
+      <button className="fb txt" disabled={!count} onMouseDown={keep} onClick={() => onLayer("back")} title="選んでいる部品をいちばん後ろに">背面へ</button>
+      <button className="fb txt del" disabled={!count} onMouseDown={keep} onClick={onRemove} title="選んでいる部品を消す（Delete キーでもできます。Ctrl＋Z で戻せます）">削除</button></span>
   </div>);
 }
 /** 文字の大きさ（pt）の入力欄（11/25 夕）。一覧から選ぶか、数を打って Enter。今カーソルのある所の大きさを出しておく */
@@ -245,24 +262,57 @@ function InsertBar({ onAdd }: { onAdd: (type: PartType, ft?: FrameType) => void 
       <button className="fb txt" onClick={() => onAdd(PartType.ARROW)} title="矢印を置く（両はしの丸をドラッグして向きを変えます）">＋ 矢印</button></span>
   </div>);
 }
+/**
+ * ノートだけを印刷する（11/25 夜）。PDF にしたいときは、印刷の画面で「PDF に保存」を選ぶ。
+ * 見えない iframe にノートの写しと CSS を入れて、そこで印刷する（ほかの画面の部分やボタンは写さない）。
+ * 横幅は A4 横の紙（約 1040px）に収まるように縮める。マーカーや色も、そのまま印刷する
+ */
+function printNote(canvas: HTMLElement, width: number, title: string) {
+  const css = Array.from(document.styleSheets).map(s => { try { return Array.from(s.cssRules).map(r => r.cssText).join("\n"); } catch { return ""; } }).join("\n");
+  const clone = canvas.cloneNode(true) as HTMLElement;
+  clone.style.zoom = ""; clone.style.width = `${width}px`;
+  clone.querySelectorAll("[contenteditable]").forEach(e => e.removeAttribute("contenteditable"));
+  clone.querySelectorAll(".sel").forEach(e => e.classList.remove("sel"));
+  const pz = Math.min(1, 1040 / width), esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style><style>
+@page{size:A4 landscape;margin:10mm}
+html,body{background:#fff;height:auto;overflow:visible;margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1.ptitle{font:700 15px "Zen Maru Gothic",sans-serif;margin:0 0 6px}
+#note-canvas{zoom:${pz};margin:0;box-shadow:none}
+.ah,.rs,.eh button,.eh input,.eh select{display:none!important}.rt-edit:empty::before{content:none!important}.rt-edit{overflow:visible!important}
+</style></head><body><h1 class="ptitle">${esc(title)}</h1>${clone.outerHTML}</body></html>`;
+  const f = document.createElement("iframe");
+  f.setAttribute("aria-hidden", "true"); f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  f.onload = () => {
+    const w = f.contentWindow; if (!w) return;
+    const done = () => setTimeout(() => f.remove(), 500);
+    w.addEventListener("afterprint", done);
+    // 文字（Web フォント）を読み終わってから印刷する
+    void (w.document.fonts?.ready ?? Promise.resolve()).then(() => { w.focus(); w.print(); setTimeout(done, 60000); });
+  };
+  f.srcdoc = html; document.body.appendChild(f);
+}
 /** Ctrl＋C で覚えた部品（このタブの中だけ。別の学習項目のノートにも貼れる） */
-let clip: NotePart | null = null;
+let clip: NotePart[] = [];
 
 /** ノートの大きさは、次に開いたときも同じにする（この端末だけ。保存できないブラウザでは毎回 100%） */
 const ZOOM_KEY = "runndesu:noteZoom";
 function loadZoom(): number | "fit" { try { const v = localStorage.getItem(ZOOM_KEY); if (v === "fit") return v; const n = Number(v); return n >= 0.5 && n <= 1.5 ? n : 1; } catch { return 1; } }
 function saveZoom(v: number | "fit") { try { localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* 保存できなくても大きさは変えられる */ } }
 
-export function NoteCanvas({ parts, onChange, onAdd }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void; onAdd?: (type: PartType, ft?: FrameType) => NotePart | void }) {
+export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void; onAdd?: (type: PartType, ft?: FrameType) => NotePart | void; title?: string }) {
   const ref = useRef({ parts, onChange }); ref.current = { parts, onChange };
-  const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number; z: number; w0: number; text: string } | null>(null);
+  const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number; z: number; w0: number; text: string; group?: Map<string, { x: number; y: number }> } | null>(null);
   // 11/23：全画面で右のほうに置いた部品が、ふつうの画面で切れて見えなくなっていた。
   // ノートの幅を「いちばん右の部品」まで広げて横にスクロールできるようにし、「縮小して全体を見る」も選べるようにした
   // 11/25：「−」「＋」でノートの大きさを変えられるようにした。"fit" は「欄の幅に全体を合わせる」。選んだ大きさは次に開いたときも同じ
   const wrap = useRef<HTMLDivElement>(null), [cw, setCw] = useState(0), [zm, setZm] = useState<number | "fit">(loadZoom), [, setTick] = useState(0);
   // 11/25：選んでいる部品（書式・複製・重なり順の相手）。部品を押すか、中の文字を押すと選ばれる
-  const [selId, setSelId] = useState<string | null>(null), selRef = useRef(selId); selRef.current = selId;
-  const selPart = parts.find(x => x.partId === selId);
+  // 11/25 夜：Shift（か Ctrl）を押しながら押すと、いくつも選べる。書式のボタンは最後に選んだ部品（selPart）に効く。
+  //           動かす・複製・削除・重なり順は、選んでいる部品ぜんぶに効く
+  const [selIds, setSelIds] = useState<string[]>([]), selRef = useRef(selIds); selRef.current = selIds;
+  const selId = selIds[selIds.length - 1] ?? null, setSelId = (id: string | null) => setSelIds(id ? [id] : []);
+  const selPart = parts.find(x => x.partId === selId), selParts = parts.filter(x => selIds.includes(x.partId));
   const changeZoom = (v: number | "fit") => { setZm(v); saveZoom(v); };
   useEffect(() => {
     const el = wrap.current; if (!el) return;
@@ -288,6 +338,9 @@ export function NoteCanvas({ parts, onChange, onAdd }: { parts: NotePart[]; onCh
         return new NotePart({ ...x, ...n, updatedAt: now() });
       }
       return new NotePart(d.mode === "move" ? { ...x, x: Math.max(0, d.x + dx), y: Math.max(0, d.y + dy), updatedAt: now() } : { ...x, width: Math.max(60, d.w + dx), height: Math.max(30, d.h + dy), updatedAt: now() });
+    }).map(x => { // いくつも選んで動かすときは、ほかの選んだ部品も同じだけ動かす
+      const g = d.group?.get(x.partId); if (!g || x.partId === d.id) return x;
+      return new NotePart({ ...x, x: Math.max(0, g.x + dx), y: Math.max(0, g.y + dy), updatedAt: now() });
     }));
   }, []);
   const mv = useCallback((e: PointerEvent) => {
@@ -307,28 +360,35 @@ export function NoteCanvas({ parts, onChange, onAdd }: { parts: NotePart[]; onCh
       r.onChange(patch.height !== undefined ? grow(n, id, old) : n); // 高くなったら下の部品をずらす（単語の追加・文字があふれたとき）
     },
     remove: id => { const r = ref.current; r.onChange(r.parts.filter(x => x.partId !== id)); },
-    select: id => setSelId(id),
+    select: (id, add) => setSelIds(s => add ? (s.includes(id) ? s.filter(x => x !== id) : [...s, id]) : s.includes(id) ? [...s.filter(x => x !== id), id] : [id]),
     start: (e, part, mode) => {
       e.preventDefault(); e.stopPropagation();
-      drag.current = { id: part.partId, mode, sx: e.clientX, sy: e.clientY, x: part.x, y: part.y, w: part.width, h: part.height, cx: e.clientX, cy: e.clientY, raf: 0, z: zoom.current, w0: width.current, text: part.text };
+      drag.current = { id: part.partId, mode, sx: e.clientX, sy: e.clientY, x: part.x, y: part.y, w: part.width, h: part.height, cx: e.clientX, cy: e.clientY, raf: 0, z: zoom.current, w0: width.current, text: part.text,
+        group: mode === "move" && selRef.current.length > 1 && selRef.current.includes(part.partId) ? new Map(ref.current.parts.filter(x => selRef.current.includes(x.partId)).map(x => [x.partId, { x: x.x, y: x.y }])) : undefined };
       window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
     },
   };
   useEffect(() => () => up(), [up]); // ドラッグ中に画面を離れても、イベントを残さない
 
   // 11/25：複製・貼り付け・重なり順
-  const paste = (src: NotePart) => { const r = ref.current, c = copyPart(src); r.onChange([...r.parts, c]); setSelId(c.partId); };
-  const layer = (to: "front" | "back") => { const id = selRef.current; if (id) { const r = ref.current; r.onChange(moveLayer(r.parts, id, to)); } };
+  const paste = (src: readonly NotePart[]) => { if (!src.length) return; const r = ref.current, c = src.map(x => copyPart(x)); r.onChange([...r.parts, ...c]); setSelIds(c.map(x => x.partId)); };
+  const layer = (to: "front" | "back") => { const ids = selRef.current; if (ids.length) { const r = ref.current; r.onChange(moveLayers(r.parts, ids, to)); } };
+  const removeSel = () => { const ids = selRef.current; if (ids.length) { const r = ref.current; r.onChange(r.parts.filter(x => !ids.includes(x.partId))); setSelIds([]); } };
   const setAlign = (a: Align) => { const p = selPart; if (p) h.current!.upd(p.partId, { style: stringifyRich({ ...parseRich(p.style), align: a }, p.text.length) }); };
   // Ctrl＋C・Ctrl＋V：文字を書いているとき（入力欄の中）は、ふつうの文字のコピー・貼り付けにする。部品を選んでいるときだけ部品をコピーする
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || document.querySelector(".ov")) return;
+      if (document.querySelector(".ov")) return;
       const a = document.activeElement as HTMLElement | null;
       if (a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) return;
+      if (!e.ctrlKey && !e.metaKey) { // 11/25 夜：Delete で選んだ部品を消す（Ctrl＋Z で戻せる）。Esc で選ぶのをやめる
+        if ((e.key === "Delete" || e.key === "Backspace") && selRef.current.length) { e.preventDefault(); removeSel(); }
+        else if (e.key === "Escape" && selRef.current.length) setSelIds([]);
+        return;
+      }
       const k = e.key.toLowerCase();
-      if (k === "c") { const p = ref.current.parts.find(x => x.partId === selRef.current); if (p) { clip = p; e.preventDefault(); } }
-      else if (k === "v" && clip) { e.preventDefault(); paste(clip); }
+      if (k === "c") { const ps = ref.current.parts.filter(x => selRef.current.includes(x.partId)); if (ps.length) { clip = ps; e.preventDefault(); } }
+      else if (k === "v" && clip.length) { e.preventDefault(); paste(clip); }
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   });
@@ -337,15 +397,17 @@ export function NoteCanvas({ parts, onChange, onAdd }: { parts: NotePart[]; onCh
   return (<div className="cwrap">
     <div className="cover zbar">
       {onAdd && <InsertBar onAdd={(t, f) => { const n = onAdd(t, f); if (n) setSelId(n.partId); }} />}
-      <FormatBar sel={selPart} onAlign={setAlign} onCopy={() => selPart && paste(selPart)} onLayer={layer} />
+      <FormatBar sel={selPart} count={selParts.length} onAlign={setAlign} onCopy={() => paste(selParts)} onLayer={layer} onRemove={removeSel} />
       {over && z * W > cw + 1 && <span className="mute">右にはみ出した部品があります。横にスクロールするか「全体」で見られます。</span>}<span className="sp" />
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, -1))} disabled={z <= 0.5} aria-label="ノートを小さく" title="小さく">−</button>
       <button className="link zval" onClick={() => changeZoom(1)} title="100% に戻す">{Math.round(z * 100)}%</button>
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, 1))} disabled={z >= 1.5} aria-label="ノートを大きく" title="大きく">＋</button>
       <button className={"btn sm line" + (zm === "fit" ? " on" : "")} onClick={() => changeZoom(zm === "fit" ? 1 : "fit")} title="欄の幅に全体を合わせる">全体</button>
+      <button className="btn sm line" onClick={e => { const c = (e.currentTarget.closest(".cwrap") as HTMLElement | null)?.querySelector<HTMLElement>(".canvas"); if (c) printNote(c, Math.max(W, 400), title); }} title="ノートだけを印刷します。PDF にするときは、印刷の画面で「PDF に保存」を選んでください">印刷・PDF</button>
     </div>
     <div className="cscroll" ref={wrap}>
-      <div className="canvas" id="note-canvas" style={{ height: H, width: cw ? Math.max(W, cw / z) : undefined, zoom: z === 1 ? undefined : z }}>
-        {parts.map(p => <PartView key={p.partId} part={p} h={h.current!} sel={p.partId === selId} />)}
+      <div className="canvas" id="note-canvas" style={{ height: H, width: cw ? Math.max(W, cw / z) : undefined, zoom: z === 1 ? undefined : z }}
+        onPointerDown={e => { if (e.target === e.currentTarget) setSelIds([]); }}>{/* 何もない所を押すと、選ぶのをやめる */}
+        {parts.map(p => <PartView key={p.partId} part={p} h={h.current!} sel={selIds.includes(p.partId)} />)}
       </div></div></div>);
 }

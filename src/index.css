@@ -234,4 +234,6 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .ibar .fsel{height:28px;padding:0 4px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px}
 .ibar .fb{height:28px;padding:0 8px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px}.ibar .fb.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
 .ibar .fb:hover{border-color:var(--ink)}
+/* 11/25 夜：いくつ選んでいるか・削除のボタン */
+.fbar .fcount{font-size:12px;font-weight:700;color:var(--acc);margin-right:4px;white-space:nowrap}.fbar .fb.del:not(:disabled){color:var(--err);border-color:var(--err)}
 
