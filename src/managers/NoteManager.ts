@@ -12,6 +12,7 @@ import { textToWords } from "../lib/words";
 import type { NoteDAO } from "../dao/NoteDAO";
 import { newId, pushQuietly, type ChangePusher } from "./common";
 import type { SuggestionApplier } from "./AiSummaryManager";
+import { parseRich, stringifyRich } from "../lib/rich";
 
 /**
  * SyncManager のうち、NoteManager が使う部分（11/24：ノートの食い違い、UC-018 代替フロー(2)）。
@@ -110,6 +111,8 @@ export class NoteManager implements SuggestionApplier {
           ...target, height: Math.max(target.height, h),
           text: s.frameType === "word" ? target.text : s.content,
           words: s.frameType === "word" ? toWords(s.content) : target.words,
+          // 11/25 夜 バグ修正：文字が書きかわったら、文字ごとの書式は外す（前の書式の位置が、新しい文字とずれるため）。そろえ方は残す
+          style: s.frameType === "word" || s.content === target.text ? target.style : stringifyRich({ align: parseRich(target.style).align, runs: [] }, s.content.length),
         });
         n = new Note({ ...n, parts: n.parts.map(p => p.partId === target.partId ? changed : p) });
         n = this.adjustOverlap(n, target.partId);
