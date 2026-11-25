@@ -13,8 +13,10 @@ import { RelationGraph } from "./RelationGraph";
 import { OfflineBar } from "./AiWait";
 
 export function Header({ plain = false }: { plain?: boolean }) {
-  const { account, logout, canRefresh, refreshing, refresh } = useApp();
-  return (<><header className="hd"><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b><span className="sp" />
+  const { account, logout, canRefresh, refreshing, refresh, go, route } = useApp();
+  // 11/25：ログインしているときは、左上のロゴを押すと科目一覧（G003）に戻る。保存していないノートがあれば先に聞く（go）
+  const logo = <><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b></>;
+  return (<><header className="hd">{!plain && account ? <button className="home" onClick={() => go({ s: "G003", subjectId: route.subjectId })} title="科目一覧へ戻る" aria-label="るんです。ホーム（科目一覧）">{logo}</button> : logo}<span className="sp" />
     {!plain && account && <><span className="who">{account.mail}</span>
       {canRefresh && <button className="pill" onClick={refresh} disabled={refreshing} title="ほかの端末で変えた内容を受け取ります">{refreshing ? "受け取り中…" : "最新にする"}</button>}{/* 11/23 */}
       <button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
@@ -32,11 +34,12 @@ function Hit({ text, q }: { text: string; q: string }) {
  *  11/23：上に検索欄。科目名か学習項目名で絞り込む（検索中は合った科目を全部開く） */
 export function Tree({ heading, extra }: { heading: string; extra?: (itemId: string) => ReactNode }) {
   const { subjects, items, loaded, route, go } = useApp();
+  const atList = route.s === "G003";
   const [open, setOpen] = useState<Record<string, boolean>>({}), [q, setQ] = useState("");
   const found = useMemo(() => searchTree(subjects, items, q), [subjects, items, q]);
   const isOpen = (id: string) => found ? true : open[id] ?? id === route.subjectId;
   const shown = found ? subjects.filter(s => found.has(s.subjectId)) : subjects;
-  return (<><div className="th">{heading}</div>
+  return (<><div className="th row"><span>{heading}</span><span className="sp" />{!atList && <button className="link tolist" onClick={() => go({ s: "G003", subjectId: route.subjectId })} title="科目の追加・名前の変更・削除ができる画面">科目一覧へ</button>}{/* 11/25 */}</div>
     {subjects.length > 0 && <div className="search"><input className="inp" type="text" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Escape" && setQ("")} placeholder="科目・学習項目を検索" aria-label="科目・学習項目を検索" />{q && <button className="link" onClick={() => setQ("")} aria-label="検索を消す">×</button>}</div>}
     {shown.map(s => (<div key={s.subjectId}>
       <div className={"ts" + (route.s === "G003" && route.subjectId === s.subjectId ? " on" : "")} onClick={() => { setOpen({ ...open, [s.subjectId]: !isOpen(s.subjectId) }); if (route.s === "G003") go({ s: "G003", subjectId: s.subjectId }); }}>{isOpen(s.subjectId) ? "▼" : "▶"} <Hit text={s.subjectName} q={q} /></div>
