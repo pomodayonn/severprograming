@@ -228,4 +228,10 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .fbar .ptbox{display:inline-flex;align-items:center;gap:2px}.fbar .fsel.pt{width:62px;padding:0 6px}
 /* 11/25 夕：マーカーを消すボタン（白い四角に斜めの線） */
 .fbar .fb.sw.mk.none span{background:linear-gradient(to top right,#fff calc(50% - 1px),#cf3f5b calc(50% - 1px),#cf3f5b calc(50% + 1px),#fff calc(50% + 1px))}
+/* 11/25 夕：部品を置くボタン（ノートの上、書式のボタンの前）。左に「置く」、区切りの線 */
+.ibar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding-right:8px;margin-right:4px;border-right:1px solid var(--line2)}
+.ibar .ilabel{font-size:12px;font-weight:700;color:var(--mute)}
+.ibar .fsel{height:28px;padding:0 4px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px}
+.ibar .fb{height:28px;padding:0 8px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px}.ibar .fb.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ibar .fb:hover{border-color:var(--ink)}
 

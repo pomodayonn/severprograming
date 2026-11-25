@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType } from "../types";
-import { FT, bottomY, newPart } from "../lib/logic";
+import { bottomY, newPart } from "../lib/logic";
 import { itemsOf, partsOf, prereqIdsOf } from "../lib/select";
 import { emptyHistory, record, redo, undo, type History } from "../lib/history";
 import { controller } from "../controller/Controller";
@@ -32,7 +32,6 @@ import { Viewer, useMaterialContent } from "./Material";
 import { toast } from "./toast";
 
 /** 左・真ん中・右のタブ（値と、画面に出す名前） */
-const LTABS = [["tree", "階層"], ["parts", "ノートの部品"]] as const;
 const MODES = [["note", "ノート"], ["side", "資料と並べる"]] as const;
 const RTABS = [["graph", "関連図"], ["toc", "目次"]] as const;
 
@@ -44,8 +43,8 @@ export function Study() {
   const { materials, subjects, items, prerequisites, notes, tests, reload, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
   const subject = subjects.find(s => s.subjectId === route.subjectId);
   const its = useMemo(() => itemsOf(items, route.subjectId), [items, route.subjectId]); // この科目の学習項目（同じ間は関連図を描き直さない）
-  const [ltab, setL] = useState<"tree" | "parts">("tree"), [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
-  const [full, setFull] = useState(false), [ft, setFt] = useState<FrameType>("word"), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
+  const [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
+  const [full, setFull] = useState(false), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
   const sid = account?.studentId ?? "";
   // 11/23：Ctrl＋S（Mac は ⌘＋S）でノートを保存する。ブラウザの「ページを保存」は出さない
@@ -85,7 +84,8 @@ export function Study() {
     hist.current[item.itemId] = r.h; setDraft(item.itemId, r.value); setTick(t => t + 1);
   };
   undoKey.current = step;
-  const addPart = (type: PartType, f?: FrameType) => parts && setParts([...parts, newPart(type, bottomY(parts), f)]);
+  /** 部品を置く（11/25 夕：ボタンはノートの上の並び（NoteCanvas の InsertBar）に移した）。置いた部品を返す */
+  const addPart = (type: PartType, f?: FrameType) => { if (!parts) return; const n = newPart(type, bottomY(parts), f); setParts([...parts, n]); return n; };
   const open = (id: string) => go({ s: "G004", subjectId: subject.subjectId, itemId: id });
   const addItem = async () => {
     const n = await askName("学習項目の追加"); if (!n) return;
@@ -138,15 +138,15 @@ export function Study() {
   const toc = parts ? controller.tableOfContents(parts) : []; // 見出しと枠を上から順に（NoteManager.getTableOfContents）
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const matSelect = <select className="inp" style={{ margin: 0 }} value={ref ?? ""} onChange={e => setRef(e.target.value || null)}><option value="">資料を選ぶ…</option>{mats.map(m => <option key={m.materialId} value={m.materialId}>{m.fileName}</option>)}</select>;
-  const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} /> : null;
+  const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} onAdd={addPart} /> : null;
   const extra = (id: string) => id === item?.itemId ? (<><div className="ind">ノート</div><div className="ind">ストレージ</div>
     {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
     <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
   return (<div className="app"><Header />
     <Cols>
       <aside className="lf">
-        <Tabs tabs={LTABS} value={ltab} onChange={setL} />
-        {ltab === "tree" ? (<>
+        {/* 11/25 夕：「ノートの部品」タブはなくして、部品を置くボタンはノートの上に移した。左の欄は階層だけ */}
+        <>
           <Tree heading="科目一覧" extra={extra} />
           {prog !== null && <div className="mute" style={{ margin: "6px 0" }}>文字起こし中… {prog}%</div>}{msg && <div className="err">{msg}</div>}
           {/* 11/17：操作ボタンを「学習項目」「資料」のまとまりに分け、大きく押しやすくした */}
@@ -160,13 +160,7 @@ export function Study() {
           {pre && item && <div className="pop"><h3>前提項目の設定</h3>
             {its.filter(i => i.itemId !== item.itemId).map(i => <label className="ck" key={i.itemId}><input type="checkbox" checked={pre.includes(i.itemId)} onChange={e => setPre(e.target.checked ? [...pre, i.itemId] : pre.filter(p => p !== i.itemId))} />{i.itemName}</label>)}
             {preMsg && <div className="err">{preMsg}</div>}<div className="row"><button className="btn sm line" onClick={() => setPre(null)}>やめる</button><button className="btn sm pri" onClick={savePre}>確定</button></div></div>}
-        </>) : (<div className="col">
-          <div className="sec"><div className="sh">枠（種類を選んで置く）</div>
-            <select className="inp" style={{ margin: 0 }} value={ft} onChange={e => setFt(e.target.value as FrameType)}>{(Object.keys(FT) as FrameType[]).map(k => <option key={k} value={k}>{FT[k].n}</option>)}</select>
-            <button className="btn pri wide" disabled={!parts} onClick={() => addPart(PartType.FRAME, ft)}>＋ 枠を置く</button></div>
-          <div className="sec"><div className="sh">そのほかの部品</div>
-            <div className="grid3"><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.TEXT)}>文字</button><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.SHAPE)}>図形</button><button className="btn sm" disabled={!parts} onClick={() => addPart(PartType.ARROW)}>矢印</button></div></div>
-          <p className="mute">置いた部品はドラッグで動かし、右下で大きさ、上の色ボタンで色を変えます。文字は「見出し」に変えられます。</p></div>)}
+        </>
       </aside>
       <main className="ct">{item && parts ? (<>
         {/* 11/24：上のタブ（ノート／資料と並べる・全画面）は、スクロールしても上に残す（.ctop） */}
