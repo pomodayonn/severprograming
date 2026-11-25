@@ -137,4 +137,29 @@ export function moveLayers(parts: readonly NotePart[], ids: readonly string[], t
   const set = new Set(ids), picked = parts.filter(x => set.has(x.partId)), rest = parts.filter(x => !set.has(x.partId));
   return to === "front" ? [...rest, ...picked] : [...picked, ...rest];
 }
+// ---- ノートの中の検索（11/25 夜）----
+/** 1文字ずつ、全角・半角と大文字・小文字をそろえる（文字の数は変えない。何文字目かがずれないように） */
+export function fold(s: string): string {
+  let o = ""; for (const c of s) { const n = c.normalize("NFKC").toLowerCase(); o += n.length === c.length ? n : c; } return o;
+}
+/** 検索で見つかった場所。field は、どこの文字か（text：文字・枠の中、term・meaning：単語枠の用語・意味） */
+export interface FindHit { partId: string; field: "text" | "term" | "meaning"; word?: number; start: number; end: number }
+/**
+ * ノートの部品の中から言葉を探す。上から下、左から右の順（読む順）に並べて返す。
+ * 図形・矢印は文字を持たないので探さない。全角・半角、大文字・小文字は区別しない
+ */
+export function findInParts(parts: readonly NotePart[], q: string): FindHit[] {
+  const k = fold(q.trim()); if (!k) return [];
+  const all = (t: string) => { const f = fold(t), out: number[] = []; for (let i = f.indexOf(k); i >= 0; i = f.indexOf(k, i + 1)) out.push(i); return out; };
+  const hits: FindHit[] = [];
+  for (const p of [...parts].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    if (p.partType === PartType.SHAPE || p.partType === PartType.ARROW) continue;
+    if (p.frameType === "word") p.words.forEach((w, i) => {
+      for (const s of all(w.term)) hits.push({ partId: p.partId, field: "term", word: i, start: s, end: s + k.length });
+      for (const s of all(w.meaning)) hits.push({ partId: p.partId, field: "meaning", word: i, start: s, end: s + k.length });
+    });
+    else for (const s of all(p.text)) hits.push({ partId: p.partId, field: "text", start: s, end: s + k.length });
+  }
+  return hits;
+}
 
