@@ -58,6 +58,8 @@ export function newPart(type: PartType, y: number, ft?: FrameType): NotePart {
     partId, partType: type, frameType: type === PartType.FRAME ? (ft ?? "summary") : null, x: 24, y, width: size[0], height: size[1],
     color: ft ? FT[ft].c : "#d98a1f", text: type === PartType.SHAPE ? "rect" : "", headingLevel: 0, updatedAt: now(),
     words: ft === "word" ? [newWord(partId)] : [],
+    // 11/25 夕：矢印は、左から右へ 140px の矢印として置く（点の位置を text に入れる。arrowFromPoints を参照）
+    ...(type === PartType.ARROW ? arrowFromPoints(24 + ARROW_PAD, y + ARROW_PAD + ARROW_TOP, 164 + ARROW_PAD, y + ARROW_PAD + ARROW_TOP) : {}),
   });
 }
 /** 部品のいちばん下より少し下（新しい部品を置く高さ） */
@@ -108,5 +110,26 @@ export function moveLayer(parts: readonly NotePart[], partId: string, to: "front
   const p = parts.find(x => x.partId === partId); if (!p) return [...parts];
   const rest = parts.filter(x => x.partId !== partId);
   return to === "front" ? [...rest, p] : [p, ...rest];
+}
+// ---- 矢印の向き（11/25 夕）----
+// 矢印は「始まりの点」と「先の点」を自由に動かせる。2つの点は、部品の左上からの位置（px）で text に "arrow:x1,y1,x2,y2" と入れる
+// （矢印は文字を持たないので、図形の形と同じく text を使う。Neon の列は増やさない）。text が空の古い矢印は、今までどおり左から右へ
+/** 矢印の点のまわりの余白と、上の帯（色・× のボタン）の高さ */
+export const ARROW_PAD = 14, ARROW_TOP = 24;
+export interface ArrowPts { x1: number; y1: number; x2: number; y2: number }
+/** 矢印の2つの点（部品の左上から）。読めなければ今までの形（左から右、まん中の高さ） */
+export function arrowPoints(p: { width: number; height: number; text: string }): ArrowPts {
+  const m = p.text.match(/^arrow:(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)$/);
+  if (m) return { x1: Number(m[1]), y1: Number(m[2]), x2: Number(m[3]), y2: Number(m[4]) };
+  const y = ARROW_TOP + (p.height - ARROW_TOP) / 2;
+  return { x1: 4, y1: y, x2: p.width - 2, y2: y };
+}
+/** ノートの上の2つの点（a が始まり、b が先）から、矢印の部品の位置・大きさ・text を作る。ノートの外（左・上）には出さない */
+export function arrowFromPoints(ax: number, ay: number, bx: number, by: number) {
+  ax = Math.max(ARROW_PAD, ax); bx = Math.max(ARROW_PAD, bx); ay = Math.max(ARROW_PAD + ARROW_TOP, ay); by = Math.max(ARROW_PAD + ARROW_TOP, by);
+  const x = Math.min(ax, bx) - ARROW_PAD, y = Math.min(ay, by) - ARROW_PAD - ARROW_TOP;
+  const width = Math.max(60, Math.max(ax, bx) + ARROW_PAD - x), height = Math.max(ARROW_TOP + 30, Math.max(ay, by) + ARROW_PAD - y);
+  const r = (n: number) => Math.round(n);
+  return { x: r(x), y: r(y), width: r(width), height: r(height), text: `arrow:${r(ax - x)},${r(ay - y)},${r(bx - x)},${r(by - y)}` };
 }
 
