@@ -207,3 +207,15 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .hd .home:hover b{color:var(--acc)}.hd .home:focus-visible{outline:2px solid var(--acc);outline-offset:4px}
 .th.row{display:flex;align-items:center;gap:6px}.th .tolist{font-size:12px;font-weight:700;color:var(--acc);text-decoration:none;padding:2px 6px;border-radius:6px}.th .tolist:hover{background:var(--soft)}
 
+/* 11/25：書式つきで書ける欄（前の textarea と同じ見た目）。空のときは data-ph の文字を薄く出す */
+.el .rt-edit{flex:1;padding:2px 8px;outline:none;min-height:0;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;cursor:text}
+.el .rt-edit:empty::before{content:attr(data-ph);color:var(--mute);pointer-events:none}
+.el .rt-edit.h1{font-size:26px;font-weight:700}.el .rt-edit.h2{font-size:21px;font-weight:700}.el .rt-edit.h3{font-size:17px;font-weight:700}
+.el.sel{box-shadow:0 0 0 3px rgba(207,63,91,.28)}
+/* 11/25：ノートの上の書式のボタン */
+.fbar{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.fbar .fsel{height:28px;padding:0 4px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:12px}
+.fbar .fb{min-width:28px;height:28px;padding:0 6px;border:1px solid var(--line2);border-radius:8px;background:#fff;font-size:13px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.fbar .fb:disabled,.fbar .fsel:disabled{opacity:.4;cursor:default}.fbar .fb.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.fbar .fb.txt{font-size:12px}.fbar .fgrp{display:inline-flex;gap:2px;margin-left:4px}
+.fbar .fb.sw{min-width:22px;width:22px;padding:0}.fbar .fb.sw span{width:14px;height:14px;border-radius:50%;display:block}.fbar .fb.sw.mk span{border-radius:3px;border:1px solid rgba(0,0,0,.15)}
