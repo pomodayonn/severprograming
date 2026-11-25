@@ -4,10 +4,10 @@
 // どの画面にも出る外側の枠です（ヘッダー・左の一覧・真ん中・右の関連図の4か所）。
 // 各画面は <Shell center={...} right={...} /> のように、真ん中と右に出すものだけを渡す
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type ReactNode } from "react";
 import { useApp } from "../state/app";
 import { itemsOf, searchTree } from "../lib/select";
-import { norm } from "../lib/logic";
+import { clampPane, norm } from "../lib/logic";
 import { Mascot } from "./Mascot";
 import { RelationGraph } from "./RelationGraph";
 import { OfflineBar } from "./AiWait";
@@ -53,7 +53,38 @@ export function GraphPane() {
   const its = useMemo(() => itemsOf(items, route.subjectId), [items, route.subjectId]); // 同じ間は関連図を描き直さない
   return s ? <RelationGraph items={its} prerequisites={prerequisites} selId={route.itemId} onOpen={id => go({ s: "G004", subjectId: s.subjectId, itemId: id })} /> : null;
 }
+/** 左右の欄の開け閉めと幅（11/25）。どの画面でも同じにして、次に開いたときも覚えておく（この端末だけ） */
+interface Panes { lw: number; rw: number; lOpen: boolean; rOpen: boolean }
+const PANES_KEY = "runndesu:panes", PANES0: Panes = { lw: 250, rw: 280, lOpen: true, rOpen: true };
+function loadPanes(): Panes {
+  try { const v = JSON.parse(localStorage.getItem(PANES_KEY) ?? "null"); return v ? { ...PANES0, ...v, lw: clampPane(Number(v.lw) || PANES0.lw), rw: clampPane(Number(v.rw) || PANES0.rw) } : PANES0; } catch { return PANES0; }
+}
+function savePanes(p: Panes) { try { localStorage.setItem(PANES_KEY, JSON.stringify(p)); } catch { /* 保存できなくても開け閉めはできる */ } }
+
+/** 3列（左の欄・真ん中・右の欄）の入れ物。children に <aside className="lf"> <main className="ct"> <aside className="rt"> を入れる
+ *  11/25：左右の欄は「‹」「›」で閉じたり開いたりでき、さかいめ（細い線）をドラッグすると幅を変えられる。スマホの幅では今までどおり縦に並ぶ */
+export function Cols({ cls = "", children }: { cls?: string; children: ReactNode }) {
+  const [pn, setPn] = useState<Panes>(loadPanes), drag = useRef<{ side: "l" | "r"; sx: number; w: number } | null>(null);
+  const set = (p: Partial<Panes>) => setPn(o => { const n = { ...o, ...p }; savePanes(n); return n; });
+  const start = (side: "l" | "r") => (e: RPointerEvent) => {
+    e.preventDefault(); drag.current = { side, sx: e.clientX, w: side === "l" ? pn.lw : pn.rw };
+    const mv = (ev: PointerEvent) => { const d = drag.current; if (!d) return; const w = clampPane(d.w + (d.side === "l" ? 1 : -1) * (ev.clientX - d.sx)); setPn(o => ({ ...o, [d.side === "l" ? "lw" : "rw"]: w })); };
+    const up = () => { drag.current = null; window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); setPn(o => { savePanes(o); return o; }); document.body.classList.remove("resizing"); };
+    window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); document.body.classList.add("resizing");
+  };
+  const style = { "--lw": pn.lOpen ? `${pn.lw}px` : "0px", "--rw": pn.rOpen ? `${pn.rw}px` : "0px" } as CSSProperties;
+  return (<div className={"cols " + cls + (pn.lOpen ? "" : " lclosed") + (pn.rOpen ? "" : " rclosed")} style={style}>
+    {children}
+    {pn.lOpen && <div className="rz rzl" onPointerDown={start("l")} onDoubleClick={() => set({ lw: PANES0.lw })} title="ドラッグで幅を変える（ダブルクリックで元の幅）" />}
+    {pn.rOpen && <div className="rz rzr" onPointerDown={start("r")} onDoubleClick={() => set({ rw: PANES0.rw })} title="ドラッグで幅を変える（ダブルクリックで元の幅）" />}
+    <button className="ptog ptl" onClick={() => set({ lOpen: !pn.lOpen })} aria-label={pn.lOpen ? "左の欄を閉じる" : "左の欄を開く"} title={pn.lOpen ? "左の欄を閉じる" : "左の欄を開く"}>{pn.lOpen ? "‹" : "›"}</button>
+    <button className="ptog ptr" onClick={() => set({ rOpen: !pn.rOpen })} aria-label={pn.rOpen ? "右の欄を閉じる" : "右の欄を開く"} title={pn.rOpen ? "右の欄を閉じる" : "右の欄を開く"}>{pn.rOpen ? "›" : "‹"}</button>
+  </div>);
+}
+
+/** 画面の外枠：上にヘッダー、下に「左の欄・真ん中・右の欄」の3列（Cols） */
 export function Shell({ heading = "科目一覧", left, center, right, cls = "" }: { heading?: string; left?: ReactNode; center: ReactNode; right?: ReactNode; cls?: string }) {
-  return (<div className="app"><Header /><div className={"cols " + cls}>
-    <aside className="lf">{left ?? <Tree heading={heading} />}</aside><main className="ct">{center}</main><aside className="rt">{right ?? <GraphPane />}</aside></div></div>);
+  return (<div className="app"><Header /><Cols cls={cls}>
+    <aside className="lf">{left ?? <Tree heading={heading} />}</aside><main className="ct">{center}</main><aside className="rt">{right ?? <GraphPane />}</aside>
+  </Cols></div>);
 }

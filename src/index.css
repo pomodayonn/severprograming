@@ -176,3 +176,30 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 /* 11/25：テスト一覧の科目のフォルダは1行に並べ、入りきらない分は横にスクロールする（科目が多くても上の部分が大きくならない） */
 .ltop .folders{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
 .ltop .folder{flex:none}
+/* 11/25：科目一覧（G003）の「科目の一覧」。1行に チェック・名前・中身の数・削除 */
+.slist .row{flex-wrap:wrap;gap:8px}.slist h4{margin:0;font-size:16px}
+.srow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-top:1px solid var(--line)}.srow.on{background:var(--soft);border-radius:8px}
+.srow input[type=checkbox]{flex:none;margin:0;width:16px;height:16px}.srow .sname{font-weight:700;text-align:left;text-decoration:none;color:var(--ink)}
+.srow small{white-space:nowrap}
+/* 11/25：左右の欄の開け閉めと幅。幅は Shell が --lw・--rw に入れる。閉じた欄は幅0で隠す
+   ・.rz：欄のさかいめの細い線（ドラッグで幅を変える）　・.ptog：「‹」「›」の開け閉めボタン（欄のさかいめの、上下のまん中）
+   スマホの幅（900px 以下）では、今までどおり縦に並べて、どちらも出さない */
+@media(min-width:901px){
+  .cols{position:relative;grid-template-columns:var(--lw,250px) minmax(0,1fr) var(--rw,280px)}
+  .cols.lclosed>.lf,.cols.rclosed>.rt{visibility:hidden;padding:0;overflow:hidden}
+  .rz{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:5}
+  .rz:hover,body.resizing .rz{background:linear-gradient(90deg,transparent 3px,var(--acc) 3px,var(--acc) 5px,transparent 5px)}
+  .rzl{left:calc(var(--lw) - 4px)}.rzr{right:calc(var(--rw) - 4px)}
+  .ptog{position:absolute;top:50%;transform:translateY(-50%);height:44px;z-index:6;width:22px;padding:0;border:1px solid var(--line2);background:#fff;color:var(--mute);border-radius:8px;font-size:16px;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .ptog:hover{color:var(--ink);border-color:var(--ink)}
+  .ptl{left:calc(var(--lw) - 11px)}.ptr{right:calc(var(--rw) - 11px)}
+  .lclosed .ptl{left:4px}.rclosed .ptr{right:4px}
+  body.resizing{cursor:col-resize;user-select:none}
+}
+@media(max-width:900px){.rz,.ptog{display:none}}
+/* 11/25：ノートの大きさ（−・％・＋・全体） */
+/*   .cover も付けて、スクロールしても上のタブの下に残す（11/24 の .ct .cover の sticky を使う） */
+.cover.zbar{gap:6px;background:var(--pn);border-radius:0;padding:4px 0;margin:0 0 6px}.zbar .btn{margin-left:0}
+.zbar .btn.sm{min-height:28px;padding:2px 10px}.zbar .btn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.zbar .zval{min-width:46px;text-align:center;text-decoration:none;color:var(--ink);font-weight:700}
+

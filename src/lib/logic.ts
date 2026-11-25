@@ -88,3 +88,14 @@ export function isPullStale(lastPulledAt: string | null | undefined, nowMs: numb
   if (Number.isNaN(t) || t > nowMs) return true;
   return nowMs - t >= maxAge;
 }
+/** ノートの拡大・縮小の段階（11/25）。「−」「＋」で1段ずつ動く */
+export const ZOOMS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5] as const;
+/** 今の倍率 z から、dir（+1 で大きく、-1 で小さく）に1段動かした倍率。「全体を表示」などで段階の間にいても、近い次の段へ進む */
+export function stepZoom(z: number, dir: 1 | -1): number {
+  if (dir > 0) return ZOOMS.find(v => v > z + 0.001) ?? ZOOMS[ZOOMS.length - 1];
+  return [...ZOOMS].reverse().find(v => v < z - 0.001) ?? ZOOMS[0];
+}
+/** 左右の欄の幅（11/25）。ドラッグで変えられるのは 180〜480px */
+export const PANE_MIN = 180, PANE_MAX = 480;
+export const clampPane = (w: number) => Math.round(Math.min(PANE_MAX, Math.max(PANE_MIN, w)));
+

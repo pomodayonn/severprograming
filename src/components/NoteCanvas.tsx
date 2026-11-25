@@ -16,7 +16,7 @@ import { NotePart, type ShapeKind } from "../beans/NotePart";
 import { Word } from "../beans/Word";
 import { now } from "../beans/DateTime";
 import { PartType } from "../enums/PartType";
-import { canvasWidth, FT, newWord } from "../lib/logic";
+import { canvasWidth, FT, newWord, stepZoom } from "../lib/logic";
 import { controller } from "../controller/Controller";
 
 /** 部品の種類ごとの名前（部品の上に出す） */
@@ -68,19 +68,27 @@ const PartView = memo(function PartView({ part: p, h }: { part: NotePart; h: Han
     </div>);
 });
 
+/** ノートの大きさは、次に開いたときも同じにする（この端末だけ。保存できないブラウザでは毎回 100%） */
+const ZOOM_KEY = "runndesu:noteZoom";
+function loadZoom(): number | "fit" { try { const v = localStorage.getItem(ZOOM_KEY); if (v === "fit") return v; const n = Number(v); return n >= 0.5 && n <= 1.5 ? n : 1; } catch { return 1; } }
+function saveZoom(v: number | "fit") { try { localStorage.setItem(ZOOM_KEY, String(v)); } catch { /* 保存できなくても大きさは変えられる */ } }
+
 export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (parts: NotePart[]) => void }) {
   const ref = useRef({ parts, onChange }); ref.current = { parts, onChange };
   const drag = useRef<{ id: string; mode: Mode; sx: number; sy: number; x: number; y: number; w: number; h: number; cx: number; cy: number; raf: number; z: number; w0: number } | null>(null);
   // 11/23：全画面で右のほうに置いた部品が、ふつうの画面で切れて見えなくなっていた。
   // ノートの幅を「いちばん右の部品」まで広げて横にスクロールできるようにし、「縮小して全体を見る」も選べるようにした
-  const wrap = useRef<HTMLDivElement>(null), [cw, setCw] = useState(0), [fit, setFit] = useState(false), [, setTick] = useState(0);
+  // 11/25：「−」「＋」でノートの大きさを変えられるようにした。"fit" は「欄の幅に全体を合わせる」。選んだ大きさは次に開いたときも同じ
+  const wrap = useRef<HTMLDivElement>(null), [cw, setCw] = useState(0), [zm, setZm] = useState<number | "fit">(loadZoom), [, setTick] = useState(0);
+  const changeZoom = (v: number | "fit") => { setZm(v); saveZoom(v); };
   useEffect(() => {
     const el = wrap.current; if (!el) return;
     const ro = new ResizeObserver(() => setCw(el.clientWidth)); ro.observe(el); setCw(el.clientWidth);
     return () => ro.disconnect();
   }, []);
   // ドラッグ中は幅を縮めない（縮小表示の倍率がドラッグの途中で変わると、部品がマウスからずれるため）
-  const W = Math.max(canvasWidth(parts), drag.current?.w0 ?? 0), over = cw > 0 && W > cw, z = fit && over ? cw / W : 1;
+  const W = Math.max(canvasWidth(parts), drag.current?.w0 ?? 0), over = cw > 0 && W > cw;
+  const z = zm === "fit" ? (over ? cw / W : 1) : zm;
   const zoom = useRef(z); zoom.current = z;
   const width = useRef(W); width.current = W;
 
@@ -118,10 +126,15 @@ export function NoteCanvas({ parts, onChange }: { parts: NotePart[]; onChange: (
 
   let H = 520; for (const p of parts) H = Math.max(H, p.y + p.height + 160);
   return (<div className="cwrap">
-    {over && <div className="cover"><span>{fit ? "ノート全体を縮小して表示しています。" : "右にはみ出した部品があります。横にスクロールすると見えます。"}</span>
-      <button className="btn sm line" onClick={() => setFit(!fit)}>{fit ? "元の大きさに戻す" : "縮小して全体を見る"}</button></div>}
+    <div className="cover zbar">
+      {over && z * W > cw + 1 && <span className="mute">右にはみ出した部品があります。横にスクロールするか「全体」で見られます。</span>}<span className="sp" />
+      <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, -1))} disabled={z <= 0.5} aria-label="ノートを小さく" title="小さく">−</button>
+      <button className="link zval" onClick={() => changeZoom(1)} title="100% に戻す">{Math.round(z * 100)}%</button>
+      <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, 1))} disabled={z >= 1.5} aria-label="ノートを大きく" title="大きく">＋</button>
+      <button className={"btn sm line" + (zm === "fit" ? " on" : "")} onClick={() => changeZoom(zm === "fit" ? 1 : "fit")} title="欄の幅に全体を合わせる">全体</button>
+    </div>
     <div className="cscroll" ref={wrap}>
-      <div className="canvas" id="note-canvas" style={{ height: H, width: over ? W : undefined, zoom: z === 1 ? undefined : z }}>
+      <div className="canvas" id="note-canvas" style={{ height: H, width: cw ? Math.max(W, cw / z) : undefined, zoom: z === 1 ? undefined : z }}>
         {parts.map(p => <PartView key={p.partId} part={p} h={h.current!} />)}
       </div></div></div>);
 }

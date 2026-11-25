@@ -27,7 +27,7 @@ import { PartType } from "../enums/PartType";
 import { NoteCanvas } from "./NoteCanvas";
 import { Tabs } from "./Tabs";
 import { RelationGraph } from "./RelationGraph";
-import { Tree, Header } from "./Shell";
+import { Cols, Tree, Header } from "./Shell";
 import { Viewer, useMaterialContent } from "./Material";
 import { toast } from "./toast";
 
@@ -143,7 +143,7 @@ export function Study() {
     {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
     <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
   return (<div className="app"><Header />
-    <div className="cols">
+    <Cols>
       <aside className="lf">
         <Tabs tabs={LTABS} value={ltab} onChange={setL} />
         {ltab === "tree" ? (<>
@@ -184,7 +184,7 @@ export function Study() {
         <Tabs tabs={RTABS} value={rtab} onChange={setR} />
         {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
-    </div>
+    </Cols>
     {/* 11/24：全画面でも、右の資料は .sidepin で包んでスクロールしても付いてくるようにした */}
     {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
       <div className="body" style={{ gridTemplateColumns: ref ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}><div>{canvas}</div>{ref && <div><div className="sidepin"><SideMaterial id={ref} /></div></div>}</div></div>}
