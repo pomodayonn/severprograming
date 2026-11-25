@@ -236,7 +236,7 @@ function PtBox({ disabled }: { disabled: boolean }) {
  * ノートの中の検索（11/25 夜）。Ctrl＋F か「検索」で開く。Enter で次、Shift＋Enter で前、Esc で閉じる。
  * 見つけた部品を選んで、見える所までスクロールし、文字の所に黄色い印を付ける（印は CSS Custom Highlight。使えないブラウザでは部品の枠だけ）
  */
-function FindBar({ parts, root, onPick, onClose, inputRef }: { parts: NotePart[]; root: () => HTMLElement | null; onPick: (partId: string) => void; onClose: () => void; inputRef: React.RefObject<HTMLInputElement | null> }) {
+function FindBar({ parts, root, onPick, onClose, inputRef }: { parts: NotePart[]; root: () => HTMLElement | null; onPick: (partId: string) => void; onClose: () => void; inputRef: React.RefObject<HTMLInputElement> }) {
   const [q, setQ] = useState(""), [i, setI] = useState(0);
   const hits = q.trim() ? findInParts(parts, q) : [], n = hits.length, cur = n ? hits[Math.min(i, n - 1)] : null;
   useEffect(() => { setI(0); }, [q]);
