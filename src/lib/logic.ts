@@ -98,4 +98,15 @@ export function stepZoom(z: number, dir: 1 | -1): number {
 /** 左右の欄の幅（11/25）。ドラッグで変えられるのは 180〜480px */
 export const PANE_MIN = 180, PANE_MAX = 480;
 export const clampPane = (w: number) => Math.round(Math.min(PANE_MAX, Math.max(PANE_MIN, w)));
+/** 部品の複製（11/25）：IDを新しくして、右下に24pxずらす。単語枠の単語も、新しいIDで複製する */
+export function copyPart(p: NotePart, dx = 24, dy = 24): NotePart {
+  const partId = newId();
+  return new NotePart({ ...p, partId, x: p.x + dx, y: p.y + dy, updatedAt: now(), words: p.words.map(w => new Word({ ...w, wordId: newId(), partId, updatedAt: now() })) });
+}
+/** 部品の重なり順を変える（11/25）。あとの部品ほど上（前）に描かれるので、前面へは最後に、背面へは最初に動かす */
+export function moveLayer(parts: readonly NotePart[], partId: string, to: "front" | "back"): NotePart[] {
+  const p = parts.find(x => x.partId === partId); if (!p) return [...parts];
+  const rest = parts.filter(x => x.partId !== partId);
+  return to === "front" ? [...rest, p] : [p, ...rest];
+}
 
