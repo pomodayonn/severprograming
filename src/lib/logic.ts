@@ -119,7 +119,7 @@ export const ARROW_PAD = 14, ARROW_TOP = 24;
 export interface ArrowPts { x1: number; y1: number; x2: number; y2: number }
 /** 矢印の2つの点（部品の左上から）。読めなければ今までの形（左から右、まん中の高さ） */
 export function arrowPoints(p: { width: number; height: number; text: string }): ArrowPts {
-  const m = p.text.match(/^arrow:(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)$/);
+  const m = p.text.match(/^arrow:(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)(;.*)?$/);
   if (m) return { x1: Number(m[1]), y1: Number(m[2]), x2: Number(m[3]), y2: Number(m[4]) };
   const y = ARROW_TOP + (p.height - ARROW_TOP) / 2;
   return { x1: 4, y1: y, x2: p.width - 2, y2: y };
@@ -161,5 +161,24 @@ export function findInParts(parts: readonly NotePart[], q: string): FindHit[] {
     else for (const s of all(p.text)) hits.push({ partId: p.partId, field: "text", start: s, end: s + k.length });
   }
   return hits;
+}
+// ---- 矢印の太さと線の種類（11/25 夜）----
+// 矢印の text の後ろに「;w=bold;dash」のように付ける（例："arrow:14,38,150,38;w=bold;dash"）。付いていなければ「ふつう・実線」
+export type ArrowWeight = "thin" | "normal" | "bold";
+export interface ArrowStyle { w: ArrowWeight; dash: boolean }
+/** 太さごとの線の太さ（px）と、矢じりの長さ・半分の幅 */
+export const ARROW_W: Record<ArrowWeight, { n: string; line: number; len: number; half: number }> = {
+  thin: { n: "細い", line: 2, len: 10, half: 5 }, normal: { n: "ふつう", line: 3, len: 12, half: 7 }, bold: { n: "太い", line: 6, len: 18, half: 11 },
+};
+/** 矢印の太さと線の種類を読む */
+export function arrowStyleOf(text: string): ArrowStyle {
+  const tail = text.startsWith("arrow:") ? text.split(";").slice(1) : [];
+  const w = tail.find(t => t.startsWith("w="))?.slice(2);
+  return { w: w === "thin" || w === "bold" ? w : "normal", dash: tail.includes("dash") };
+}
+/** 矢印の text の、点の位置はそのままで、太さと線の種類だけを変える */
+export function withArrowStyle(text: string, st: Partial<ArrowStyle>): string {
+  const cur = { ...arrowStyleOf(text), ...st }, head = text.split(";")[0];
+  return head + (cur.w !== "normal" ? `;w=${cur.w}` : "") + (cur.dash ? ";dash" : "");
 }
 
