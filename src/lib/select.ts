@@ -15,6 +15,7 @@ import type { Test } from "../beans/Test";
 import type { Question } from "../beans/Question";
 import type { Attempt } from "../beans/Attempt";
 import type { Answer } from "../beans/Answer";
+import type { Material } from "../beans/Material";
 import { TestType } from "../enums/TestType";
 
 const NO_PARTS: readonly NotePart[] = [];
@@ -89,5 +90,11 @@ export function sortTests<R extends { t: Test; i: LearningItem }>(rows: readonly
     name: (a, b) => a.i.itemName.localeCompare(b.i.itemName, "ja") || newer(a, b),
   };
   return [...rows].sort(cmp[by]);
+}
+
+/** 科目の中身の数（11/25：科目一覧の「学習項目 3件・テスト 5件・資料 1件」と、削除の確認に使う） */
+export function countsOf(subjectId: string, items: readonly LearningItem[], tests: readonly Test[], materials: readonly Material[]) {
+  const ids = new Set(itemsOf(items, subjectId).map(i => i.itemId));
+  return { items: ids.size, tests: tests.filter(t => ids.has(t.itemId)).length, materials: materials.filter(m => ids.has(m.itemId)).length };
 }
 
