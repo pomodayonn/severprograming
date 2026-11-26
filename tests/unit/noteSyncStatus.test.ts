@@ -168,18 +168,6 @@ function setupSync() {
 }
 
 describe("SyncManager：不完全な同期の判定", () => {
-  it("書式情報を除外する状態では同期確認済みにしない", async () => {
-    const { sync } = setupSync();
-
-    const push = vi.spyOn(sync, "pushChanges")
-      .mockResolvedValue(undefined);
-
-    // 書式列がないと判定された内部状態を再現する。
-    Reflect.set(sync, "noStyleColumn", true);
-
-    expect(await sync.sendAll()).toBe(false);
-    expect(push).toHaveBeenCalledOnce();
-  });
 
   it("セッションが存在しなければ同期エラーになる", async () => {
     const { auth, sync } = setupSync();

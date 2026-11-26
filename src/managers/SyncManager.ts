@@ -42,8 +42,6 @@ type Row = Record<string, unknown>;
 export class SyncError extends Error {}
 
 export class SyncManager {
-  /** Neon に note_part.style 列がまだないと分かったら true（11/25）。そのあとは style をのぞいて送る */
-  private noStyleColumn = false;
   /** 前回同期した日時（学生ごとに端末に保存する） */
   lastSyncedAt: string | null = null;
   private running: Promise<void> | null = null;
@@ -150,9 +148,6 @@ export class SyncManager {
       // 端末に保存されている変更をアカウントへ送る。
       await this.pushChanges();
 
-      // 書式情報を除外して同期した場合は、完全な同期とは扱わない。
-      if (this.noStyleColumn) return false;
-
       // 未解決の競合が残っている場合は削除を許可しない。
       const conflicts = await this.getConflicts(student.studentId);
       if (conflicts.length > 0) return false;
@@ -248,7 +243,20 @@ export class SyncManager {
     // 11/24：別の端末で新しく保存されていたら、送らずに noteConflicts に入れる（UC-018 代替フロー(2)）
     const bases = await this.getBases(sid), found: string[] = [];
     let conflicts = await this.getConflicts(sid);
-    for (const note of newer(await getAll<Note>("notes"))) {
+
+    const changedNotes = newer(await getAll<Note>("notes"));
+
+    // 部品を含むノートを送信する前に、
+    // 必要なカラムがクラウド側に存在することを確認する。
+    // 確認できなければノートの更新処理を開始しない。
+    if (changedNotes.some(note => note.parts.length > 0)) {
+      await this.request(
+        "GET",
+        "/note_part?select=shape,style&limit=1"
+      );
+    }
+
+    for (const note of changedNotes) {
       // return=representation：保存したあとの行（Neon が入れた updated_at）を返してもらい、次に送るときのために覚えておく
       const base = bases[note.noteId];
       const [saved] = (base
@@ -261,16 +269,12 @@ export class SyncManager {
         found.push(note.noteId);
         continue;
       }
+      const partRows = note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, shape: p.partType === PartType.SHAPE ? NotePart.shapeOf(p) : null, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel, style: p.style ?? "" }));
+      // 書式情報を含む部品データをそのまま送信する。
+      // 同期に失敗した場合、書式を除外した再送信は行わない。
+      await this.upsert("note_part", partRows);
       const ids = note.parts.map(p => p.partId);
       await this.request("DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
-      const partRows = note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, shape: p.partType === PartType.SHAPE ? NotePart.shapeOf(p) : null, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel, style: p.style ?? "" }));
-      // 11/25：文字の書式（style 列）も送る。Neon にまだ style 列がないとき（db/schema.sql の ALTER TABLE をまだ流していないとき）は、
-      // 断られるので、style をのぞいて（undefined は JSON に入らない）もう一度送る（書式は端末には残る。列を足したあとの保存で送られる）
-      try { await this.upsert("note_part", this.noStyleColumn ? partRows.map(r => ({ ...r, style: undefined })) : partRows); }
-      catch (e) {
-        if (this.noStyleColumn || !(e instanceof SyncError) || !e.message.includes("400")) throw e;
-        this.noStyleColumn = true; await this.upsert("note_part", partRows.map(r => ({ ...r, style: undefined })));
-      }
       // 消した単語を Neon からも消す。11/21：前は部品1つごとに1回送っていたが、部品20個ずつまとめて1回で送るようにした
       // （全部を1回にしないのは、URL が長くなりすぎてサーバーに断られないようにするため）
       for (const group of chunk(note.parts, 20)) {
