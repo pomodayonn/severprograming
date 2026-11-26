@@ -139,7 +139,20 @@ export function Study() {
       await reload(); // 1つ終わるごとに一覧に出す
     }
   };
-  const doSave = async () => { if (item && drafts[item.itemId]) { if (await save(item.itemId)) toast("保存したよ"); } else toast("変更はありません"); };
+    const doSave = async () => {
+    if (!item || !drafts[item.itemId]) {
+      toast("変更はありません");
+      return;
+    }
+
+    const result = await save(item.itemId);
+
+    if (result === "sync-ok") {
+      toast("端末に保存しました（同期処理は正常終了）");
+    } else if (result === "unconfirmed") {
+      toast("端末に保存しました。クラウドへの同期を確認できませんでした");
+    }
+  };
   saveKey.current = () => { void doSave(); };
   const openMat = (id: string) => go({ s: "G005", subjectId: subject.subjectId, itemId: item?.itemId, materialId: id });
   const toc = parts ? controller.tableOfContents(parts) : []; // 見出しと枠を上から順に（NoteManager.getTableOfContents）

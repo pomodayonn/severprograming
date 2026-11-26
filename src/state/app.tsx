@@ -32,6 +32,10 @@ import { nameError } from "../lib/logic";
 
 /** 確認ダイアログのボタン。primary＝主な操作（紺）、danger＝消す操作（赤） */
 export interface Btn { label: string; value: string; primary?: boolean; danger?: boolean }
+export type NoteSaveOutcome =
+  | "failed"
+  | "unconfirmed"
+  | "sync-ok";
 interface Ctx {
   account: Student | null; ready: boolean;
   subjects: Subject[]; items: LearningItem[]; prerequisites: Prerequisite[]; notes: Note[]; tests: Test[]; materials: Material[];
@@ -42,7 +46,7 @@ interface Ctx {
   enter: (a: Student) => void;
   ask: (msg: string, buttons: Btn[]) => Promise<string>;
   askName: (title: string, initial?: string) => Promise<string | null>;
-  guard: () => Promise<boolean>; save: (itemId: string) => Promise<boolean>;
+  guard: () => Promise<boolean>;save: (itemId: string) => Promise<NoteSaveOutcome>;
   go: (r: Route) => Promise<void>; logout: () => Promise<void>;
   /** 11/23：ヘッダーの「最新にする」。canRefresh＝同期する設定があるか、refreshing＝受け取っている最中か */
   canRefresh: boolean; refreshing: boolean; refresh: () => Promise<void>;
@@ -124,14 +128,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, [dlg, pop]);
   /** ノートを保存する（Controller → NoteManager）。保存できたら読み直して下書きを消し、true を返す */
-  const save = useCallback(async (itemId: string) => {
-    const dr = dRef.current[itemId], sid = aRef.current?.studentId; if (!dr || !sid) return false;
-    const r = await controller.handleRequest("G004", "saveNote", { studentId: sid, itemId, parts: dr });
-    if (r.error) { toast(r.error); return false; } // 保存できなかったときは下書きを残す
+  const save = useCallback(async (
+    itemId: string
+  ): Promise<NoteSaveOutcome> => {
+    const dr = dRef.current[itemId];
+    const sid = aRef.current?.studentId;
+
+    if (!dr || !sid) return "failed";
+
+    const r = await controller.handleRequest(
+      "G004",
+      "saveNote",
+      {
+        studentId: sid,
+        itemId,
+        parts: dr,
+      }
+    );
+
+    // 端末への保存に失敗した場合は下書きを残す。
+    if (r.error) {
+      toast(r.error);
+      return "failed";
+    }
+
+    const result = r.data as
+      | { syncConfirmed: boolean }
+      | undefined;
+
     await reload();
-    setDrafts(p => { if (p[itemId] !== dr) return p; const n = { ...p }; delete n[itemId]; return n; }); // 保存中にさらに書いた分は残す
-    return true;
+
+    // 保存中に追加された下書きは消さない。
+    setDrafts(p => {
+      if (p[itemId] !== dr) return p;
+
+      const n = { ...p };
+      delete n[itemId];
+
+      return n;
+    });
+
+    return result?.syncConfirmed
+      ? "sync-ok"
+      : "unconfirmed";
   }, [reload]);
+
   /**
    * ノートの食い違い（11/24、UC-018 代替フロー(2)）。別の端末で、このノートがより新しく保存されていたら、どちらにするか選んでもらう。
    * 保存したとき・ネットにつながり直したとき・「最新にする」のときなど、SyncManager が見つけたらすぐに知らせてくる（NoteConflictListener）
@@ -163,7 +204,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const ids = Object.keys(dRef.current); if (!ids.length) return true;
     const v = await ask("保存していない変更があります", [{ label: "保存して移る", value: "save", primary: true }, { label: "保存せずに移る", value: "drop" }, { label: "キャンセル", value: "cancel" }]);
     if (v === "cancel") return false;
-    if (v === "save") { const ok = await Promise.all(ids.map(save)); if (ok.includes(false)) return false; toast("保存したよ"); } else setDrafts({});
+        if (v === "save") {
+      const results = await Promise.all(ids.map(save));
+
+      if (results.includes("failed")) {
+        return false;
+      }
+
+      if (results.includes("unconfirmed")) {
+        toast("端末に保存しました。クラウドへの同期を確認できませんでした");
+      } else {
+        toast("端末に保存しました（同期処理は正常終了）");
+      }
+    } else {
+      setDrafts({});
+    }
     return true;
   }, [ask, save]);
   const nav = useCallback((r: Route) => setRoute(r), []);

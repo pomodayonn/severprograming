@@ -244,8 +244,8 @@ export class Controller {
         }
         case "G004:saveNote": { // ノートの「保存」（未保存のまま画面を移るときの「保存して移る」も）。parts は下書きの部品
           const { studentId, itemId, parts } = p("G004:saveNote");
-          await this.noteManager.saveParts(studentId, itemId, parts);
-          return {}; // 11/24：別の端末と食い違っていたら、送ったときに NoteConflictListener で画面に知らせが来る
+          const result = await this.noteManager.saveParts(studentId, itemId, parts);
+          return {data: result}; // 11/24：別の端末と食い違っていたら、送ったときに NoteConflictListener で画面に知らせが来る
         }
         case "G004:resolveNoteConflict": { // 11/24：食い違ったときに選んだ方にする（mine：上書きして保存、theirs：別の端末の内容にする）
           const { studentId, itemId, choice } = p("G004:resolveNoteConflict");

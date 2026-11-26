@@ -150,6 +150,9 @@ export class SyncManager {
       // 端末に保存されている変更をアカウントへ送る。
       await this.pushChanges();
 
+      // 書式情報を除外して同期した場合は、完全な同期とは扱わない。
+      if (this.noStyleColumn) return false;
+
       // 未解決の競合が残っている場合は削除を許可しない。
       const conflicts = await this.getConflicts(student.studentId);
       if (conflicts.length > 0) return false;
@@ -217,7 +220,10 @@ export class SyncManager {
 
   // ======================= ここから private =======================
   private async push(): Promise<void> {
-    const student = await this.authClient.getSession(); if (!student) return;
+    const student = await this.authClient.getSession();
+      if (!student) {
+      throw new SyncError("ログイン状態を確認できないため同期できません");
+    }
     const sid = student.studentId, since = await this.getLastSynced(sid), started = now();
     const newer = <T extends { updatedAt: string; studentId: string }>(rows: T[]) => rows.filter(r => r.studentId === sid && (!since || r.updatedAt > since));
 

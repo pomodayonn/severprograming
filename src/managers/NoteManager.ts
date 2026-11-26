@@ -21,6 +21,13 @@ import { parseRich, stringifyRich } from "../lib/rich";
 export interface NoteSyncer extends ChangePusher {
   keepMineNote(noteId: string): Promise<void>;
   takeRemoteNote(noteId: string): Promise<Note | null>;
+  sendAll(): Promise<boolean>;
+}
+
+/** ノートの端末保存結果とクラウド同期の確認結果 */
+export interface NoteSaveResult {
+  note: Note;
+  syncConfirmed: boolean;
 }
 
 /** 食い違ったときに、どちらのノートにするか。mine：この端末の内容で上書き、theirs：別の端末の内容にする */
@@ -139,9 +146,30 @@ export class NoteManager implements SuggestionApplier {
    * 画面の「保存」ボタン：画面で書いた部品（下書き）でノートの中身を置き換えて保存し、アカウントにも送る。
    * 11/21 道B：前は画面の形（El）から NotePart に変換していたが、今は画面も NotePart を使うので、そのまま保存する
    */
-  async saveParts(studentId: string, itemId: string, parts: readonly NotePart[]): Promise<Note> {
+    async saveParts(studentId: string,itemId: string,parts: readonly NotePart[]): Promise<NoteSaveResult> {
     const note = await this.getNote(itemId, studentId);
-    return this.saveNote(new Note({ ...note, parts: [...parts] }));
+
+    // 最初に端末へ保存する。
+    // 端末への保存自体に失敗した場合は例外を返す。
+    const saved = await this.noteDAO.save(
+      new Note({ ...note, parts: [...parts] })
+    );
+
+    // クラウドへの同期を確認する。
+    // 同期に失敗しても端末への保存結果は維持する。
+    let syncConfirmed = false;
+
+    try {
+      syncConfirmed =
+        (await this.syncManager?.sendAll()) ?? false;
+    } catch {
+      syncConfirmed = false;
+    }
+
+    return {
+      note: saved,
+      syncConfirmed,
+    };
   }
 
   private sync() { return pushQuietly(this.syncManager); }
