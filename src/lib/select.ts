@@ -27,6 +27,9 @@ export const itemsOf = (items: readonly LearningItem[], subjectId: string | unde
 /** その学習項目の前提になっている学習項目のID */
 export const prereqIdsOf = (prerequisites: readonly Prerequisite[], itemId: string): string[] =>
   prerequisites.filter(p => p.itemId === itemId).map(p => p.prereqItemId);
+/** その学習項目のあとに学ぶ項目（その項目を前提にしている項目）のID（11/26） */
+export const nextIdsOf = (prerequisites: readonly Prerequisite[], itemId: string): string[] =>
+  prerequisites.filter(p => p.prereqItemId === itemId).map(p => p.itemId);
 
 /** その学習項目のノートの部品（ノートがなければ空） */
 export const partsOf = (notes: readonly Note[], itemId: string | undefined): readonly NotePart[] =>

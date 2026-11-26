@@ -6,7 +6,7 @@
 //
 // 【このファイルで何が起きているか】
 // 学習画面（G004）です。いちばん大きな画面で、3列に分かれている。
-// ・左  ：科目と学習項目の一覧（階層）／ノートに置く部品（部品）。学習項目の追加・名前の編集・削除・前提項目の設定、資料の追加
+// ・左  ：科目と学習項目の一覧（階層）／ノートに置く部品（部品）。学習項目の追加・名前の編集・削除・つながり（前提項目）の設定、資料の追加
 // ・真ん中：ノート（NoteCanvas.tsx）。下に「保存」「AIでまとめる」「テスト一覧」「模擬テスト」のボタン
 // ・右  ：関連図（RelationGraph.tsx）／目次
 // ノートを書いている間は drafts（下書き）に入れておき、「保存」を押すと app.tsx の save() で本当に保存する
@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType } from "../types";
 import { bottomY, newPart } from "../lib/logic";
-import { itemsOf, partsOf, prereqIdsOf } from "../lib/select";
+import { itemsOf, partsOf } from "../lib/select";
 import { emptyHistory, record, redo, undo, type History } from "../lib/history";
 import { controller } from "../controller/Controller";
 import type { LearningItem } from "../beans/LearningItem";
@@ -27,6 +27,7 @@ import { PartType } from "../enums/PartType";
 import { NoteCanvas } from "./NoteCanvas";
 import { Tabs } from "./Tabs";
 import { RelationGraph } from "./RelationGraph";
+import { LinkDialog } from "./LinkDialog";
 import { Cols, Tree, Header } from "./Shell";
 import { Viewer, useMaterialContent } from "./Material";
 import { toast } from "./toast";
@@ -45,7 +46,7 @@ export function Study() {
   const its = useMemo(() => itemsOf(items, route.subjectId), [items, route.subjectId]); // この科目の学習項目（同じ間は関連図を描き直さない）
   const [rtab, setR] = useState<"graph" | "toc">("graph"), [mode, setMode] = useState<"note" | "side">("note");
   const [full, setFull] = useState(false), [ref, setRef] = useState<string | null>(null), [menu, setMenu] = useState(false);
-  const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [pre, setPre] = useState<string[] | null>(null), [preMsg, setPreMsg] = useState("");
+  const [msg, setMsg] = useState(""), [prog, setProg] = useState<number | null>(null), [linking, setLinking] = useState(false);
   const sid = account?.studentId ?? "";
   // 11/23：Ctrl＋S（Mac は ⌘＋S）でノートを保存する。ブラウザの「ページを保存」は出さない
   const saveKey = useRef<() => void>(() => {});
@@ -109,12 +110,14 @@ export function Study() {
     await reload();
     nav({ s: "G004", subjectId: subject.subjectId }); toast("学習項目を削除したよ");
   };
-  const savePre = async () => {
-    if (!item || !pre) return;
-    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.itemId, prereqIds: pre });
-    if (r.error) return setPreMsg(r.error); // 輪になるときは「前提項目が輪になるため設定できません」
-    await reload(); setPre(null); setPreMsg("");
+  // 11/26：つながり（前に学ぶ・次に学ぶ）の窓の「確定」。うまくいかなかったらエラーの文を返し、窓は開いたまま
+  const saveLinks = async (before: string[], after: string[]) => {
+    if (!item) return;
+    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.itemId, prereqIds: before, nextIds: after });
+    if (r.error) return r.error; // 輪になるときは「前提項目が輪になるため設定できません…」
+    await reload(); setLinking(false); toast("つながりを保存したよ");
   };
+  const canLink = !!item && its.length >= 2;
   // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
   const upload = async (files: FileList | null) => {
     if (!files || !item) return; setMsg("");
@@ -157,13 +160,10 @@ export function Study() {
           <div className="sec"><div className="sh">学習項目{item && <b>{item.itemName}</b>}</div>
             <button className="btn pri wide" onClick={addItem}>＋ 学習項目を追加</button>
             <div className="grid2"><button className="btn sm" disabled={!item} onClick={rename}>名前を変更</button><button className="btn sm danger" disabled={!item} onClick={del}>削除</button></div>
-            <button className="btn sm wide" disabled={!item || its.length < 2} onClick={() => { setPre(prereqIdsOf(prerequisites, item!.itemId)); setPreMsg(""); }}>前提項目の設定</button></div>
+            <button className="btn sm wide" disabled={!canLink} onClick={() => setLinking(true)} title="この項目の前に学ぶ項目・次に学ぶ項目を選ぶ（関連図の線になります）">つながりの設定</button></div>
           <div className="sec"><div className="sh">資料</div>
             <label className={"btn wide" + (item ? "" : " disabled")} aria-disabled={!item} style={item ? undefined : { opacity: .45, cursor: "not-allowed" }}>＋ 資料の追加<input hidden type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item} onChange={e => { upload(e.target.files); e.target.value = ""; }} /></label>
             <span className="mute">画像・PDF・テキスト（1件20MBまで）。画像とPDFは文字起こしもします</span></div>
-          {pre && item && <div className="pop"><h3>前提項目の設定</h3>
-            {its.filter(i => i.itemId !== item.itemId).map(i => <label className="ck" key={i.itemId}><input type="checkbox" checked={pre.includes(i.itemId)} onChange={e => setPre(e.target.checked ? [...pre, i.itemId] : pre.filter(p => p !== i.itemId))} />{i.itemName}</label>)}
-            {preMsg && <div className="err">{preMsg}</div>}<div className="row"><button className="btn sm line" onClick={() => setPre(null)}>やめる</button><button className="btn sm pri" onClick={savePre}>確定</button></div></div>}
         </>
       </aside>
       <main className="ct">{item && parts ? (<>
@@ -180,9 +180,15 @@ export function Study() {
       </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
       <aside className="rt">
         <Tabs tabs={RTABS} value={rtab} onChange={setR} />
-        {rtab === "graph" ? <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} /> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
+        {/* 11/26：関連図の上に「つなぐ」ボタンと、線の色の見方を置いた */}
+        {rtab === "graph" ? <>
+          <div className="gtop"><span className="mute">先に学ぶ → あとで学ぶ</span><span className="sp" /><button className="btn sm" disabled={!canLink} onClick={() => setLinking(true)} title={canLink ? `「${item!.itemName}」の前・次に学ぶ項目を選ぶ` : "学習項目が2つ以上あるとつなげます"}>＋ つなぐ</button></div>
+          <RelationGraph items={its} prerequisites={prerequisites} selId={item?.itemId} onOpen={open} />
+          {item && its.length > 1 && <div className="glg"><span><i className="sw b" />前に学ぶ項目から</span><span><i className="sw a" />次に学ぶ項目へ</span></div>}
+        </> : (<div className="col">{toc.map(e => <button key={e.partId} className="toc" onClick={() => jump(e.partId)}>{e.label}</button>)}{!toc.length && <p className="mute">見出しと枠がまだありません。</p>}</div>)}
       </aside>
     </Cols>
+    {linking && item && <LinkDialog item={item} items={its} prerequisites={prerequisites} onClose={() => setLinking(false)} onSave={saveLinks} />}
     {/* 11/24：全画面でも、右の資料は .sidepin で包んでスクロールしても付いてくるようにした */}
     {full && parts && <div className="fs"><div className="row" style={{ marginBottom: 8 }}><b>{item?.itemName}</b><span className="sp" />{matSelect}<button className="btn pri" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn line" onClick={() => setFull(false)}>全画面を閉じる</button></div>
       <div className="body" style={{ gridTemplateColumns: ref ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)" }}><div>{canvas}</div>{ref && <div><div className="sidepin"><SideMaterial id={ref} /></div></div>}</div></div>}

@@ -256,3 +256,18 @@ input[type=radio],input[type=checkbox]{accent-color:var(--acc)}
 .el.arrow .eh .dashb{border:1px solid currentColor;background:#fff;border-radius:5px;font-size:12px;line-height:1;height:20px;min-width:22px;padding:0 3px;color:inherit;opacity:.55}.el.arrow .eh .dashb.on{opacity:1;background:var(--ink);border-color:var(--ink);color:#fff}
 .el.arrow .eh>span:first-child{white-space:nowrap}
 
+/* 11/26 つながりの設定の窓と、関連図の上の「つなぐ」・線の色の見方 */
+.gtop{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:12px}
+.glg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mute);margin-top:4px}.glg span{display:inline-flex;align-items:center;gap:5px}
+.glg .sw{display:inline-block;width:18px;height:3px;border-radius:2px}.glg .sw.b{background:#cf3f5b}.glg .sw.a{background:#2f7d6d}
+.dlg.links{width:min(560px,92vw)}.dlg.links h3{margin:0 0 2px}.dlg.links .mute{font-size:13px;margin:0 0 8px}
+.lkflow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:8px 10px;font-size:13px;line-height:1.5}
+.lkflow .lkb{color:#a52c45}.lkflow .lkn{color:#24695b}.lkflow .lka{color:var(--mute)}
+.lklist{max-height:min(46vh,380px);overflow:auto;border:1px solid var(--line);border-radius:12px;margin-top:6px}
+.lkrow{display:grid;grid-template-columns:minmax(0,1fr) 78px 78px;align-items:center;gap:6px;padding:4px 8px;border-top:1px solid var(--line)}
+.lkrow:first-child{border-top:0}.lkhd{position:sticky;top:0;background:var(--pn);font-size:12px;color:var(--mute);font-weight:700;z-index:1}
+.lkrow.isb{background:#fdf1f3}.lkrow.isa{background:#eef7f4}
+.lknm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.lkt{width:100%;border:1px solid var(--line2);background:#fff;border-radius:99px;padding:3px 0;font-size:13px;color:var(--mute);cursor:pointer}
+.lkt:hover{border-color:var(--ink);color:var(--ink)}
+.lkt.b.on{background:#cf3f5b;border-color:#cf3f5b;color:#fff;font-weight:700}.lkt.a.on{background:#2f7d6d;border-color:#2f7d6d;color:#fff;font-weight:700}

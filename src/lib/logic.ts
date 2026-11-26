@@ -182,3 +182,33 @@ export function withArrowStyle(text: string, st: Partial<ArrowStyle>): string {
   return head + (cur.w !== "normal" ? `;w=${cur.w}` : "") + (cur.dash ? ";dash" : "");
 }
 
+// ---- 学習項目のつながり（関連図の線）（11/26）----
+// 「itemId の前に prereqItemId を学ぶ」を1本の線とする（Prerequisite と同じ形）
+export interface Link { itemId: string; prereqItemId: string }
+const sameLink = (a: Link, b: Link) => a.itemId === b.itemId && a.prereqItemId === b.prereqItemId;
+/** 線をたどって一周する所があれば true（A → B → A など。自分から自分への線も一周） */
+export function hasCycle(links: readonly Link[]): boolean {
+  const next = new Map<string, string[]>();
+  for (const l of links) (next.get(l.prereqItemId) ?? next.set(l.prereqItemId, []).get(l.prereqItemId)!).push(l.itemId);
+  const state = new Map<string, 1 | 2>(); // 1：たどっている途中、2：調べ終わった
+  const go = (id: string): boolean => {
+    const s = state.get(id); if (s === 1) return true; if (s === 2) return false;
+    state.set(id, 1);
+    if ((next.get(id) ?? []).some(go)) return true;
+    state.set(id, 2); return false;
+  };
+  return [...next.keys()].some(go);
+}
+/**
+ * id の「前に学ぶ項目（before）」と「次に学ぶ項目（after）」を決めたときに、足す線・消す線・最後の線を返す。
+ * after を渡さないときは、id から先の線はそのまま残す（前に学ぶ項目だけを決める）
+ */
+export function planLinks(list: readonly Link[], id: string, before: readonly string[], after?: readonly string[]): { add: Link[]; remove: Link[]; result: Link[] } {
+  const touch = (l: Link) => l.itemId === id || (after !== undefined && l.prereqItemId === id);
+  const cur = list.filter(touch), keep = list.filter(l => !touch(l));
+  const want: Link[] = [...new Set(before)].map(b => ({ itemId: id, prereqItemId: b }));
+  if (after) want.push(...[...new Set(after)].map(a => ({ itemId: a, prereqItemId: id })));
+  return { add: want.filter(w => !cur.some(c => sameLink(c, w))), remove: cur.filter(c => !want.some(w => sameLink(c, w))), result: [...keep, ...want] };
+}
+/** 名前の順（あいうえお・ABC 順）に並べた新しい配列 */
+export const byName = <T extends { itemName: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => a.itemName.localeCompare(b.itemName, "ja"));
