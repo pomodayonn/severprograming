@@ -92,7 +92,7 @@ export type RequestParams = {
   "G004:addItem": { studentId: string; subjectId: string; name: string };
   "G004:renameItem": { itemId: string; name: string };
   "G004:deleteItem": { itemId: string };
-  "G004:setPrerequisites": { itemId: string; prereqIds: string[] };
+  "G004:setPrerequisites": { itemId: string; prereqIds: string[]; nextIds?: string[] };
   "G004:uploadMaterial": { itemId: string };
   "G004:transcribe": { materialId: string };
   "G004:getContent": { materialId: string };
@@ -215,8 +215,8 @@ export class Controller {
           await this.itemManager.deleteItem(p("G004:deleteItem").itemId);
           return {};
         case "G004:setPrerequisites": { // 前提項目の設定の「確定」
-          const { itemId, prereqIds } = p("G004:setPrerequisites");
-          await this.itemManager.setPrerequisites(itemId, prereqIds);
+          const { itemId, prereqIds, nextIds } = p("G004:setPrerequisites");
+          await this.itemManager.setPrerequisites(itemId, prereqIds, nextIds);
           return {};
         }
         // ---- G004 学習画面（資料）・G005 資料表示・G006 文字起こし修正（11/21 福山：MaterialManager） ----

@@ -4,7 +4,7 @@
 // 学習項目と前提項目（関連図）の確認係です（Manager）。
 // ・createItem：学習項目を作るとき、空のノート・資料置き場・テスト置き場も一緒に作る
 // ・deleteItem：消すときは、ノート・テスト・資料・前提の関係もまとめて消す（削除の連鎖）
-// ・setPrerequisites：前提項目を設定する。「A の前は B、B の前は A」のように輪になる設定は wouldCycle で止める
+// ・setPrerequisites：前提項目（つながり）を設定する。「前に学ぶ」「次に学ぶ」の両方を決められる（11/26）。輪になる設定は hasCycle で止める
 // どれも最後に sync() で Neon に送る
 import { LearningItem } from "../beans/LearningItem";
 import { Prerequisite } from "../beans/Prerequisite";
@@ -13,6 +13,7 @@ import type { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
 import type { TestDAO } from "../dao/TestDAO";
 import type { MaterialDAO } from "../dao/MaterialDAO";
+import { hasCycle, planLinks } from "../lib/logic";
 import { AppError, checkName, newId, pushQuietly, type ChangePusher } from "./common";
 
 /** 画面に出す文を持ったエラー */
@@ -72,20 +73,24 @@ export class LearningItemManager {
    * その学習項目の前提をまとめて設定し直す（G004 の前提項目のチェックボックスで「決定」したとき）。
    * 前提にできるのは同じ科目の学習項目だけ。自分自身と、一周する関係はだめ
    */
-  async setPrerequisites(itemId: string, prereqItemIds: string[]): Promise<void> {
+  /**
+   * つながりを設定する（11/26：「次に学ぶ項目」もまとめて決められるようにした）。
+   * prereqItemIds：この項目の前に学ぶ項目。nextItemIds：この項目のあとに学ぶ項目（渡さなければ今のまま）
+   */
+  async setPrerequisites(itemId: string, prereqItemIds: string[], nextItemIds?: string[]): Promise<void> {
     const item = await this.itemDAO.findById(itemId); if (!item) throw new ItemError("学習項目が見つかりません");
     const list = await this.prerequisiteDAO.findBySubject(item.subjectId);
-    const now = list.filter(p => p.itemId === itemId).map(p => p.prereqItemId);
-    const others = list.filter(p => p.itemId !== itemId);
     const sameSubject = new Set((await this.getItems(item.subjectId)).map(i => i.itemId));
-    // 先に全部の組み合わせで輪にならないかを確認する（途中まで保存されないように）
-    for (const pre of prereqItemIds) {
-      if (pre === itemId) throw new ItemError("自分自身は前提にできません");
-      if (!sameSubject.has(pre)) throw new ItemError("前提にできるのは同じ科目の学習項目だけです");
-      if (this.wouldCycle(others, itemId, pre)) throw new ItemError("前提項目が輪になるため設定できません");
+    // 先に全部の組み合わせを確かめる（途中まで保存されないように）
+    for (const id of [...prereqItemIds, ...(nextItemIds ?? [])]) {
+      if (id === itemId) throw new ItemError("自分自身とはつなげません");
+      if (!sameSubject.has(id)) throw new ItemError("つなげられるのは同じ科目の学習項目だけです");
     }
-    for (const pre of now.filter(p => !prereqItemIds.includes(p))) await this.prerequisiteDAO.delete(itemId, pre);
-    for (const pre of prereqItemIds.filter(p => !now.includes(p))) await this.prerequisiteDAO.insert(new Prerequisite({ studentId: item.studentId, itemId, prereqItemId: pre }));
+    if (nextItemIds?.some(id => prereqItemIds.includes(id))) throw new ItemError("同じ項目を「前に学ぶ」と「次に学ぶ」の両方にはできません");
+    const plan = planLinks(list, itemId, prereqItemIds, nextItemIds);
+    if (hasCycle(plan.result)) throw new ItemError("前提項目が輪になるため設定できません（A → B → A のように一周するつなぎ方はできません）");
+    for (const l of plan.remove) await this.prerequisiteDAO.delete(l.itemId, l.prereqItemId);
+    for (const l of plan.add) await this.prerequisiteDAO.insert(new Prerequisite({ studentId: item.studentId, itemId: l.itemId, prereqItemId: l.prereqItemId }));
     await this.sync();
   }
 
@@ -93,21 +98,6 @@ export class LearningItemManager {
   async getRelationMap(subjectId: string): Promise<RelationMap> {
     const [items, prerequisites] = await Promise.all([this.getItems(subjectId), this.prerequisiteDAO.findBySubject(subjectId)]);
     return { items, prerequisites };
-  }
-
-  /**
-   * 「AはBの前提、BはAの前提」のように関係が一周しないか確認する。
-   * itemId の前提に pre を足したとき、pre の前提をたどって itemId に着けば一周する
-   */
-  private wouldCycle(list: Prerequisite[], itemId: string, pre: string): boolean {
-    const seen = new Set<string>();
-    const go = (id: string): boolean => {
-      if (id === itemId) return true;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return list.filter(p => p.itemId === id).some(p => go(p.prereqItemId));
-    };
-    return go(pre);
   }
 
   private sync() { return pushQuietly(this.syncManager); }
