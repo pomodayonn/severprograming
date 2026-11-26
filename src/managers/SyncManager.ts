@@ -129,14 +129,45 @@ export class SyncManager {
   }
 
   /**
-   * まだ送っていない変更をアカウントに送り、端末のデータが全部アカウントにもある状態か返す（11/21）。
-   * ログアウトで端末のデータを消す前に、AccountManager が呼ぶ。
-   * 同期できない設定（Neon Auth・Data API の URL がない）や、通信できずに送れなかったときは false
+   * まだ送っていない変更をアカウントへ送る。
+   * ログアウトで端末のデータを消す前に AccountManager が呼ぶ。
+   *
+   * 以下の場合は false を返して端末データの削除を止める。
+   * ・同期の設定がない
+   * ・ログイン状態を確認できない
+   * ・通信や競合情報の取得に失敗した
+   * ・未解決のノートの競合が残っている
+   * ・同期中にアカウントが変更された
    */
   async sendAll(): Promise<boolean> {
     if (!this.enabled) return false;
-    try { await this.pushChanges(); return true; } catch { return false; }
+
+    try {
+      // 同期対象の学生を確認する。
+      const student = await this.authClient.getSession();
+      if (!student) return false;
+
+      // 端末に保存されている変更をアカウントへ送る。
+      await this.pushChanges();
+
+      // 未解決の競合が残っている場合は削除を許可しない。
+      const conflicts = await this.getConflicts(student.studentId);
+      if (conflicts.length > 0) return false;
+
+      // 同期前後でログイン中の学生が変わっていないか確認する。
+      const current = await this.authClient.getSession();
+
+      if (!current || current.studentId !== student.studentId) {
+        return false;
+      }
+
+      return true;
+    } catch {
+      // 同期結果を確認できない場合はデータ保護を優先する。
+      return false;
+    }
   }
+
 
   /** ノートの食い違いを知らせる相手を決める（11/24）。null なら知らせない */
   setNoteConflictListener(listener: NoteConflictListener | null): void { this.conflictListener = listener; }
