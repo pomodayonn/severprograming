@@ -37,9 +37,10 @@ import type { LearningItem as Item } from "../beans/LearningItem";
 import type { NoteConflict, NoteConflictListener } from "../interfaces/NoteConflictListener";
 import { del, get, getAll, getAllBy, put, replaceStudentData, type Deletion } from "../dao/idb";
 import { isPullStale } from "../lib/logic";
+import { AppError } from "./common";
 
 type Row = Record<string, unknown>;
-export class SyncError extends Error {}
+export class SyncError extends AppError {}
 
 export class SyncManager {
   /** 前回同期した日時（学生ごとに端末に保存する） */
@@ -76,9 +77,27 @@ export class SyncManager {
     const oldBases = await this.getBases(sid), bases: Record<string, string> = {}, conflicts: string[] = [];
     for (const r of notes) bases[s(r.note_id)] = s(r.updated_at);
     for (const id of await this.getConflicts(sid)) {
-      const i = nts.findIndex(x => x.noteId === id), mine = await get<Note>("notes", id);
-      if (i < 0 || !mine) continue; // 別の端末で学習項目ごと消されていたら、食い違いもなくなる
-      nts[i] = mine; bases[id] = oldBases[id] ?? bases[id]; conflicts.push(id);
+      const i = nts.findIndex(x => x.noteId === id);
+      const mine = await get<Note>("notes", id);
+
+      if (!mine) continue;
+
+      // 他の学生のデータが混入していないか確認する。
+      if (mine.studentId !== sid) {
+        throw new SyncError("ノートの所有者を確認できないため同期を中止しました");
+      }
+
+      // クラウドに存在しない競合ノートを消さない。
+      // 端末データの置き換え自体を中止する。
+      if (i < 0) {
+        throw new SyncError(
+          "クラウドに存在しない未解決のノートがあります。端末のデータを保護するため、最新化を中止しました"
+        );
+      }
+
+      nts[i] = mine;
+      bases[id] = oldBases[id] ?? bases[id];
+      conflicts.push(id);
     }
     const tss = tests.map(r => new Test({
       testId: s(r.test_id), studentId: sid, itemId: s(r.item_id), testType: s(r.test_type) as TestType, questionCount: num(r.question_count),
@@ -184,19 +203,44 @@ export class SyncManager {
    * このあと NoteManager がノートを保存し直すと、この端末の内容がアカウントに送られる
    */
   async keepMineNote(noteId: string): Promise<void> {
-    const student = await this.authClient.getSession(); if (!student) return;
-    const sid = student.studentId, bases = await this.getBases(sid), remote = await this.remoteNoteVersion(noteId);
-    if (remote) bases[noteId] = remote; else delete bases[noteId];
+    const student = await this.authClient.getSession();
+
+    if (!student) {
+      throw new SyncError("ログイン状態を確認できません");
+    }
+
+    const sid = student.studentId;
+    const bases = await this.getBases(sid);
+    const remote = await this.remoteNoteVersion(noteId);
+
+    // クラウドに存在しない場合は勝手に再登録しない。
+    // 競合情報と端末のノートをそのまま残す。
+    if (!remote) {
+      throw new SyncError(
+        "クラウドにノートが存在しないため上書きできません。端末のノートは保持されています"
+      );
+    }
+
+    bases[noteId] = remote;
+
     await this.setBases(sid, bases);
-    await this.setConflicts(sid, (await this.getConflicts(sid)).filter(id => id !== noteId));
+    await this.setConflicts(
+      sid,
+      (await this.getConflicts(sid)).filter(id => id !== noteId)
+    );
   }
 
   /**
    * 「別の端末の内容にする」を選んだとき（11/24）。アカウントのノートを受け取って、この端末のノートを置き換える（この端末の変更は捨てる）。
-   * 受け取ったノートを返す。アカウントにノートがなければ（別の端末で消されていた）null
+   * 受け取ったノートを返す。
+   * アカウントにノートが存在しない場合は、端末データと競合情報を保持して例外を返す。
    */
   async takeRemoteNote(noteId: string): Promise<Note | null> {
-    const student = await this.authClient.getSession(); if (!student) return null;
+    const student = await this.authClient.getSession();
+
+    if (!student) {
+      throw new SyncError("ログイン状態を確認できません");
+    }
     const sid = student.studentId, id = enc(noteId);
     const [row] = (await this.request("GET", `/note?select=*&note_id=eq.${id}`)) as Row[];
     const bases = await this.getBases(sid);
@@ -207,7 +251,13 @@ export class SyncManager {
       [note] = toNotes([row], group(parts, "note_id"), group(words, "part_id"), sid);
       await put("notes", structuredClone(note));
       bases[noteId] = s(row.updated_at);
-    } else delete bases[noteId];
+    } else {
+      // クラウドにノートが存在しない場合は、
+      // 端末のノートと競合情報を変更しない。
+      throw new SyncError(
+        "クラウドにノートが存在しません。端末のノートは保持されています"
+      );
+    }
     await this.setBases(sid, bases);
     await this.setConflicts(sid, (await this.getConflicts(sid)).filter(x => x !== noteId));
     return note;

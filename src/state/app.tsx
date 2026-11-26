@@ -183,8 +183,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     asking.current.add(c.noteId);
     try {
       const name = c.itemName ? `「${c.itemName}」の` : "";
-      const choice = await ask(`別の端末で、${name}ノートがより新しく保存されています。どちらにしますか（「別の端末の内容にする」を選ぶと、この端末で変えた分は消えます）`,
-        [{ label: "上書きして保存", value: "mine", primary: true }, { label: "別の端末の内容にする", value: "theirs", danger: true }]);
+      const choice = await ask(
+        `別の端末で、${name}ノートが更新または削除された可能性があります。どちらにしますか（「別の端末の内容にする」を選ぶと、この端末で変えた分は消えます）`,
+        [
+          { label: "上書きして保存", value: "mine", primary: true },
+          { label: "別の端末の内容にする", value: "theirs", danger: true },
+          { label: "後で選ぶ", value: "cancel" },
+        ]
+      );
+
+      // 判断を保留した場合は競合情報を変更しない。
+      if (choice !== "mine" && choice !== "theirs") return;
+
+      // 確認中に別のアカウントへ切り替わった場合は処理しない。
+      if (aRef.current?.studentId !== sid) return;
       const r = await controller.handleRequest("G004", "resolveNoteConflict", { studentId: sid, itemId: c.itemId, choice: choice === "theirs" ? "theirs" : "mine" });
       if (r.error) { toast(r.error); return; }
       if (choice === "theirs") { setDrafts(p => { if (!(c.itemId in p)) return p; const n = { ...p }; delete n[c.itemId]; return n; }); toast("別の端末の内容にしたよ"); }
