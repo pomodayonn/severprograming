@@ -25,6 +25,8 @@ export class NotePart {
   partType: PartType = PartType.FRAME;
   /** 枠の種類（枠でなければ null。最終一覧が決まるまで文字列） */
   frameType: string | null = null;
+  /** 図形の形（四角・丸）。図形以外はnull */
+  shape: ShapeKind | null = null;
   /** X座標 */
   x: number = 0;
   /** Y座標 */
@@ -51,10 +53,20 @@ export class NotePart {
   constructor(init?: Partial<NotePart>) { Object.assign(this, init); }
 
   // ---- 図形の形 ----
-  // NotePart（と Neon の note_part）には図形の形の列がまだないので、図形は text に "rect" か "ellipse" を入れている（図形は文字を持たないため）。
-  // 画面は text を直接見ずに、この2つを使う。DB担当と形の列を決めたら、ここだけ直せば画面は変えなくてよい
-  /** 図形の形を返す（図形でなければ "rect"） */
-  static shapeOf(part: NotePart): ShapeKind { return part.text === "ellipse" ? "ellipse" : "rect"; }
-  /** 図形の形を変えるときに部品へ入れる値（Partial<NotePart> として渡す） */
-  static shapePatch(shape: ShapeKind): Partial<NotePart> { return { text: shape }; }
+  // 図形の形はshapeに保存する。
+  // 以前のtextに保存されたデータも読み取れるようにする。
+
+  /** 図形の形を取得する */
+  static shapeOf(part: NotePart): ShapeKind {
+      if (part.shape === "rect" || part.shape === "ellipse") {
+          return part.shape;
+      }
+      // 以前のtext列を使ったデータにも対応
+      return part.text === "ellipse" ? "ellipse" : "rect";
+  }
+
+  /** 図形の形を変更する */
+  static shapePatch(shape: ShapeKind): Partial<NotePart> {
+      return { shape };
+  }
 }

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS note_part (
   note_id       text NOT NULL REFERENCES note (note_id) ON DELETE CASCADE,
   part_type     text NOT NULL CHECK (part_type IN ('FRAME', 'TEXT', 'SHAPE', 'ARROW')),
   frame_type    text,            -- 枠の種類（最終一覧が決まるまで文字列のまま）。枠でなければ NULL
+  shape         text,  -- 図形の形（rect・ellipse）。図形以外はNULL
   x             integer NOT NULL DEFAULT 0,
   y             integer NOT NULL DEFAULT 0,
   width         integer NOT NULL CHECK (width > 0),
@@ -83,6 +84,23 @@ CREATE TABLE IF NOT EXISTS note_part (
 ALTER TABLE note_part ADD COLUMN IF NOT EXISTS style text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS note_part_note_idx ON note_part (note_id);
 CREATE INDEX IF NOT EXISTS note_part_student_idx ON note_part (student_id);
+
+-- 11/26：既存のnote_partテーブルにもshape列を追加する
+ALTER TABLE note_part ADD COLUMN IF NOT EXISTS shape text;
+
+-- shapeには図形の場合のみrectまたはellipseを設定できる
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'note_part_shape_rules_check'
+      AND conrelid = 'public.note_part'::regclass
+  ) THEN
+    ALTER TABLE public.note_part
+    ADD CONSTRAINT note_part_shape_rules_check
+    CHECK (shape IS NULL OR (part_type = 'SHAPE' AND shape IN ('rect', 'ellipse')));
+  END IF;
+END $$;
 
 -- ---------- 単語（Word）：単語枠の中の用語と意味 ----------
 CREATE TABLE IF NOT EXISTS word (
