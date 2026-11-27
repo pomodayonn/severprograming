@@ -111,11 +111,29 @@ export function Study() {
     nav({ s: "G004", subjectId: subject.subjectId }); toast("学習項目を削除したよ");
   };
   // 11/26：つながり（前に学ぶ・次に学ぶ）の窓の「確定」。うまくいかなかったらエラーの文を返し、窓は開いたまま
-  const saveLinks = async (before: string[], after: string[]) => {
-    if (!item) return;
-    const r = await controller.handleRequest("G004", "setPrerequisites", { itemId: item.itemId, prereqIds: before, nextIds: after });
-    if (r.error) return r.error; // 輪になるときは「前提項目が輪になるため設定できません…」
-    await reload(); setLinking(false); toast("つながりを保存したよ");
+    const saveLinks = async (
+    before: string[],
+    after: string[]
+  ): Promise<string | undefined> => {
+    if (!item) {
+      return "保存対象の学習項目が見つかりません";
+    }
+
+    const r = await controller.handleRequest(
+      "G004",
+      "setPrerequisites",
+      {
+        itemId: item.itemId,
+        prereqIds: before,
+        nextIds: after,
+      }
+    );
+
+    if (r.error) return r.error;
+
+    await reload();
+    setLinking(false);
+    toast("つながりを端末に保存したよ");
   };
   const canLink = !!item && its.length >= 2;
   // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
