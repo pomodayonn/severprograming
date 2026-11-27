@@ -9,6 +9,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 
 import {
@@ -322,4 +323,158 @@ describe("SYNC-09：資料の所有者管理", () => {
     ).toBe("sync-b");
   });
 });
+});
+
+describe("SYNC-09b：文字起こし更新の原子性", () => {
+  it("文字起こしの内容とファイルサイズを同時に更新する", async () => {
+    await dao.insert(
+      material("material-a", itemA),
+      "変更前"
+    );
+
+    const before = await dao.findById("material-a");
+    const text = "変更後の文字起こし😀";
+
+    await dao.updateText("material-a", text);
+
+    const after = await dao.findById("material-a");
+
+    expect(after).toEqual({
+      ...before,
+      fileSize: new Blob([text]).size,
+    });
+
+    expect(
+      await dao.findContent("material-a")
+    ).toBe(text);
+  });
+
+  it("存在しない資料の更新を拒否する", async () => {
+    await expect(
+      dao.updateText("missing", "変更後")
+    ).rejects.toThrow("資料が見つかりません");
+
+    expect(
+      await dao.findById("missing")
+    ).toBeNull();
+
+    expect(
+      await dao.findContent("missing")
+    ).toBeNull();
+  });
+
+  it("削除済みの資料を復活させない", async () => {
+    await dao.insert(
+      material("material-a", itemA),
+      "変更前"
+    );
+
+    await dao.delete("material-a");
+
+    await expect(
+      dao.updateText("material-a", "変更後")
+    ).rejects.toThrow("資料が見つかりません");
+
+    expect(
+      await dao.findById("material-a")
+    ).toBeNull();
+
+    expect(
+      await dao.findContent("material-a")
+    ).toBeNull();
+  });
+
+  it("PDFをテキストで上書きしない", async () => {
+    const pdf = new Blob(
+      ["PDFのテストデータ"],
+      { type: "application/pdf" }
+    );
+
+    await dao.insert(
+      new Material({
+        ...material("pdf-a", itemA),
+        fileName: "sample.pdf",
+        fileType: "pdf",
+      }),
+      pdf
+    );
+
+    const before = await dao.findById("pdf-a");
+
+    await expect(
+      dao.updateText("pdf-a", "不正な更新")
+    ).rejects.toThrow(
+      "直せるのは文字起こしだけです"
+    );
+
+    expect(
+      await dao.findById("pdf-a")
+    ).toEqual(before);
+
+    const content = await dao.findContent("pdf-a");
+
+    expect(content).toBeInstanceOf(Blob);
+    expect((content as Blob).type)
+      .toBe("application/pdf");
+
+    expect(await (content as Blob).text())
+      .toBe("PDFのテストデータ");
+  });
+
+  it("トランザクションが中断された場合は変更前の状態に戻る", async () => {
+    await dao.insert(
+      material("material-a", itemA),
+      "変更前"
+    );
+
+    const before = await dao.findById("material-a");
+
+    const originalPut = IDBObjectStore.prototype.put;
+
+    // ファイル本体の書き込み後に、
+    // 意図的にトランザクションを中断する。
+    const spy = vi.spyOn(
+      IDBObjectStore.prototype,
+      "put"
+    ).mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey
+    ) {
+      const req = originalPut.call(
+        this,
+        value,
+        key
+      );
+
+      if (this.name === "materialContents") {
+        req.addEventListener(
+          "success",
+          () => this.transaction.abort(),
+          { once: true }
+        );
+      }
+
+      return req;
+    });
+
+    try {
+      await expect(
+        dao.updateText(
+          "material-a",
+          "変更後の長い文字起こし"
+        )
+      ).rejects.toThrow();
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(
+      await dao.findById("material-a")
+    ).toEqual(before);
+
+    expect(
+      await dao.findContent("material-a")
+    ).toBe("変更前");
+  });
 });

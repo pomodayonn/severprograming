@@ -172,6 +172,67 @@ export async function deleteMaterialWithContent(
 }
 
 /**
+ * 文字起こしの内容と資料情報を同時に更新する。
+ * 読み込み・存在確認・更新を同一トランザクションで行う。
+ */
+export async function updateMaterialText(
+  materialId: string,
+  text: string
+): Promise<void> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    ["materials", "materialContents"],
+    "readwrite"
+  );
+
+  const materials = tx.objectStore("materials");
+  const contents = tx.objectStore("materialContents");
+
+  let failure: unknown;
+
+  const req = materials.get(materialId);
+
+  req.onsuccess = () => {
+    try {
+      const material = req.result as Material | undefined;
+
+      if (!material) {
+        throw new Error("資料が見つかりません");
+      }
+
+      if (
+        material.fileType !== "text" &&
+        material.fileType !== "transcript"
+      ) {
+        throw new Error(
+          "直せるのは文字起こしだけです"
+        );
+      }
+
+      materials.put({
+        ...material,
+        fileSize: new Blob([text]).size,
+      });
+
+      contents.put(text, materialId);
+
+    } catch (e) {
+      failure = e;
+      tx.abort();
+    }
+  };
+
+  try {
+    await done(tx);
+  } catch (e) {
+    throw failure ?? e ?? new Error(
+      "資料の更新に失敗しました"
+    );
+  }
+}
+
+/**
  * この端末にある、その学生のデータを全部消す（ログアウトのときに「この端末のデータも消す」を選んだとき。11/21）
  * ・科目・学習項目・前提項目・ノート・テスト・まだ送っていない削除の記録・前回同期した日時
  * ・資料と中身（学生IDで所有者を判定する。

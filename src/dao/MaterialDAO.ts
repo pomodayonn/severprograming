@@ -8,7 +8,13 @@
 // 資料は大きいので Neon には送らない（この端末だけ）
 import { Material } from "../beans/Material";
 import { now } from "../beans/DateTime";
-import { get,getAllBy,put,putMaterialWithContent,deleteMaterialWithContent,} from "./idb";
+import {
+  get,
+  getAllBy,
+  putMaterialWithContent,
+  deleteMaterialWithContent,
+  updateMaterialText,
+} from "./idb";
 
 export class MaterialDAO {
   /** その学習項目（ストレージ）の資料を、追加した順に返す */
@@ -42,11 +48,12 @@ export class MaterialDAO {
       content
     );
   }
-  /** 文字起こしの文章を書き換える（G006 の「確定」） */
-  async updateText(materialId: string, text: string): Promise<void> {
-    const m = await get<Material>("materials", materialId); if (!m) return;
-    await put("materialContents", text, materialId);
-    await put("materials", { ...m, fileSize: new Blob([text]).size });
+   /** 文字起こしの内容と資料情報を同時に更新する */
+  async updateText(
+    materialId: string,
+    text: string
+  ): Promise<void> {
+    await updateMaterialText(materialId, text);
   }
   /** 資料情報とファイル本体を同時に削除する */
   async delete(materialId: string): Promise<void> {

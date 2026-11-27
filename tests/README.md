@@ -42,7 +42,7 @@
 | `aiUsageCount.test.ts` | AI利用回数と文字数の整合性（Unicode・文章分割・利用回数予約・上限判定・記述テスト・予約返却） |
 | `aiProductionSafety.test.ts` | 本番環境での仮AI動作防止（API未設定・開発環境・サーバー通信・利用回数・タイムアウト通知） |
 | `essayQuestionCount.test.ts` | 記述テストの生成問題数保証（不足・不正応答・AI切り替え・予約返却・不完全なテストの保存防止） |
-| `materialOwnership.test.ts` | 端末内資料の所有者管理（保存・親の存在確認・旧形式の補完・孤立資料の削除・他アカウントの保護） |
+| `materialOwnership.test.ts` | 端末内資料の所有者管理と原子性（保存・削除・旧形式の補完・孤立資料・他アカウントの保護・文字起こし更新・ロールバック） |
 
 初めて動かすときは、先に `npm install` をしてください（Vitest が入ります）。
 テストのファイルは `src/` の外にあるので、`npm run build` には影響しません。
