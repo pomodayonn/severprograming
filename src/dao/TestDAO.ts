@@ -57,9 +57,35 @@ export class TestDAO {
   async updateExplanation(testId: string, questionId: string, explanation: string): Promise<void> {
     await this.change(testId, (test, t) => { test.questions = test.questions.map(q => q.questionId === questionId ? new Question({ ...q, explanation, updatedAt: t }) : q); });
   }
-  /** 直した問題文と模範解答を保存する */
-  async updateQuestion(testId: string, questionId: string, questionText: string, modelAnswer: string): Promise<void> {
-    await this.change(testId, (test, t) => { test.questions = test.questions.map(q => q.questionId === questionId ? new Question({ ...q, questionText, modelAnswer, updatedAt: t }) : q); });
+    /**
+   * 直した問題文と模範解答を保存する。
+   * 内容が変更された場合は、古い解説を初期化する。
+   */
+  async updateQuestion(
+    testId: string,
+    questionId: string,
+    questionText: string,
+    modelAnswer: string
+  ): Promise<void> {
+    await this.change(testId, (test, t) => {
+      test.questions = test.questions.map(q => {
+        if (q.questionId !== questionId) {
+          return q;
+        }
+
+        const changed =
+          q.questionText !== questionText ||
+          q.modelAnswer !== modelAnswer;
+
+        return new Question({
+          ...q,
+          questionText,
+          modelAnswer,
+          explanation: changed ? null : q.explanation,// 内容が変わったら解説を初期化する
+          updatedAt: t,
+        });
+      });
+    });
   }
   /** 直した自分の解答を保存する */
   async updateAnswer(testId: string, attemptId: string, questionId: string, studentAnswer: string): Promise<void> {

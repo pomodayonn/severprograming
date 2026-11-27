@@ -38,6 +38,7 @@
 | `preserveNoteStyle.test.ts` | ノート同期時の書式情報の保護（必要カラム確認・HTTPエラー・保存と削除の順序・再試行） |
 | `deletedNoteConflict.test.ts` | 別端末で削除された競合ノートの保護（端末データの保持・上書き防止・競合情報の保持・セッション確認） |
 | `syncRetry.test.ts` | 同期失敗後の再試行（送信失敗・待ち行列・重複送信防止・競合情報の保持・端末データの保護） |
+| `questionExplanation.test.ts` | 問題変更時の解説初期化（手動編集・AI再生成・不正応答・通信失敗・保存内容の整合性） |
 
 初めて動かすときは、先に `npm install` をしてください（Vitest が入ります）。
 テストのファイルは `src/` の外にあるので、`npm run build` には影響しません。

@@ -127,14 +127,57 @@ export class TestManager {
   }
 
   /** AIに1問を作り直してもらう（記述テストだけ・1回分）。追加の指示が空なら、その問題を最初から作り直す */
-  async regenerateQuestion(testId: string, questionId: string, extra: string): Promise<Question> {
+    async regenerateQuestion(
+    testId: string,
+    questionId: string,
+    extra: string
+  ): Promise<Question> {
     const test = await this.getTest(testId);
-    if (test.testType !== TestType.ESSAY) throw new TestError("AIで作り直せるのは記述テストだけです");
+
+    if (test.testType !== TestType.ESSAY) {
+      throw new TestError(
+        "AIで作り直せるのは記述テストだけです"
+      );
+    }
+
     const q = await this.question(testId, questionId);
+
     checkLength(q.questionText + q.modelAnswer + extra);
-    const r = await aiRegenerate({ q: q.questionText, a: q.modelAnswer }, extra.trim());
-    await this.testDAO.updateQuestion(testId, questionId, r.q, r.a); await this.sync();
-    return new Question({ ...q, questionText: r.q, modelAnswer: r.a });
+
+    const r = await aiRegenerate(
+      {
+        q: q.questionText,
+        a: q.modelAnswer,
+      },
+      extra.trim()
+    );
+
+    // AIの応答に問題文や模範解答がない場合は保存しない。
+    if (
+      typeof r?.q !== "string" ||
+      typeof r?.a !== "string" ||
+      !r.q.trim() ||
+      !r.a.trim()
+    ) {
+      throw new TestError(
+        "有効な問題を生成できませんでした"
+      );
+    }
+
+    await this.testDAO.updateQuestion(
+      testId,
+      questionId,
+      r.q,
+      r.a
+    );
+
+    // 古いQuestionから作り直すのではなく、
+    // DAOで実際に保存された問題を取得する。
+    const saved = await this.question(testId, questionId);
+
+    await this.sync();
+
+    return saved;
   }
 
   /** 保存済みの自分の解答を、受験を指定して書き直す。採点がある「意味→用語」のテストでは使えない */
