@@ -43,6 +43,8 @@
 | `aiProductionSafety.test.ts` | 本番環境での仮AI動作防止（API未設定・開発環境・サーバー通信・利用回数・タイムアウト通知） |
 | `essayQuestionCount.test.ts` | 記述テストの生成問題数保証（不足・不正応答・AI切り替え・予約返却・不完全なテストの保存防止） |
 | `materialOwnership.test.ts` | 端末内資料の所有者管理と原子性（保存・削除・旧形式の補完・孤立資料・他アカウントの保護・文字起こし更新・ロールバック） |
+| `relationTransaction.test.ts` | 関連図保存の原子性（追加・削除・削除記録・循環防止・所有者確認・並行保存・ロールバック） |
+
 
 初めて動かすときは、先に `npm install` をしてください（Vitest が入ります）。
 テストのファイルは `src/` の外にあるので、`npm run build` には影響しません。

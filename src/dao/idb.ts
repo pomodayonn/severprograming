@@ -7,6 +7,9 @@
 //   deletions：Neon にまだ伝えていない削除（SyncManager.pushChanges で送る）
 //   meta：前回同期した日時・前回受け取った日時（11/23）など
 import type { Material } from "../beans/Material";
+import type { LearningItem } from "../beans/LearningItem";
+import type { Prerequisite } from "../beans/Prerequisite";
+import type { Link } from "../lib/logic";
 // 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
 const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
@@ -403,4 +406,86 @@ export interface Deletion { table: string; key: string; studentId: string; at: s
 export async function recordDeletion(table: string, key: string, studentId: string): Promise<void> {
   if (!studentId) return; // 学生IDがない（ログイン前など）ときは同期しない
   await put("deletions", { table, key, studentId, at: new Date().toISOString() } satisfies Deletion);
+}
+
+/** 前提関係の変更計画を作る関数 */
+export type PrerequisiteEdit = (
+  items: LearningItem[],
+  links: Prerequisite[]
+) => {
+  studentId: string;
+  add: Link[];
+  remove: Link[];
+};
+
+/**
+ * 前提関係の検証・追加・削除・削除記録を
+ * 同一トランザクションで処理する。
+ */
+export async function editPrerequisites(
+  plan: PrerequisiteEdit
+): Promise<void> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    ["learningItems", "prerequisites", "deletions"],
+    "readwrite"
+  );
+
+  const items = tx.objectStore("learningItems");
+  const links = tx.objectStore("prerequisites");
+  const deletions = tx.objectStore("deletions");
+
+  let failure: unknown;
+
+  const itemReq = items.getAll();
+
+  itemReq.onsuccess = () => {
+    const linkReq = links.getAll();
+
+    linkReq.onsuccess = () => {
+      try {
+        const changes = plan(
+          itemReq.result as LearningItem[],
+          linkReq.result as Prerequisite[]
+        );
+
+        const t = new Date().toISOString();
+
+        for (const l of changes.remove) {
+          links.delete([
+            l.itemId,
+            l.prereqItemId,
+          ]);
+
+          deletions.put({
+            table: "prerequisite",
+            key: `${l.itemId}|${l.prereqItemId}`,
+            studentId: changes.studentId,
+            at: t,
+          } satisfies Deletion);
+        }
+
+        for (const l of changes.add) {
+          links.put({
+            itemId: l.itemId,
+            prereqItemId: l.prereqItemId,
+            studentId: changes.studentId,
+            updatedAt: t,
+          } satisfies Prerequisite);
+        }
+      } catch (e) {
+        failure = e;
+        tx.abort();
+      }
+    };
+  };
+
+  try {
+    await done(tx);
+  } catch (e) {
+    throw failure ?? e ?? new Error(
+      "前提関係の保存に失敗しました"
+    );
+  }
 }

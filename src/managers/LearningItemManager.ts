@@ -7,7 +7,7 @@
 // ・setPrerequisites：前提項目（つながり）を設定する。「前に学ぶ」「次に学ぶ」の両方を決められる（11/26）。輪になる設定は hasCycle で止める
 // どれも最後に sync() で Neon に送る
 import { LearningItem } from "../beans/LearningItem";
-import { Prerequisite } from "../beans/Prerequisite";
+import type { Prerequisite } from "../beans/Prerequisite";
 import type { LearningItemDAO } from "../dao/LearningItemDAO";
 import type { PrerequisiteDAO } from "../dao/PrerequisiteDAO";
 import type { NoteDAO } from "../dao/NoteDAO";
@@ -77,20 +77,97 @@ export class LearningItemManager {
    * つながりを設定する（11/26：「次に学ぶ項目」もまとめて決められるようにした）。
    * prereqItemIds：この項目の前に学ぶ項目。nextItemIds：この項目のあとに学ぶ項目（渡さなければ今のまま）
    */
-  async setPrerequisites(itemId: string, prereqItemIds: string[], nextItemIds?: string[]): Promise<void> {
-    const item = await this.itemDAO.findById(itemId); if (!item) throw new ItemError("学習項目が見つかりません");
-    const list = await this.prerequisiteDAO.findBySubject(item.subjectId);
-    const sameSubject = new Set((await this.getItems(item.subjectId)).map(i => i.itemId));
-    // 先に全部の組み合わせを確かめる（途中まで保存されないように）
-    for (const id of [...prereqItemIds, ...(nextItemIds ?? [])]) {
-      if (id === itemId) throw new ItemError("自分自身とはつなげません");
-      if (!sameSubject.has(id)) throw new ItemError("つなげられるのは同じ科目の学習項目だけです");
-    }
-    if (nextItemIds?.some(id => prereqItemIds.includes(id))) throw new ItemError("同じ項目を「前に学ぶ」と「次に学ぶ」の両方にはできません");
-    const plan = planLinks(list, itemId, prereqItemIds, nextItemIds);
-    if (hasCycle(plan.result)) throw new ItemError("前提項目が輪になるため設定できません（A → B → A のように一周するつなぎ方はできません）");
-    for (const l of plan.remove) await this.prerequisiteDAO.delete(l.itemId, l.prereqItemId);
-    for (const l of plan.add) await this.prerequisiteDAO.insert(new Prerequisite({ studentId: item.studentId, itemId: l.itemId, prereqItemId: l.prereqItemId }));
+  async setPrerequisites(
+    itemId: string,
+    prereqItemIds: string[],
+    nextItemIds?: string[]
+  ): Promise<void> {
+    await this.prerequisiteDAO.editLinks(
+      (items, links) => {
+        const item = items.find(
+          i => i.itemId === itemId
+        );
+
+        if (!item?.studentId) {
+          throw new ItemError(
+            "学習項目が見つかりません"
+          );
+        }
+
+        const sameSubject = new Set(
+          items
+            .filter(i =>
+              i.subjectId === item.subjectId &&
+              i.studentId === item.studentId
+            )
+            .map(i => i.itemId)
+        );
+
+        for (const id of [
+          ...prereqItemIds,
+          ...(nextItemIds ?? []),
+        ]) {
+          if (id === itemId) {
+            throw new ItemError(
+              "自分自身とはつなげません"
+            );
+          }
+
+          if (!sameSubject.has(id)) {
+            throw new ItemError(
+              "つなげられるのは同じ科目の学習項目だけです"
+            );
+          }
+        }
+
+        if (
+          nextItemIds?.some(
+            id => prereqItemIds.includes(id)
+          )
+        ) {
+          throw new ItemError(
+            "同じ項目を「前に学ぶ」と「次に学ぶ」の両方にはできません"
+          );
+        }
+
+        const list = links.filter(l =>
+          sameSubject.has(l.itemId) ||
+          sameSubject.has(l.prereqItemId)
+        );
+
+        // 所有者や所属科目が不正な既存関係は
+        // 勝手に変更せず、保存を中止する。
+        if (list.some(l =>
+          l.studentId !== item.studentId ||
+          !sameSubject.has(l.itemId) ||
+          !sameSubject.has(l.prereqItemId)
+        )) {
+          throw new ItemError(
+            "前提関係の所有者または所属科目に不整合があります"
+          );
+        }
+
+        const plan = planLinks(
+          list,
+          itemId,
+          prereqItemIds,
+          nextItemIds
+        );
+
+        if (hasCycle(plan.result)) {
+          throw new ItemError(
+            "前提項目が輪になるため設定できません（A → B → A のように一周するつなぎ方はできません）"
+          );
+        }
+
+        return {
+          studentId: item.studentId,
+          add: plan.add,
+          remove: plan.remove,
+        };
+      }
+    );
+
     await this.sync();
   }
 

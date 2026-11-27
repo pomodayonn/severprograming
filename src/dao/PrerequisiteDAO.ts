@@ -9,10 +9,24 @@
 // 1件は [学習項目ID, 前提学習項目ID] の組で見分ける
 import { Prerequisite } from "../beans/Prerequisite";
 import { now } from "../beans/DateTime";
-import { del, get, getAll, getAllBy, put, recordDeletion } from "./idb";
+import {
+  del,
+  get,
+  getAll,
+  getAllBy,
+  put,
+  recordDeletion,
+  editPrerequisites,
+  type PrerequisiteEdit,
+} from "./idb";
 import type { LearningItem } from "../beans/LearningItem";
 
 export class PrerequisiteDAO {
+
+    /** 前提関係をトランザクション内で一括変更する */
+  async editLinks(plan: PrerequisiteEdit): Promise<void> {
+    await editPrerequisites(plan);
+  }
   /** その科目の前提項目をすべて返す（関連図を描くのに使う） */
   async findBySubject(subjectId: string): Promise<Prerequisite[]> {
     const items = await getAllBy<LearningItem>("learningItems", "subjectId", subjectId);
