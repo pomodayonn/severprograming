@@ -414,3 +414,256 @@ describe("DB-02a：受信データの所有者確認", () => {
     expect(del).not.toHaveBeenCalled();
   });
 });
+describe("SYNC-13：受信データの親子関係検証", () => {
+  function graphSetup() {
+    const { sync, fetchMock } =
+      setup(true, false);
+
+    // 正常な親子関係を持つ合成データ。
+    const data: Record<
+      string,
+      Record<string, unknown>[]
+    > = {
+      subject: [
+        { subject_id: "s1" },
+      ],
+
+      learning_item: [
+        {
+          item_id: "i1",
+          subject_id: "s1",
+        },
+        {
+          item_id: "i2",
+          subject_id: "s1",
+        },
+      ],
+
+      prerequisite: [
+        {
+          item_id: "i1",
+          prereq_item_id: "i2",
+        },
+      ],
+
+      note: [
+        {
+          note_id: "n1",
+          item_id: "i1",
+        },
+      ],
+
+      note_part: [
+        {
+          part_id: "p1",
+          note_id: "n1",
+          part_type: "TEXT",
+          text: "テスト",
+          width: 100,
+          height: 50,
+        },
+      ],
+
+      word: [
+        {
+          word_id: "w1",
+          part_id: "p1",
+          term: "test",
+          meaning: "試験",
+        },
+      ],
+
+      test: [
+        {
+          test_id: "t1",
+          item_id: "i1",
+          question_count: 1,
+        },
+      ],
+
+      question: [
+        {
+          question_id: "q1",
+          test_id: "t1",
+          number: 1,
+        },
+      ],
+
+      attempt: [
+        {
+          attempt_id: "r1",
+          test_id: "t1",
+          attempt_no: 1,
+        },
+      ],
+
+      answer: [
+        {
+          answer_id: "a1",
+          attempt_id: "r1",
+          question_id: "q1",
+        },
+      ],
+    };
+
+    fetchMock.mockImplementation(
+      async url => {
+        const table =
+          new URL(url).pathname.slice(1);
+
+        const rows = data[table];
+
+        if (!rows) {
+          throw new Error(
+            `想定外のテーブル：${table}`
+          );
+        }
+
+        return new Response(
+          JSON.stringify(
+            rows.map(row => ({
+              ...row,
+              student_id: studentId,
+            }))
+          ),
+          { status: 200 }
+        );
+      }
+    );
+
+    return { sync, data };
+  }
+
+  it("正常な親子関係では端末データを置換できる", async () => {
+    const { sync } = graphSetup();
+
+    await sync.pullAll();
+
+    expect(replaceStudentData)
+      .toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [
+      "learning_item",
+      "subject_id",
+      "learning_item → subject",
+    ],
+    [
+      "prerequisite",
+      "item_id",
+      "prerequisite → learning_item",
+    ],
+    [
+      "prerequisite",
+      "prereq_item_id",
+      "prerequisite → prerequisite_item",
+    ],
+    [
+      "note",
+      "item_id",
+      "note → learning_item",
+    ],
+    [
+      "note_part",
+      "note_id",
+      "note_part → note",
+    ],
+    [
+      "word",
+      "part_id",
+      "word → note_part",
+    ],
+    [
+      "test",
+      "item_id",
+      "test → learning_item",
+    ],
+    [
+      "question",
+      "test_id",
+      "question → test",
+    ],
+    [
+      "attempt",
+      "test_id",
+      "attempt → test",
+    ],
+    [
+      "answer",
+      "attempt_id",
+      "answer → attempt",
+    ],
+    [
+      "answer",
+      "question_id",
+      "answer → question",
+    ],
+  ])(
+    "%s.%s の参照先が存在しなければ最新化しない",
+    async (table, key, relation) => {
+      const { sync, data } = graphSetup();
+
+      // 存在しない親IDを設定する。
+      data[table][0][key] = "missing-parent";
+
+      await expect(sync.pullAll())
+        .rejects.toThrow(relation);
+
+      expect(replaceStudentData)
+        .not.toHaveBeenCalled();
+
+      expect(put).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
+    }
+  );
+
+  it("主キーが重複していれば最新化しない", async () => {
+    const { sync, data } = graphSetup();
+
+    data.subject.push({
+      subject_id: "s1",
+    });
+
+    await expect(sync.pullAll())
+      .rejects.toThrow("subject.subject_id の重複");
+
+    expect(replaceStudentData)
+      .not.toHaveBeenCalled();
+
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("主キーが欠落していれば最新化しない", async () => {
+    const { sync, data } = graphSetup();
+
+    delete data.subject[0].subject_id;
+
+    await expect(sync.pullAll())
+      .rejects.toThrow("subject.subject_id の欠落");
+
+    expect(replaceStudentData)
+      .not.toHaveBeenCalled();
+
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("問題数が不足していれば最新化しない", async () => {
+    const { sync, data } = graphSetup();
+
+    data.test[0].question_count = 2;
+
+    await expect(sync.pullAll())
+      .rejects.toThrow(
+        "test.question_count の不一致"
+      );
+
+    expect(replaceStudentData)
+      .not.toHaveBeenCalled();
+
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+});

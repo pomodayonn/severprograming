@@ -36,7 +36,7 @@
 | `sendAll.test.ts` | ログアウト前の同期結果の確認（通信失敗・ノートの競合・ログイン状態の変化・端末データの削除防止） |
 | `noteSyncStatus.test.ts` | ノートの端末保存とクラウド同期の区別（同期失敗・保存失敗・セッション喪失） |
 | `preserveNoteStyle.test.ts` | ノート同期時の書式情報の保護（必要カラム確認・HTTPエラー・保存と削除の順序・再試行） |
-| `deletedNoteConflict.test.ts` | 競合ノートのデータ保護と受信時の所有者確認（削除済みノート・他アカウントの混入・所有者不明・同期中のログイン状態変更） |
+| `deletedNoteConflict.test.ts` | 競合ノートの保護・受信所有者確認・アカウント変更・親子参照整合性・主キー検証・問題数検証・不完全な受信による端末データ消失防止 |
 | `questionExplanation.test.ts` | 問題変更時の解説初期化（手動編集・AI再生成・不正応答・通信失敗・保存内容の整合性） |
 | `aiUsageCount.test.ts` | AI利用回数と文字数の整合性（Unicode・文章分割・利用回数予約・上限判定・記述テスト・予約返却） |
 | `aiProductionSafety.test.ts` | 本番環境での仮AI動作防止（API未設定・開発環境・サーバー通信・利用回数・タイムアウト通知） |

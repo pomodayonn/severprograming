@@ -42,6 +42,198 @@ import { AppError } from "./common";
 type Row = Record<string, unknown>;
 export class SyncError extends AppError {}
 
+/**
+ * SYNC-13：
+ * クラウドから受信したデータの主キーと
+ * 親子関係の整合性を検証する。
+ *
+ * 不整合がある場合は端末データを
+ * 置き換える前に処理を中止する。
+ */
+function validateReceivedGraph(
+  data: Record<string, Row[]>
+): void {
+  const fail = (detail: string): never => {
+    throw new SyncError(
+      `受信データの整合性を確認できません。端末のデータを保護するため最新化を中止しました（${detail}）`
+    );
+  };
+
+  // 主キーの形式と重複を検証する。
+  const index = (
+    table: string,
+    key: string
+  ): Map<string, Row> => {
+    const result = new Map<string, Row>();
+
+    for (const row of data[table]) {
+      const id = row[key];
+
+      if (typeof id !== "string" || !id.trim()) {
+        fail(`${table}.${key} の欠落`);
+      }
+
+      const validId = id as string;
+
+      if (result.has(validId)) {
+        fail(`${table}.${key} の重複`);
+      }
+
+      result.set(validId, row);
+    }
+
+    return result;
+  };
+
+  const subjects =
+    index("subject", "subject_id");
+
+  const items =
+    index("learning_item", "item_id");
+
+  const notes =
+    index("note", "note_id");
+
+  const parts =
+    index("note_part", "part_id");
+
+  index("word", "word_id");
+
+  const tests =
+    index("test", "test_id");
+
+  const questions =
+    index("question", "question_id");
+
+  const attempts =
+    index("attempt", "attempt_id");
+
+  index("answer", "answer_id");
+
+  // 子データが参照する親が存在するか確認する。
+  const check = (
+    table: string,
+    key: string,
+    parents: Map<string, Row>,
+    relation: string
+  ): void => {
+    for (const row of data[table]) {
+      const id = row[key];
+
+      if (
+        typeof id !== "string" ||
+        !parents.has(id)
+      ) {
+        fail(relation);
+      }
+    }
+  };
+
+  check(
+    "learning_item",
+    "subject_id",
+    subjects,
+    "learning_item → subject"
+  );
+
+  check(
+    "prerequisite",
+    "item_id",
+    items,
+    "prerequisite → learning_item"
+  );
+
+  check(
+    "prerequisite",
+    "prereq_item_id",
+    items,
+    "prerequisite → prerequisite_item"
+  );
+
+  check(
+    "note",
+    "item_id",
+    items,
+    "note → learning_item"
+  );
+
+  check(
+    "note_part",
+    "note_id",
+    notes,
+    "note_part → note"
+  );
+
+  check(
+    "word",
+    "part_id",
+    parts,
+    "word → note_part"
+  );
+
+  check(
+    "test",
+    "item_id",
+    items,
+    "test → learning_item"
+  );
+
+  check(
+    "question",
+    "test_id",
+    tests,
+    "question → test"
+  );
+
+  check(
+    "attempt",
+    "test_id",
+    tests,
+    "attempt → test"
+  );
+
+  check(
+    "answer",
+    "attempt_id",
+    attempts,
+    "answer → attempt"
+  );
+
+  check(
+    "answer",
+    "question_id",
+    questions,
+    "answer → question"
+  );
+
+  // テストに設定された問題数と
+  // 実際に受信した問題数を比較する。
+  const counts = new Map<string, number>();
+
+  for (const question of data.question) {
+    const id = String(question.test_id);
+
+    counts.set(
+      id,
+      (counts.get(id) ?? 0) + 1
+    );
+  }
+
+  for (const [id, test] of tests) {
+    const expected = test.question_count;
+    const actual = counts.get(id) ?? 0;
+
+    if (
+      typeof expected !== "number" ||
+      !Number.isInteger(expected) ||
+      expected < 1 ||
+      expected !== actual
+    ) {
+      fail("test.question_count の不一致");
+    }
+  }
+}
+
 export class SyncManager {
   /** 前回同期した日時（学生ごとに端末に保存する） */
   lastSyncedAt: string | null = null;
@@ -109,6 +301,9 @@ export class SyncManager {
         );
       }
     }
+    // 親子関係が不完全な受信データで
+    // 端末データを置き換えない。
+    validateReceivedGraph(received);
 
     const wordsBy = group(words, "part_id");
     const partsBy = group(parts, "note_id");
