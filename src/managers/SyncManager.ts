@@ -69,8 +69,7 @@ export class SyncManager {
     }
 
     const sid = student.studentId;
-
-    await this.pushChanges();
+    await this.pushChanges(student.studentId);
 
     const current = await this.authClient.getSession();
 
@@ -80,7 +79,7 @@ export class SyncManager {
       );
     }
     const [subjects, items, prereqs, notes, parts, words, tests, questions, attempts, answers] = await Promise.all(
-      ["subject", "learning_item", "prerequisite", "note", "note_part", "word", "test", "question", "attempt", "answer"].map(t => this.select(t)));
+      ["subject", "learning_item", "prerequisite", "note", "note_part", "word", "test", "question", "attempt", "answer"].map(t => this.select(sid, t)));
     // ---- Neon の形（スネークケース・別々のテーブル）から、端末の形（beans・入れ子）に戻す ----
         // 受信した全テーブルの所有者を確認する。
     // 不正なデータを端末用の形式へ変換する前に拒否する。
@@ -193,13 +192,46 @@ export class SyncManager {
    * 前回の同期より後に変わったデータ（updatedAt が新しいもの）と、消したデータだけをアカウントに送る。
    * SubjectManager・LearningItemManager・NoteManager・TestManager が保存したあとに呼ぶ。同時に呼ばれても1回ずつ順に送る
    */
-  async pushChanges(): Promise<void> {
+  async pushChanges(
+    expectedStudentId?: string
+  ): Promise<void> {
     if (!this.enabled) return;
-    const prev = this.running ?? Promise.resolve();
-    const run = prev.then(() => this.push());
-    // 順番待ち用の印。失敗しても次の送信は続けられるように、エラーはここでは捨てる（呼んだ側には run でエラーが届く）
-    const tail: Promise<void> = run.catch(() => {}).then(() => { if (this.running === tail) this.running = null; });
+
+    // 待ち行列に入った時点の学生IDを保持する。
+    const requested = expectedStudentId
+      ? Promise.resolve(expectedStudentId)
+      : this.authClient.getSession()
+          .then(student =>
+            student?.studentId ?? null
+          );
+
+    const prev =
+      this.running ?? Promise.resolve();
+
+    const run = prev.then(async () => {
+      const sid = await requested;
+
+      if (!sid) {
+        throw new SyncError(
+          "ログイン状態を確認できないため同期できません"
+        );
+      }
+
+      await this.push(sid);
+    });
+
+    // 先行する同期が失敗しても
+    // 後続の同期を実行できるようにする。
+    const tail: Promise<void> = run
+      .catch(() => {})
+      .then(() => {
+        if (this.running === tail) {
+          this.running = null;
+        }
+      });
+
     this.running = tail;
+
     return run;
   }
 
@@ -223,7 +255,7 @@ export class SyncManager {
       if (!student) return false;
 
       // 端末に保存されている変更をアカウントへ送る。
-      await this.pushChanges();
+      await this.pushChanges(student.studentId);
 
       // 未解決の競合が残っている場合は削除を許可しない。
       const conflicts = await this.getConflicts(student.studentId);
@@ -269,7 +301,7 @@ export class SyncManager {
 
     const sid = student.studentId;
     const bases = await this.getBases(sid);
-    const remote = await this.remoteNoteVersion(noteId);
+    const remote = await this.remoteNoteVersion(sid, noteId);
 
     // クラウドに存在しない場合は勝手に再登録しない。
     // 競合情報と端末のノートをそのまま残す。
@@ -278,6 +310,8 @@ export class SyncManager {
         "クラウドにノートが存在しないため上書きできません。端末のノートは保持されています"
       );
     }
+
+    await this.requireSyncSession(sid);
 
     bases[noteId] = remote;
 
@@ -293,41 +327,129 @@ export class SyncManager {
    * 受け取ったノートを返す。
    * アカウントにノートが存在しない場合は、端末データと競合情報を保持して例外を返す。
    */
-  async takeRemoteNote(noteId: string): Promise<Note | null> {
-    const student = await this.authClient.getSession();
+    async takeRemoteNote(
+    noteId: string
+  ): Promise<Note | null> {
+    const student =
+      await this.authClient.getSession();
 
-    if (!student) {
-      throw new SyncError("ログイン状態を確認できません");
+    if (!student?.studentId) {
+      throw new SyncError(
+        "ログイン状態を確認できません"
+      );
     }
-    const sid = student.studentId, id = enc(noteId);
-    const [row] = (await this.request("GET", `/note?select=*&note_id=eq.${id}`)) as Row[];
-    const bases = await this.getBases(sid);
-    let note: Note | null = null;
-    if (row) {
-      const parts = (await this.request("GET", `/note_part?select=*&note_id=eq.${id}`)) as Row[];
-      const words = parts.length ? (await this.request("GET", `/word?select=*&part_id=in.(${parts.map(p => quote(s(p.part_id))).join(",")})`)) as Row[] : [];
-      [note] = toNotes([row], group(parts, "note_id"), group(words, "part_id"), sid);
-      await put("notes", structuredClone(note));
-      bases[noteId] = s(row.updated_at);
-    } else {
-      // クラウドにノートが存在しない場合は、
-      // 端末のノートと競合情報を変更しない。
+
+    const sid = student.studentId;
+    const id = enc(noteId);
+
+    const [row] = (
+      await this.request(
+        sid,
+        "GET",
+        `/note?select=*&note_id=eq.${id}`
+      )
+    ) as Row[];
+
+    // 存在確認を所有者確認より先に行う。
+    if (!row) {
       throw new SyncError(
         "クラウドにノートが存在しません。端末のノートは保持されています"
       );
     }
+
+    if (row.student_id !== sid) {
+      throw new SyncError(
+        "ノートの所有者が一致しません"
+      );
+    }
+
+    const parts = (
+      await this.request(
+        sid,
+        "GET",
+        `/note_part?select=*&note_id=eq.${id}`
+      )
+    ) as Row[];
+
+    const words = parts.length
+      ? (
+          await this.request(
+            sid,
+            "GET",
+            `/word?select=*&part_id=in.(${parts.map(p => quote(s(p.part_id))).join(",")})`
+          )
+        ) as Row[]
+      : [];
+
+    if (
+      parts.some(p => p.student_id !== sid) ||
+      words.some(w => w.student_id !== sid)
+    ) {
+      throw new SyncError(
+        "ノート部品または単語の所有者が一致しません"
+      );
+    }
+
+    const bases = await this.getBases(sid);
+
+    const [note] = toNotes(
+      [row],
+      group(parts, "note_id"),
+      group(words, "part_id"),
+      sid
+    );
+
+    // 端末データを変更する直前に認証を確認する。
+    await this.requireSyncSession(sid);
+
+    await put(
+      "notes",
+      structuredClone(note)
+    );
+
+    bases[noteId] = s(row.updated_at);
+
     await this.setBases(sid, bases);
-    await this.setConflicts(sid, (await this.getConflicts(sid)).filter(x => x !== noteId));
+
+    await this.setConflicts(
+      sid,
+      (await this.getConflicts(sid))
+        .filter(x => x !== noteId)
+    );
+
     return note;
   }
 
   // ======================= ここから private =======================
-  private async push(): Promise<void> {
-    const student = await this.authClient.getSession();
-      if (!student) {
-      throw new SyncError("ログイン状態を確認できないため同期できません");
+    /**
+   * 同期対象の学生と現在の認証情報が
+   * 一致していることを確認する。
+   */
+  private async requireSyncSession(
+    sid: string
+  ) {
+    const session =
+      await this.authClient.getSyncSession();
+
+    if (
+      !session?.token ||
+      session.studentId !== sid
+    ) {
+      throw new SyncError(
+        "同期中にログイン状態が変更されたため同期を中止しました"
+      );
     }
-    const sid = student.studentId, since = await this.getLastSynced(sid), started = now();
+
+    return session;
+  }
+
+    private async push(sid: string): Promise<void> {
+    await this.requireSyncSession(sid);
+
+    const since =
+      await this.getLastSynced(sid);
+
+    const started = now();
     const newer = <T extends { updatedAt: string; studentId: string }>(rows: T[]) => rows.filter(r => r.studentId === sid && (!since || r.updatedAt > since));
 
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
@@ -336,16 +458,16 @@ export class SyncManager {
       const filter = d.table === "prerequisite"
         ? `item_id=eq.${enc(d.key.split("|")[0])}&prereq_item_id=eq.${enc(d.key.split("|")[1])}`
         : `${KEY[d.table]}=eq.${enc(d.key)}`;
-      await this.request("DELETE", `/${d.table}?${filter}`);
+      await this.request(sid,"DELETE", `/${d.table}?${filter}`);
       await del("deletions", [d.table, d.key]);
     }
     // 2) 親から順に送る（外部キーがあるので、科目 → 学習項目 → 前提項目・ノート・テスト の順）
     const subjects = newer(await getAll<Subject>("subjects"));
-    await this.upsert("subject", subjects.map(x => ({ subject_id: x.subjectId, subject_name: x.subjectName, created_at: x.createdAt })));
+    await this.upsert(sid,"subject", subjects.map(x => ({ subject_id: x.subjectId, subject_name: x.subjectName, created_at: x.createdAt })));
     const items = newer(await getAll<LearningItem>("learningItems"));
-    await this.upsert("learning_item", items.map(x => ({ item_id: x.itemId, subject_id: x.subjectId, item_name: x.itemName, created_at: x.createdAt })));
+    await this.upsert(sid,"learning_item", items.map(x => ({ item_id: x.itemId, subject_id: x.subjectId, item_name: x.itemName, created_at: x.createdAt })));
     const prereqs = newer(await getAll<Prerequisite>("prerequisites"));
-    await this.upsert("prerequisite", prereqs.map(x => ({ item_id: x.itemId, prereq_item_id: x.prereqItemId })), "item_id,prereq_item_id");
+    await this.upsert(sid,"prerequisite", prereqs.map(x => ({ item_id: x.itemId, prereq_item_id: x.prereqItemId })), "item_id,prereq_item_id");
 
     // ノート：変わったノートは、部品と単語を丸ごと送り直す（消した部品は Neon からも消す）
     // 11/24：別の端末で新しく保存されていたら、送らずに noteConflicts に入れる（UC-018 代替フロー(2)）
@@ -358,7 +480,7 @@ export class SyncManager {
     // 必要なカラムがクラウド側に存在することを確認する。
     // 確認できなければノートの更新処理を開始しない。
     if (changedNotes.some(note => note.parts.length > 0)) {
-      await this.request(
+      await this.request(sid,
         "GET",
         "/note_part?select=shape,style&limit=1"
       );
@@ -369,9 +491,9 @@ export class SyncManager {
       const base = bases[note.noteId];
       const [saved] = (base
         // 前回見た更新日時のときだけ書き換える。「確かめる」と「保存する」を1回の通信でするので、通信が増えず、その間に別の端末が保存するすき間もない
-        ? await this.request("PATCH", `/note?note_id=eq.${enc(note.noteId)}&updated_at=eq.${enc(base)}`, { item_id: note.itemId, last_saved_at: note.lastSavedAt }, "return=representation")
+        ? await this.request(sid,"PATCH", `/note?note_id=eq.${enc(note.noteId)}&updated_at=eq.${enc(base)}`, { item_id: note.itemId, last_saved_at: note.lastSavedAt }, "return=representation")
         // まだ一度も受け取っても送ってもいないノート（新しく作ったノートなど）は、確かめずに送る
-        : await this.request("POST", "/note", [{ note_id: note.noteId, item_id: note.itemId, last_saved_at: note.lastSavedAt }], "resolution=merge-duplicates,return=representation")) as Row[];
+        : await this.request(sid,"POST", "/note", [{ note_id: note.noteId, item_id: note.itemId, last_saved_at: note.lastSavedAt }], "resolution=merge-duplicates,return=representation")) as Row[];
       if (!saved) { // 1行も書き換わらなかった＝アカウントの更新日時が変わっていた（別の端末で保存された）
         if (!conflicts.includes(note.noteId)) { conflicts = [...conflicts, note.noteId]; await this.setConflicts(sid, conflicts); }
         found.push(note.noteId);
@@ -380,52 +502,142 @@ export class SyncManager {
       const partRows = note.parts.map(p => ({ part_id: p.partId, note_id: note.noteId, part_type: p.partType, frame_type: p.frameType, shape: p.partType === PartType.SHAPE ? NotePart.shapeOf(p) : null, x: Math.round(p.x), y: Math.round(p.y), width: Math.max(1, Math.round(p.width)), height: Math.max(1, Math.round(p.height)), color: p.color, text: p.text, heading_level: p.headingLevel, style: p.style ?? "" }));
       // 書式情報を含む部品データをそのまま送信する。
       // 同期に失敗した場合、書式を除外した再送信は行わない。
-      await this.upsert("note_part", partRows);
+      await this.upsert(sid,"note_part", partRows);
       const ids = note.parts.map(p => p.partId);
-      await this.request("DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
+      await this.request(sid,"DELETE", `/note_part?note_id=eq.${enc(note.noteId)}${ids.length ? `&part_id=not.in.(${ids.map(quote).join(",")})` : ""}`);
       // 消した単語を Neon からも消す。11/21：前は部品1つごとに1回送っていたが、部品20個ずつまとめて1回で送るようにした
       // （全部を1回にしないのは、URL が長くなりすぎてサーバーに断られないようにするため）
       for (const group of chunk(note.parts, 20)) {
         const wids = group.flatMap(p => p.words.map(w => w.wordId));
-        await this.request("DELETE", `/word?part_id=in.(${group.map(p => quote(p.partId)).join(",")})${wids.length ? `&word_id=not.in.(${wids.map(quote).join(",")})` : ""}`);
+        await this.request(sid,"DELETE", `/word?part_id=in.(${group.map(p => quote(p.partId)).join(",")})${wids.length ? `&word_id=not.in.(${wids.map(quote).join(",")})` : ""}`);
       }
-      await this.upsert("word", note.parts.flatMap(p => p.words.map(w => ({ word_id: w.wordId, part_id: p.partId, term: w.term, meaning: w.meaning }))));
+      await this.upsert(sid,"word", note.parts.flatMap(p => p.words.map(w => ({ word_id: w.wordId, part_id: p.partId, term: w.term, meaning: w.meaning }))));
       bases[note.noteId] = s(saved.updated_at); await this.setBases(sid, bases);
       if (conflicts.includes(note.noteId)) { conflicts = conflicts.filter(x => x !== note.noteId); await this.setConflicts(sid, conflicts); }
     }
     await this.notify(found); // 11/24：見つかったらすぐ画面に知らせる（残りのテストなどは、このあと続けて送る）
     // テスト：変わったテストは、問題・受験・解答を丸ごと送り直す
     for (const t of newer(await getAll<Test>("tests"))) {
-      await this.upsert("test", [{ test_id: t.testId, item_id: t.itemId, test_type: t.testType, question_count: Math.max(1, t.questions.length), created_at: t.createdAt, last_taken_at: t.lastTakenAt }]);
-      await this.upsert("question", t.questions.map(q => ({ question_id: q.questionId, test_id: t.testId, number: q.number, question_text: q.questionText, model_answer: q.modelAnswer, explanation: q.explanation })));
-      await this.upsert("attempt", t.attempts.map(a => ({ attempt_id: a.attemptId, test_id: t.testId, attempt_no: a.attemptNo, taken_at: a.takenAt })));
-      await this.upsert("answer", t.attempts.flatMap(a => a.answers.map(x => ({ answer_id: x.answerId, attempt_id: a.attemptId, question_id: x.questionId, student_answer: x.studentAnswer, correct: x.correct, answered_at: x.answeredAt }))));
+      await this.upsert(sid,"test", [{ test_id: t.testId, item_id: t.itemId, test_type: t.testType, question_count: Math.max(1, t.questions.length), created_at: t.createdAt, last_taken_at: t.lastTakenAt }]);
+      await this.upsert(sid,"question", t.questions.map(q => ({ question_id: q.questionId, test_id: t.testId, number: q.number, question_text: q.questionText, model_answer: q.modelAnswer, explanation: q.explanation })));
+      await this.upsert(sid,"attempt", t.attempts.map(a => ({ attempt_id: a.attemptId, test_id: t.testId, attempt_no: a.attemptNo, taken_at: a.takenAt })));
+      await this.upsert(sid,"answer", t.attempts.flatMap(a => a.answers.map(x => ({ answer_id: x.answerId, attempt_id: a.attemptId, question_id: x.questionId, student_answer: x.studentAnswer, correct: x.correct, answered_at: x.answeredAt }))));
     }
+        // 同期完了時にもアカウントを確認する。
+    await this.requireSyncSession(sid);
     await this.setLastSynced(sid, started); // 送っている間に変わったものは次回送る
   }
 
-  /** そのテーブルの自分の行を全部受け取る（RLS で自分の行だけが返る） */
-  private async select(table: string): Promise<Row[]> {
-    return (await this.request("GET", `/${table}?select=*`)) as Row[];
+    /** 現在の学生のデータを受け取る */
+  private async select(
+    sid: string,
+    table: string
+  ): Promise<Row[]> {
+    return (
+      await this.request(
+        sid,
+        "GET",
+        `/${table}?select=*`
+      )
+    ) as Row[];
   }
-  /** なければ追加、あれば更新する。student_id と updated_at は Neon が入れる */
-  private async upsert(table: string, rows: Row[], onConflict?: string): Promise<void> {
+   /** 所有者を固定してデータを追加・更新する */
+  private async upsert(
+    sid: string,
+    table: string,
+    rows: Row[],
+    onConflict?: string
+  ): Promise<void> {
     if (!rows.length) return;
-    await this.request("POST", `/${table}${onConflict ? `?on_conflict=${onConflict}` : ""}`, rows, "resolution=merge-duplicates,return=minimal");
+    await this.request(
+      sid,
+      "POST",
+      `/${table}${onConflict ? `?on_conflict=${onConflict}` : ""}`,
+      rows,
+      "resolution=merge-duplicates,return=minimal"
+    );
   }
-  private async request(method: string, path: string, body?: unknown, prefer?: string): Promise<unknown> {
-    const token = await this.authClient.getAccessToken();
-    if (!token) throw new SyncError("ログインしていないため同期できません");
+  /**
+   * 同期対象の学生と認証情報を確認し、
+   * Data APIへ通信する。
+   */
+  private async request(
+    sid: string,
+    method: string,
+    path: string,
+    body?: unknown,
+    prefer?: string
+  ): Promise<unknown> {
+    const session =
+      await this.requireSyncSession(sid);
+
+    let payload = body;
+
+    // POST・PATCHでは所有者を明示する。
+    if (
+      body !== undefined &&
+      (method === "POST" || method === "PATCH")
+    ) {
+      const withOwner = (row: Row): Row => {
+        if (
+          row.student_id !== undefined &&
+          row.student_id !== sid
+        ) {
+          throw new SyncError(
+            "送信データの所有者が一致しません"
+          );
+        }
+
+        return {
+          ...row,
+          student_id: sid,
+        };
+      };
+
+      payload = Array.isArray(body)
+        ? body.map(row => withOwner(row))
+        : withOwner(body as Row);
+    }
+
     let res: Response;
+
     try {
-      res = await fetch(this.dataApiUrl!.replace(/\/$/, "") + path, {
-        method,
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(prefer ? { Prefer: prefer } : {}) },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    } catch { throw new SyncError("通信できないため同期できませんでした（端末には保存されています）"); }
-    if (!res.ok) throw new SyncError(`同期に失敗しました（${res.status}）`);
+      res = await fetch(
+        this.dataApiUrl!.replace(/\/$/, "") + path,
+        {
+          method,
+
+          headers: {
+            Authorization:
+              `Bearer ${session.token}`,
+
+            "Content-Type":
+              "application/json",
+
+            ...(prefer
+              ? { Prefer: prefer }
+              : {}),
+          },
+
+          body: payload === undefined
+            ? undefined
+            : JSON.stringify(payload),
+        }
+      );
+    } catch {
+      throw new SyncError(
+        "通信できないため同期できませんでした（端末には保存されています）"
+      );
+    }
+
+    if (!res.ok) {
+      throw new SyncError(
+        `同期に失敗しました（${res.status}）`
+      );
+    }
+
     const text = await res.text();
+
     return text ? JSON.parse(text) : null;
   }
   /** 食い違っているノートを、どの学習項目のノートか分かる形にして画面に知らせる（11/24） */
@@ -439,9 +651,25 @@ export class SyncManager {
     }
     if (list.length) this.conflictListener.onNoteConflict(list);
   }
-  /** アカウントのそのノートの更新日時（11/24。「上書きして保存」を選んだときだけ使う）。アカウントにまだなければ null */
-  private async remoteNoteVersion(noteId: string): Promise<string | null> {
-    const [row] = (await this.request("GET", `/note?select=updated_at&note_id=eq.${enc(noteId)}`)) as Row[];
+   /** クラウドに保存されたノートの更新日時を取得する */
+  private async remoteNoteVersion(
+    sid: string,
+    noteId: string
+  ): Promise<string | null> {
+    const [row] = (
+      await this.request(
+        sid,
+        "GET",
+        `/note?select=updated_at,student_id&note_id=eq.${enc(noteId)}`
+      )
+    ) as Row[];
+
+    if (row && row.student_id !== sid) {
+      throw new SyncError(
+        "ノートの所有者が一致しません"
+      );
+    }
+
     return row ? s(row.updated_at) : null;
   }
   /** ノートごとの「前回受け取った・送ったときのアカウントの更新日時」（ノートID → 更新日時）（11/24） */

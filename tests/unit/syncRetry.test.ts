@@ -97,16 +97,28 @@ afterEach(() => {
 });
 
 function setup() {
-  const auth = {
+   const auth = {
     neon: true,
 
-    getSession: vi.fn()
-      .mockResolvedValue(student),
+    getSession: vi.fn<
+      () => Promise<Student | null>
+    >().mockResolvedValue(
+      new Student({ studentId })
+    ),
 
     getAccessToken: vi.fn()
       .mockResolvedValue("mock-token"),
-  };
 
+    getSyncSession: vi.fn<
+      () => Promise<{
+        studentId: string;
+        token: string;
+      } | null>
+    >().mockResolvedValue({
+      studentId,
+      token: "mock-token",
+    }),
+  };
   const sync = new SyncManager(
     auth as unknown as NeonAuthClient,
     "https://example.invalid"
@@ -238,9 +250,10 @@ describe("SYNC-10：同期失敗後の再試行", () => {
       expect(fetchMock)
         .toHaveBeenCalledTimes(1);
 
-      // 2件目の push() はまだ開始していない。
+     // 2件とも要求時点で学生IDを取得する。
+      // ただし、HTTP通信はまだ1件目だけ。
       expect(auth.getSession)
-        .toHaveBeenCalledTimes(1);
+        .toHaveBeenCalledTimes(2);
     } finally {
       release();
     }
@@ -289,5 +302,140 @@ describe("SYNC-10：同期失敗後の再試行", () => {
       .not.toHaveBeenCalled();
 
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe("SYNC-11・12：同期時の所有者管理", () => {
+  it("送信データに学生IDを明示する", async () => {
+    const { sync, fetchMock } = setup();
+
+    await sync.pushChanges();
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    const init = fetchMock.mock.calls[0][1];
+
+    expect(
+      JSON.parse(String(init?.body))
+    ).toEqual([
+      expect.objectContaining({
+        subject_id: "subject-1",
+        student_id: studentId,
+      }),
+    ]);
+
+    expect(init?.headers).toEqual(
+      expect.objectContaining({
+        Authorization: "Bearer mock-token",
+      })
+    );
+  });
+
+  it("別アカウントの認証情報では送信しない", async () => {
+    const { sync, auth, fetchMock } = setup();
+
+    auth.getSyncSession.mockResolvedValue({
+      studentId: "other-student",
+      token: "other-token",
+    });
+
+    await expect(sync.pushChanges())
+      .rejects.toThrow("ログイン状態が変更");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    expect(meta.get(lastSyncKey))
+      .toBe(previousSync);
+
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("送信完了直後のログアウトで同期日時を更新しない", async () => {
+    const { sync, auth, fetchMock } = setup();
+
+    fetchMock.mockImplementationOnce(
+      async () => {
+        auth.getSyncSession
+          .mockResolvedValue(null);
+
+        return new Response(null, {
+          status: 204,
+        });
+      }
+    );
+
+    await expect(sync.pushChanges())
+      .rejects.toThrow("ログイン状態が変更");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    expect(meta.get(lastSyncKey))
+      .toBe(previousSync);
+
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("待ち行列の同期を別アカウントで実行しない", async () => {
+    const { sync, auth, fetchMock } = setup();
+
+    let start!: () => void;
+    let release!: () => void;
+
+    const started = new Promise<void>(
+      resolve => { start = resolve; }
+    );
+
+    const waiting = new Promise<void>(
+      resolve => { release = resolve; }
+    );
+
+    fetchMock.mockImplementationOnce(
+      async () => {
+        start();
+        await waiting;
+
+        return new Response(null, {
+          status: 204,
+        });
+      }
+    );
+
+    const first = sync.pushChanges();
+    const second = sync.pushChanges();
+
+    const settled = Promise.allSettled([
+      first,
+      second,
+    ]);
+
+    await started;
+
+    auth.getSession.mockResolvedValue(
+      new Student({
+        studentId: "other-student",
+      })
+    );
+
+    auth.getSyncSession.mockResolvedValue({
+      studentId: "other-student",
+      token: "other-token",
+    });
+
+    release();
+
+    const results = await settled;
+
+    expect(
+      results.map(r => r.status)
+    ).toEqual([
+      "rejected",
+      "rejected",
+    ]);
+
+    // 2件目を別アカウントとして送信しない。
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    expect(meta.get(lastSyncKey))
+      .toBe(previousSync);
   });
 });

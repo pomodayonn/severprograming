@@ -15,6 +15,11 @@ import { now } from "../beans/DateTime";
 
 /** Neon Auth からの結果。失敗したときは画面に出す文を error に入れる */
 export type AuthResult = { ok: true; student: Student } | { ok: false; error: string };
+/** 同一の認証応答から取得した同期用の認証情報 */
+export type SyncSession = {
+  studentId: string;
+  token: string;
+};
 
 const MSG = {
   wrong: "メールアドレスまたはパスワードが違います", // どちらが違うかは示さない
@@ -87,6 +92,35 @@ export class NeonAuthClient {
   async getAccessToken(): Promise<string | null> {
     if (!this.neon) return null;
     try { const r = await (await this.auth()).getSession(); return r.data?.session?.token ?? null; } catch { return null; }
+  }
+    /**
+   * 学生IDとアクセストークンを
+   * 同一の認証応答から取得する。
+   */
+  async getSyncSession(): Promise<SyncSession | null> {
+    if (!this.neon) return null;
+
+    try {
+      const r = await (
+        await this.auth()
+      ).getSession();
+
+      if (r.error) return null;
+
+      const studentId = r.data?.user?.id;
+      const token = r.data?.session?.token;
+
+      if (!studentId || !token) {
+        return null;
+      }
+
+      return {
+        studentId,
+        token,
+      };
+    } catch {
+      return null;
+    }
   }
 
   // ---------- ここから private ----------

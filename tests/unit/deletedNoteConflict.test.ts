@@ -93,12 +93,27 @@ function setup(
   remoteExists = true,
   hasConflict = true
 ) {
-  const auth = {
+    const auth = {
     neon: true,
-    getSession: vi.fn<() => Promise<Student | null>>()
-      .mockResolvedValue(student),
+
+    getSession: vi.fn<
+      () => Promise<Student | null>
+    >().mockResolvedValue(
+      new Student({ studentId })
+    ),
+
     getAccessToken: vi.fn()
       .mockResolvedValue("mock-token"),
+
+    getSyncSession: vi.fn<
+      () => Promise<{
+        studentId: string;
+        token: string;
+      } | null>
+    >().mockResolvedValue({
+      studentId,
+      token: "mock-token",
+    }),
   };
 
   const sync = new SyncManager(

@@ -37,7 +37,6 @@
 | `noteSyncStatus.test.ts` | ノートの端末保存とクラウド同期の区別（同期失敗・保存失敗・セッション喪失） |
 | `preserveNoteStyle.test.ts` | ノート同期時の書式情報の保護（必要カラム確認・HTTPエラー・保存と削除の順序・再試行） |
 | `deletedNoteConflict.test.ts` | 競合ノートのデータ保護と受信時の所有者確認（削除済みノート・他アカウントの混入・所有者不明・同期中のログイン状態変更） |
-| `syncRetry.test.ts` | 同期失敗後の再試行（送信失敗・待ち行列・重複送信防止・競合情報の保持・端末データの保護） |
 | `questionExplanation.test.ts` | 問題変更時の解説初期化（手動編集・AI再生成・不正応答・通信失敗・保存内容の整合性） |
 | `aiUsageCount.test.ts` | AI利用回数と文字数の整合性（Unicode・文章分割・利用回数予約・上限判定・記述テスト・予約返却） |
 | `aiProductionSafety.test.ts` | 本番環境での仮AI動作防止（API未設定・開発環境・サーバー通信・利用回数・タイムアウト通知） |
@@ -45,6 +44,7 @@
 | `materialOwnership.test.ts` | 端末内資料の所有者管理と原子性（保存・削除・旧形式の補完・孤立資料・他アカウントの保護・文字起こし更新・ロールバック） |
 | `relationTransaction.test.ts` | 関連図保存の原子性（追加・削除・削除記録・循環防止・所有者確認・並行保存・ロールバック） |
 | `testAttemptTransaction.test.ts` | 受験保存の原子性（並行受験・受験番号・採点・履歴保持・解説編集との競合・ロールバック） |
+| `syncRetry.test.ts` | 同期再試行と所有者管理（通信失敗・待ち行列・学生IDの明示・アカウント変更・ログアウト・同期日時の保護） |
 
 初めて動かすときは、先に `npm install` をしてください（Vitest が入ります）。
 テストのファイルは `src/` の外にあるので、`npm run build` には影響しません。
