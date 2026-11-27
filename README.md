@@ -25,7 +25,7 @@ npm run build    # 型チェック + 本番ビルド
 | G008 テスト作成 / G009 解答 / G010 結果 / G011 一覧 | `components/Tests.tsx` |
 
 ## 差し替え口（実装時にここだけ置き換える）
-- `services/ai.ts`：AI（いまは仮実装。サーバー経由で複数のAIサービスを順に試す想定）
+- `services/ai.ts`：AI機能の窓口。サーバー経由でAIサービスを利用する。API未設定時の仮AIは開発環境に限定し、本番環境では設定エラーとする。
 - `services/ocr.ts`：文字起こし（いまは仮実装。実装時は Tesseract.js など、ブラウザの中で処理）
 - `services/db.ts`：前の保存場所に残っているデータを消すだけ（保存は Manager → `dao/` の IndexedDB、アカウントへの同期は `SyncManager`）
 - `state/app.tsx`：ログイン中の学生・画面遷移・未保存ノートの確認・ダイアログ

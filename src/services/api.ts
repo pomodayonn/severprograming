@@ -15,7 +15,17 @@ export const SERVER = !!API_URL;
 const TIMEOUT_MS = 250_000; // 11/22：90秒 → 250秒。サーバーはAI2つを120秒ずつ（最大240秒）試すので、それより少し長く待つ
 
 /** サーバーから返るエラーの種類（画面に出す文言はここで決める） */
-export type ApiErrorCode = "UNAUTHORIZED" | "LIMIT_EXCEEDED" | "TOO_LONG" | "AI_UNAVAILABLE" | "BAD_REQUEST" | "NETWORK" | "SERVER" | "OFFLINE" | "TIMEOUT";
+export type ApiErrorCode =
+  | "UNAUTHORIZED"
+  | "LIMIT_EXCEEDED"
+  | "TOO_LONG"
+  | "AI_UNAVAILABLE"
+  | "BAD_REQUEST"
+  | "NETWORK"
+  | "SERVER"
+  | "OFFLINE"
+  | "TIMEOUT"
+  | "CONFIGURATION";
 const TEXT: Record<ApiErrorCode, string> = {
   UNAUTHORIZED: "ログインの期限が切れました。もう一度ログインしてください",
   LIMIT_EXCEEDED: "今日はこれ以上使えません",
@@ -25,7 +35,8 @@ const TEXT: Record<ApiErrorCode, string> = {
   NETWORK: "サーバーとつながりません。インターネットの接続を確認してください",
   SERVER: "サーバーでエラーが起きました。時間をおいて試してください",
   OFFLINE: "インターネットにつながっていません。つながってから、もう一度試してください（ノートの保存は端末にできます）",
-  TIMEOUT: "AIの返事が来ませんでした（4分）。時間をおいて、もう一度試してください。利用回数は減っていません",
+  TIMEOUT: "AIの応答が時間内に届きませんでした。サーバー側で処理が続いている可能性があります。残りの利用回数を確認してから、再試行してください",
+  CONFIGURATION: "AIサービスが設定されていません。管理者にお問い合わせください",
 };
 export class ApiError extends Error {
   constructor(public code: ApiErrorCode, public status = 0) { super(TEXT[code]); }
@@ -36,7 +47,7 @@ export const errorText = (e: unknown) => e instanceof ApiError ? e.message : TEX
 const byStatus = (s: number): ApiErrorCode => s === 401 ? "UNAUTHORIZED" : s === 429 ? "LIMIT_EXCEEDED" : s === 413 ? "TOO_LONG" : s === 400 ? "BAD_REQUEST" : s === 502 || s === 503 ? "AI_UNAVAILABLE" : "SERVER";
 
 export async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-  if (!API_URL) throw new ApiError("SERVER");
+  if (!API_URL) throw new ApiError("CONFIGURATION");
   // 11/17：オフラインなら送らずにすぐ知らせる
   if (typeof navigator !== "undefined" && navigator.onLine === false) throw new ApiError("OFFLINE");
   const token = await neonAuthClient.getAccessToken();

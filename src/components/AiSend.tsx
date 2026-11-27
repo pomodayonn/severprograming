@@ -103,7 +103,7 @@ export function AiSend() {
       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
       <p className="mute">選び直すと、「送る内容」の編集はやり直しになります。</p></div>}
     {tab === "send" && <div className="vbox"><textarea className="tx" value={text} onChange={e => setText(e.target.value)} placeholder="ここに送る内容が入ります。送りたくない文字は削除してください" />
-      <div className="mute">{lengthOf(text).toLocaleString()}文字（1回あたり1万文字まで）　※個人情報などは送らないでください。送った内容は、どこにも残りません。</div></div>}
+      <div className="mute">{lengthOf(text).toLocaleString()}文字（1回あたり1万文字まで）　※AI処理のため送信内容が外部サービスに送られる場合があります。個人情報や機密情報は送信しないでください。</div></div>}
     {tab === "prop" && <div className="vbox">{!props.length && <p className="mute">まだ提案がありません。「送る内容」から送信してください。</p>}
       {props.map((p, i) => { const cur = frames.find(f => f.partId === p.targetPartId); return (<div key={i} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
         <label className="ck"><input type="checkbox" checked={pick.includes(i)} onChange={e => setPick(e.target.checked ? [...pick, i] : pick.filter(x => x !== i))} /><b>{frameName(p)}</b>　{cur ? "（もとの枠の書き換え）" : "（新しい枠）"}</label>

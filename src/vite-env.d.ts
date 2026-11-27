@@ -4,7 +4,7 @@ interface ImportMetaEnv {
   readonly VITE_NEON_AUTH_URL?: string;
   /** Neon の Data API の URL（同期に使う）。空だと同期せず、データは端末の中だけ */
   readonly VITE_NEON_DATA_API_URL?: string;
-  /** Render のサーバーの URL（例：https://runndesu-api.onrender.com）。空なら仮のAIで動く */
+  /** RenderのAIサーバーのURL。未設定時は開発環境のみ仮AIを使用できる */
   readonly VITE_API_URL?: string;
 }
 interface ImportMeta { readonly env: ImportMetaEnv }

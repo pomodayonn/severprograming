@@ -1,11 +1,8 @@
-// AIの窓口。VITE_API_URL があればサーバー（Render）経由で本物のAIを使い、なければ仮の動きで画面を確かめられる。
-// 利用回数（1日20回）はサーバーが数える。仮の動きのときだけ端末で数える（画面側の consumeLocal）。
-//
-// 【このファイルで何が起きているか】
-// AIに「まとめて」「問題を作って」「解説して」と頼む窓口です。中身が2通りあります。
-// ・server：VITE_API_URL があるとき。services/api.ts を通して福山さんのサーバーに送り、サーバーが Groq に聞く
-// ・mock  ：サーバーがまだないとき。AIを使わず、決まった作り方で「それっぽい答え」を返す（画面の確認用）
-// 下の impl = SERVER ? server : mock で、どちらを使うかが決まる。使う側（Manager）はどちらか気にしなくてよい
+// AIの窓口。
+// APIが設定されている場合はサーバー経由でAIを利用する。
+// APIが未設定の場合、開発環境のみ仮AIを使用できる。
+// 本番環境でAPIが未設定の場合は設定エラーとする。
+
 import { useCallback, useEffect, useState } from "react";
 import type { FrameType } from "../types";
 import { AI_LIMIT, dayKey, newId } from "../lib/logic";
@@ -65,7 +62,14 @@ const mock = {
 };
 
 // ---------- 画面から呼ぶ関数 ----------
-const impl = SERVER ? server : mock;
+// 仮AIは開発環境でのみ使用する。
+// 本番環境でAPIが未設定なら、設定エラーとして処理する。
+const MOCK =
+  !SERVER &&
+  import.meta.env.DEV &&
+  !import.meta.env.PROD;
+
+const impl = MOCK ? mock : server;
 /** ノートのまとめ：枠の種類ごとの提案 */
 export const organize = impl.organize;
 /** 記述テストの問題を作る */
@@ -85,7 +89,7 @@ export function useAiRemaining() {
   const refresh = useCallback(async () => { if (SERVER) { try { setSrv(await server.remaining()); } catch { setSrv(null); } } }, []);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => { const on = () => setUsed(localUsed()); listeners.add(on); return () => { listeners.delete(on); }; }, []);
-  const remaining = SERVER ? srv : Math.max(0, AI_LIMIT - used);
+  const remaining = MOCK? Math.max(0, AI_LIMIT - used): srv;
   return { remaining, limit: AI_LIMIT, refresh };
 }
 
@@ -97,7 +101,7 @@ function localUsed(): number {
 }
 /** 仮の動きのときだけ、端末で利用回数を足す（サーバーがあるときはサーバーが数えるので何もしない） */
 export function addLocalUsage(n: number): void {
-  if (SERVER) return;
+  if (!MOCK) return;
   try { localStorage.setItem(USAGE_KEY, JSON.stringify({ [dayKey()]: localUsed() + n })); } catch { /* 保存できなくても続ける */ }
   listeners.forEach(f => f());
 }
