@@ -56,17 +56,67 @@ export class TestManager {
     return { test: (await this.testDAO.findById(testId))!, shortage: Math.max(0, n - words.length) };
   }
 
-  /** G007 で作った送る内容（SendContent）を使い、AIで記述テストを作る */
-  async createEssayTest(itemId: string, studentId: string, content: SendContent, count: number): Promise<Test> {
-    if (!content.text.trim()) throw new TestError("先に「内容編集」で、送る内容を決めてください");
-    const qs = await makeEssay(content.text, clampQuestionCount(count));
-    if (!qs.length) throw new TestError("問題を作れませんでした。送る内容を見直してください");
+  /** AIで指定された問題数の記述テストを作る */
+  async createEssayTest(
+    itemId: string,
+    studentId: string,
+    content: SendContent,
+    count: number
+  ): Promise<Test> {
+    if (!content.text.trim()) {
+      throw new TestError(
+        "先に「内容編集」で、送る内容を決めてください"
+      );
+    }
+
+    const requested = clampQuestionCount(count);
+
+    const qs = await makeEssay(
+      content.text,
+      requested
+    );
+
+    // 不完全なテストを保存しない。
+    if (
+      !Array.isArray(qs) ||
+      qs.length !== requested ||
+      qs.some(q =>
+        typeof q?.q !== "string" ||
+        typeof q?.a !== "string" ||
+        !q.q.trim() ||
+        !q.a.trim()
+      )
+    ) {
+      throw new TestError(
+        "指定された問題数の有効な問題を生成できませんでした。送る内容を見直してください"
+      );
+    }
+
     const testId = newId();
+
     const test = new Test({
-      testId, studentId, itemId, testType: TestType.ESSAY, questionCount: qs.length, createdAt: now(),
-      questions: qs.map((q, i) => new Question({ questionId: newId(), testId, studentId, number: i + 1, questionText: q.q, modelAnswer: q.a })),
+      testId,
+      studentId,
+      itemId,
+      testType: TestType.ESSAY,
+      questionCount: qs.length,
+      createdAt: now(),
+
+      questions: qs.map((q, i) =>
+        new Question({
+          questionId: newId(),
+          testId,
+          studentId,
+          number: i + 1,
+          questionText: q.q.trim(),
+          modelAnswer: q.a.trim(),
+        })
+      ),
     });
-    await this.testDAO.insert(test); await this.sync();
+
+    await this.testDAO.insert(test);
+    await this.sync();
+
     return (await this.testDAO.findById(testId))!;
   }
 

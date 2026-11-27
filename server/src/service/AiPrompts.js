@@ -150,12 +150,28 @@ export function buildEssay(text, count) {
 ${block("送る内容", text)}`;
 }
 
-/** AIの返事から問題を取り出す（多すぎたら count 問に切る。1問もなければ失敗） */
+/**
+ * AIの返事から有効な問題を取り出す。
+ * 指定された問題数を満たさなければ失敗とする。
+ */
 export function readEssay(reply, count) {
   const list = parseJson(reply)?.questions;
-  if (!Array.isArray(list)) throw new Error("questions がありません");
-  const questions = list.map(toQuestion).filter(Boolean).slice(0, count);
-  if (!questions.length) throw new Error("問題が1問もありません");
+
+  if (!Array.isArray(list)) {
+    throw new Error("questions がありません");
+  }
+
+  const questions = list
+    .map(toQuestion)
+    .filter(Boolean)
+    .slice(0, count);
+
+  if (questions.length !== count) {
+    throw new Error(
+      `生成された問題数が不足しています（必要：${count}問、有効：${questions.length}問）`
+    );
+  }
+
   return questions;
 }
 
