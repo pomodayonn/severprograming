@@ -35,7 +35,7 @@ export function useMaterialContent(screen: "G004" | "G005" | "G006" | "G007", ma
 }
 export function Viewer({ type, v }: { type: string; v: ReturnType<typeof useMaterialContent> }) {
   if (!v) return <p className="mute">読み込み中…</p>;
-  if (v.missing) return <p className="mute">資料はアップロードした端末にだけ保存されます（この端末には入っていません）</p>;
+  if (v.missing) return <p className="mute">資料は追加した端末にのみ保存されます。この端末では表示できません。</p>;
   if (v.text !== undefined) return <pre className="txt">{v.text}</pre>;
   if (type === "pdf") return <iframe title="PDF" src={v.url} className="pdf" />;
   return <img src={v.url} alt="資料" style={{ maxWidth: "100%" }} />;
@@ -45,7 +45,7 @@ const VMODES = [["one", "この資料"], ["side", "資料と並べる"]] as cons
 /** 「資料と並べる」の右側：選んだ資料を表示する */
 function SideView({ id }: { id: string | null }) {
   const { materials } = useApp(); const s = materials.find(x => x.materialId === id); const v = useMaterialContent("G005", s?.materialId);
-  return <div className="vbox">{s ? <Viewer type={s.fileType} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
+  return <div className="vbox">{s ? <Viewer type={s.fileType} v={v} /> : <p className="mute">表示する資料を選択してください。</p>}</div>;
 }
 export function MaterialView() {
   const { materials, reload, route, go, ask, account } = useApp();
@@ -56,11 +56,11 @@ export function MaterialView() {
   if (!m || !account) return <Shell center={<><p>資料がありません。</p><button className="btn" onClick={back}>戻る</button></>} />;
   const del = async () => {
     const tx = materials.filter(x => x.sourceMaterialId === m.materialId); let both = false;
-    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.fileName).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "やめる", value: "no" }]); if (r === "no") return; both = r === "both"; }
-    else if (await ask("この資料を削除してよいですか", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    if (tx.length) { const r = await ask(`削除してよいですか。この資料から作られた文字起こし（${tx.map(t => t.fileName).join("、")}）も一緒に削除しますか`, [{ label: "文字起こしも削除", value: "both", danger: true }, { label: "資料だけ削除", value: "one" }, { label: "キャンセル", value: "no" }]); if (r === "no") return; both = r === "both"; }
+    else if (await ask("この資料を削除しますか？ 元に戻せません。", [{ label: "削除する", value: "ok", danger: true }, { label: "キャンセル", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G005", "deleteMaterial", { materialId: m.materialId, withTranscript: both });
     if (r.error) return toast(r.error);
-    await reload(); toast("資料を削除したよ"); back();
+    await reload(); toast("資料を削除しました"); back();
   };
   const others = materials.filter(x => x.itemId === m.itemId && x.materialId !== m.materialId); // 並べられる資料（同じ学習項目のほかの資料）
   const side = others.some(x => x.materialId === sideId) ? sideId : null; // 選んでいた資料が消されたら、選んでいないことにする
@@ -85,9 +85,9 @@ export function TranscriptEdit() {
   if (!m || !account) return null;
   const back = () => nav({ ...route, s: "G005" });
   const apply = () => { // 修正指示「元→先」で、文字起こしの文字をまとめて置き換える
-    const r = parseReplace(ins); if (!r) return setMsg("「元の文字→直した文字」の形で入力してください");
+    const r = parseReplace(ins); if (!r) return setMsg("「置換前→置換後」の形式で入力してください");
     const n = (text ?? "").split(r.from).length - 1; if (!n) return setMsg("その文字は見つかりませんでした");
-    setText(replaceText(text ?? "", r)); setMsg(`${n}か所を直しました`); setIns("");
+    setText(replaceText(text ?? "", r)); setMsg(`${n}か所を置換しました`); setIns("");
   };
   // 11/24：「元の資料」「文字起こし」の欄は、画面の下まで使って表示する（cls="tedit"。index.css の .tedit）
   return <Shell cls="tedit" center={<>
@@ -97,7 +97,7 @@ export function TranscriptEdit() {
     right={<><div className="row" style={{ justifyContent: "space-between" }}><button className="btn pri" onClick={async () => {
       const r = await controller.handleRequest("G006", "correctTranscript", { materialId: m.materialId, text: text ?? "" });
       if (r.error) return toast(r.error);
-      toast("上書き保存したよ"); back();
-    }}>確定</button><button className="btn line" onClick={back}>キャンセル</button></div>
-      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="修正指示（例：兀→元）" value={ins} onChange={e => { setIns(e.target.value); setMsg(""); }} onKeyDown={e => e.key === "Enter" && apply()} /></>} />;
+      toast("保存しました"); back();
+    }}>保存</button><button className="btn line" onClick={back}>キャンセル</button></div>
+      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="文字を一括置換（例：兀→元）" value={ins} onChange={e => { setIns(e.target.value); setMsg(""); }} onKeyDown={e => e.key === "Enter" && apply()} /></>} />;
 }

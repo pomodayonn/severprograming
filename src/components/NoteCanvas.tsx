@@ -307,11 +307,11 @@ function FormatBar({ sel, count, onAdd, onAlign, onCopy, onLayer, onRemove, onPr
   const align = sel ? parseRich(sel.style).align ?? "left" : "left";
   const B = ({ cmd, v, label, title, cls = "", after }: { cmd: string; v?: string; label: React.ReactNode; title: string; cls?: string; after?: () => void }) =>
     <button className={"fb " + cls} disabled={!canText} onMouseDown={keep} onClick={() => { exec(cmd, v); after?.(); }} title={title} aria-label={title}>{label}</button>;
-  const AL = { left: ["⇤", "左にそろえる"], center: ["≡", "まん中にそろえる"], right: ["⇥", "右にそろえる"] } as const;
+  const AL = { left: ["⇤", "左にそろえる"], center: ["≡", "中央揃え"], right: ["⇥", "右にそろえる"] } as const;
   const item = (label: string, onClick: () => void, close: () => void, opt: { disabled?: boolean; cls?: string; title?: string } = {}) =>
     <button className={"fitem " + (opt.cls ?? "")} role="menuitem" disabled={opt.disabled} onMouseDown={keep} onClick={() => { close(); onClick(); }} title={opt.title}>{label}</button>;
   return (<div className="fbar" role="toolbar" aria-label="ノートの操作">
-    {onAdd && <Menu label="＋ 置く" title="ノートに部品を置く" cls="put">{close => (<>
+    {onAdd && <Menu label="＋ 追加" title="ノートに部品を追加" cls="put">{close => (<>
       <span className="fhead">枠</span>
       {(Object.keys(FT) as FrameType[]).map(k => <button key={k} className="fitem" role="menuitem" onClick={() => { close(); onAdd(PartType.FRAME, k); }}><i className="fdot" style={{ background: FT[k].c }} />{FT[k].n}</button>)}
       <span className="fhead">そのほか</span>
@@ -334,7 +334,7 @@ function FormatBar({ sel, count, onAdd, onAlign, onCopy, onLayer, onRemove, onPr
       title={k === "ul" ? "箇条書き（・）を付ける・外す" : "番号（1. 2. …）を付ける・外す"} aria-label={k === "ul" ? "箇条書き" : "番号付きリスト"}>{k === "ul" ? "・≡" : "1."}</button>)}
     {count > 1 && <span className="fcount">{count}個を選択中</span>}
     <Menu label="⋯" title="そのほかの操作" cls="more">{close => (<>
-      {item("書式を消す", () => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b) } })), close, { disabled: !canText, title: "選んだ文字の書式（太字・色・マーカー・大きさなど）を全部消す" })}
+      {item("書式をクリア", () => editSel((_t, r, a, b) => ({ rich: { ...r, runs: clearFmt(r.runs, a, b) } })), close, { disabled: !canText, title: "選択した文字の書式を解除" })}
       <span className="fhead">選んでいる部品{count > 1 ? `（${count}個）` : ""}</span>
       {item("複製", onCopy, close, { disabled: !count, title: "Ctrl＋C → Ctrl＋V でもできます" })}
       {item("前面へ", () => onLayer("front"), close, { disabled: !count })}
@@ -488,7 +488,7 @@ export function NoteCanvas({ parts, onChange, onAdd, title = "ノート" }: { pa
     <div className="cover zbar">
       <FormatBar sel={selPart} count={selParts.length} onAdd={onAdd && ((t, f) => { const n = onAdd(t, f); if (n) setSelId(n.partId); })} onAlign={setAlign}
         onCopy={() => paste(selParts)} onLayer={layer} onRemove={removeSel} onPrint={() => { const c = wrap.current?.querySelector<HTMLElement>(".canvas"); if (c) printNote(c, Math.max(W, 400), title); }} />
-      {over && z * W > cw + 1 && <span className="mute">右にはみ出した部品があります。横にスクロールするか「全体」で見られます。</span>}<span className="sp" />
+      {over && z * W > cw + 1 && <span className="mute">ノートの右側に続きがあります。横スクロールまたは「全体」で確認できます。</span>}<span className="sp" />
       {finding ? <FindBar parts={parts} root={() => wrap.current} inputRef={findInput} onPick={id => setSelIds([id])} onClose={() => setFinding(false)} />
         : <button className="btn sm line" onClick={() => { setFinding(true); setTimeout(() => findInput.current?.focus(), 0); }} title="ノートの中を検索（Ctrl＋F）">検索</button>}
       <button className="btn sm line" onClick={() => changeZoom(stepZoom(z, -1))} disabled={z <= 0.5} aria-label="ノートを小さく" title="小さく">−</button>

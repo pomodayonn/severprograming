@@ -208,8 +208,8 @@ export function LinkDialog({
           value={q}
           disabled={busy}
           onChange={e => setQ(e.target.value)}
-          placeholder="学習項目の名前で探す"
-          aria-label="学習項目の名前で探す"
+          placeholder="学習項目を検索"
+          aria-label="学習項目を検索"
         />
 
         <div className="lklist" role="table">
@@ -292,7 +292,7 @@ export function LinkDialog({
               style={{ padding: "6px 4px" }}
             >
               {others.length
-                ? "その名前の学習項目はありません。"
+                ? "該当する学習項目がありません。"
                 : "ほかの学習項目がまだありません。"}
             </p>
           )}
@@ -310,7 +310,7 @@ export function LinkDialog({
             disabled={busy}
             onClick={close}
           >
-            やめる
+            キャンセル
           </button>
 
           <button
@@ -318,7 +318,7 @@ export function LinkDialog({
             disabled={busy}
             onClick={ok}
           >
-            {busy ? "保存中…" : "確定"}
+            {busy ? "保存中…" : "保存"}
           </button>
         </div>
       </div>

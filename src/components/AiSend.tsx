@@ -59,22 +59,22 @@ export function AiSend() {
   const consume = (n: number) => { addLocalUsage(n); void refresh(); };
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
   const confirmCalls = async (): Promise<number | null> => {
-    if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
+    if (!sel.length || !text.trim()) { setMsg("送信する資料やノートを選択してください"); return null; }
     const n = calls(text);
-    if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
-    if (n > 1 && await ask(`1万文字を超えているため、分けて送ると利用回数を余分に消費します（この内容では${n}回分）`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
+    if (remaining !== null && n > remaining) { setMsg(n > 1 ? "AIの残り利用回数が不足しています。送信内容を減らしてください。" : "本日のAI利用上限に達しました"); return null; }
+    if (n > 1 && await ask(`送信内容が1万文字を超えています。分割送信にAI利用回数を${n}回分使用します。続けますか？`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
     return n;
   };
   const send = async () => {
     if (!types.length) return setMsg("枠の種類を選んでください");
-    if (!online) return setMsg("インターネットにつながっていません。つながってから送信してください");
+    if (!online) return setMsg("オフラインです。接続後に送信してください。");
     const n = await confirmCalls(); if (!n) return; setBusy(true); setMsg("");
     // 11/20：Controller → AiSummaryManager.summarize でAIに送る（1万文字を超えたら分けて送る）
     const r = await controller.handleRequest("G007", "summarize", { studentId: account?.studentId ?? "", itemId: item.itemId, text, frameTypes: types, parts: noteParts ?? [] });
     setBusy(false);
     if (r.error) { setMsg(r.error); void refresh(); return; }
     const ps = r.data as Suggestion[]; consume(n); setProps(ps); setPick(ps.map((_, i) => i)); setTab("prop");
-    if (!ps.length) setMsg("提案が作れませんでした。送る内容を見直してください");
+    if (!ps.length) setMsg("AIの整理結果を取得できませんでした。送信内容を確認してください。");
   };
   const decide = async () => { const n = await confirmCalls(); if (!n) return; setTmp({ send: text, sendCalls: n }); nav({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId }); };
   const approve = async () => {
@@ -86,39 +86,39 @@ export function AiSend() {
       if (r.error) return setMsg(r.error);
       setDraft(item.itemId, r.data as NotePart[]); // 反映するが保存はしない（学習画面の「保存」で保存）
     }
-    toast(ps.length ? "提案をノートに反映したよ（保存は学習画面で）" : "提案をすべて捨てたよ"); nav({ s: "G004", subjectId: subject.subjectId, itemId: item.itemId });
+    toast(ps.length ? "ノートに反映しました。学習画面で保存してください。" : "AIの整理結果を破棄しました"); nav({ s: "G004", subjectId: subject.subjectId, itemId: item.itemId });
   };
   const replace = () => { // 編集指示「元→先」
-    const r = parseReplace(ins); if (!r) return setMsg("「元の文字→直した文字」の形で入力してください");
+    const r = parseReplace(ins); if (!r) return setMsg("「置換前→置換後」の形式で入力してください");
     const f = (s: string) => replaceText(s, r);
     if (tab === "prop") setProps(props.map(p => new Suggestion({ ...p, content: f(p.content) }))); else setText(f(text));
-    setIns(""); setMsg("直しました");
+    setIns(""); setMsg("置換しました");
   };
   const refText = parts.find(p => p.id === ref)?.text;
-  const tabs: [typeof tab, string][] = essay ? [["src", "元にする内容"], ["send", "送る内容"]] : [["src", "元にする内容"], ["send", "送る内容"], ["prop", "提案"]];
+  const tabs: [typeof tab, string][] = essay ? [["src", "送信元を選択"], ["send", "送信内容"]] : [["src", "送信元を選択"], ["send", "送信内容"], ["prop", "AIの整理結果"]];
   return <Shell center={<>
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
-    {tab === "src" && <div className="vbox">{parts.length === 0 && <p className="mute">元にできる内容がありません。資料をアップロードするか、ノートに枠を作ってください。</p>}
-      {parts.length > 0 && <div className="row" style={{ marginBottom: 6 }}><button className="btn sm" onClick={() => choose(parts.map(p => p.id))}>すべて選択</button><button className="btn sm line" onClick={() => choose([])}>選択を外す</button></div>}
+    {tab === "src" && <div className="vbox">{parts.length === 0 && <p className="mute">送信できる内容がありません。資料を追加するか、ノートの枠に内容を入力してください。</p>}
+      {parts.length > 0 && <div className="row" style={{ marginBottom: 6 }}><button className="btn sm" onClick={() => choose(parts.map(p => p.id))}>すべて選択</button><button className="btn sm line" onClick={() => choose([])}>選択解除</button></div>}
       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
-      <p className="mute">選び直すと、「送る内容」の編集はやり直しになります。</p></div>}
-    {tab === "send" && <div className="vbox"><textarea className="tx" value={text} onChange={e => setText(e.target.value)} placeholder="ここに送る内容が入ります。送りたくない文字は削除してください" />
+      <p className="mute">送信元を選び直すと、「送信内容」の編集はリセットされます。</p></div>}
+    {tab === "send" && <div className="vbox"><textarea className="tx" value={text} onChange={e => setText(e.target.value)} placeholder="送信内容を確認・編集できます" />
       <div className="mute">{lengthOf(text).toLocaleString()}文字（1回あたり1万文字まで）　※AI処理のため送信内容が外部サービスに送られる場合があります。個人情報や機密情報は送信しないでください。</div></div>}
-    {tab === "prop" && <div className="vbox">{!props.length && <p className="mute">まだ提案がありません。「送る内容」から送信してください。</p>}
+    {tab === "prop" && <div className="vbox">{!props.length && <p className="mute">AIの整理結果がありません。「送信内容」から送信してください。</p>}
       {props.map((p, i) => { const cur = frames.find(f => f.partId === p.targetPartId); return (<div key={i} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
-        <label className="ck"><input type="checkbox" checked={pick.includes(i)} onChange={e => setPick(e.target.checked ? [...pick, i] : pick.filter(x => x !== i))} /><b>{frameName(p)}</b>　{cur ? "（もとの枠の書き換え）" : "（新しい枠）"}</label>
-        <div className={cur ? "two" : ""}>{cur && <div><div className="mute">いまの中身</div><pre className="txt">{frameText(cur)}</pre></div>}
-          <div>{cur && <div className="mute">提案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.content}
+        <label className="ck"><input type="checkbox" checked={pick.includes(i)} onChange={e => setPick(e.target.checked ? [...pick, i] : pick.filter(x => x !== i))} /><b>{frameName(p)}</b>　{cur ? "（既存の枠を更新）" : "（新しい枠）"}</label>
+        <div className={cur ? "two" : ""}>{cur && <div><div className="mute">変更前</div><pre className="txt">{frameText(cur)}</pre></div>}
+          <div>{cur && <div className="mute">変更案</div>}<textarea className="tx" style={{ minHeight: 90 }} value={p.content}
             onChange={e => setProps(props.map((x, j) => j !== i ? x : new Suggestion({ ...x, content: e.target.value })))} /></div></div></div>); })}</div>}
-    {set && !essay && <div className="pop"><h3>設定　振り分ける枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
-    <AiWait busy={busy} what="AIがまとめています" />
-    <div className="mute" style={{ marginTop: 8 }}>今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回{essay && "　（記述テストでは、利用回数はテストを作るときに使います）"}{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
-    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "送信"}</button>}{/* 11/25：記述テストのときは「設定」（設定できるものがない）の代わりに「決定」を置く。前は「決定」だけ画面の上にあって迷いやすかった */}
-      {essay ? <button className="btn pri lg" onClick={decide}>決定</button> : <button className="btn line" onClick={() => setSet(!set)}>設定</button>}
-      {!essay && <button className="btn pri lg" disabled={tab !== "prop"} onClick={approve}>承認</button>}</span>
-      <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("提案をすべて捨てたよ"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.subjectId, itemId: item.itemId }); }}>キャンセル</button></div></>}
-    right={<><h3>参照</h3><div className="mute">ストレージの資料とノートの枠。押すと中身を見られます（AIの提案と見比べるとき）</div>
+    {set && !essay && <div className="pop"><h3>出力する枠の種類</h3>{(Object.keys(FT) as FrameType[]).map(k => <label key={k} className="ck"><input type="checkbox" checked={types.includes(k)} onChange={e => setTypes(e.target.checked ? [...types, k] : types.filter(x => x !== k))} />{FT[k].n}</label>)}</div>}
+    <AiWait busy={busy} what="AIでノートを整理中" />
+    <div className="mute" style={{ marginTop: 8 }}>本日のAI利用：残り {remaining ?? "…"} / {limit} 回{essay && "（記述テスト作成時に消費します）"}{!online && "　（オフラインのため、AIは使えません）"}</div>{msg && <div className="err">{msg}</div>}
+    <div className="bar2 stick"><span className="row">{!essay && <button className="btn ai lg" disabled={busy || tab === "prop" || !online} onClick={send}>{busy ? "送信中…" : "AIに送信"}</button>}{/* 11/25：記述テストのときは「設定」（設定できるものがない）の代わりに「決定」を置く。前は「決定」だけ画面の上にあって迷いやすかった */}
+      {essay ? <button className="btn pri lg" onClick={decide}>送信内容を確定</button> : <button className="btn line" onClick={() => setSet(!set)}>設定</button>}
+      {!essay && <button className="btn pri lg" disabled={tab !== "prop"} onClick={approve}>選択内容をノートに反映</button>}</span>
+      <button className="btn line" onClick={async () => { if (tab === "prop" && props.length) { toast("AIの整理結果を破棄しました"); } await go({ s: essay ? "G008" : "G004", subjectId: subject.subjectId, itemId: item.itemId }); }}>キャンセル</button></div></>}
+    right={<><h3>参照</h3><div className="mute">資料やノートの元の内容を確認できます。</div>
       <div className="col" style={{ gap: 2 }}>{parts.map(p => <button key={p.id} className="toc" onClick={() => setRef(p.id === ref ? null : p.id)}>{p.label}</button>)}</div>
       {refText && <pre className="txt" style={{ fontSize: 12, borderTop: "1px solid #cdbfe0", paddingTop: 6 }}>{refText}</pre>}
-      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="編集指示（例：兀→元）" value={ins} onChange={e => setIns(e.target.value)} onKeyDown={e => e.key === "Enter" && replace()} /></>} />;
+      <span className="sp" />{msg && <div className="mute">{msg}</div>}<input className="inp" placeholder="文字を一括置換（例：兀→元）" value={ins} onChange={e => setIns(e.target.value)} onKeyDown={e => e.key === "Enter" && replace()} /></>} />;
 }

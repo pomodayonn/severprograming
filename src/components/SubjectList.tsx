@@ -42,8 +42,8 @@ export function SubjectList() {
     const targets = subjects.filter(s => ids.includes(s.subjectId)); if (!targets.length || busy) return;
     const c = targets.map(s => countsOf(s.subjectId, items, tests, materials)).reduce((a, b) => ({ items: a.items + b.items, tests: a.tests + b.tests, materials: a.materials + b.materials }));
     const what = targets.length === 1 ? `「${targets[0].subjectName}」` : `選んだ ${targets.length} 件の科目（${targets.map(s => s.subjectName).join("・")}）`;
-    const inside = c.items ? `中の学習項目 ${c.items} 件・テスト ${c.tests} 件・資料 ${c.materials} 件と、ノートもすべて消えて、戻せません。` : "中に学習項目はありません。";
-    if (await ask(`${what}を削除してよいですか。${inside}`, [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    const inside = c.items ? `学習項目 ${c.items} 件、テスト ${c.tests} 件、資料 ${c.materials} 件、およびノートが削除されます。元に戻せません。` : "中に学習項目はありません。";
+    if (await ask(`${what}を削除しますか？ ${inside}`, [{ label: "削除する", value: "ok", danger: true }, { label: "キャンセル", value: "no" }]) !== "ok") return;
     setBusy(true);
     let done = 0;
     for (const s of targets) {
@@ -54,20 +54,20 @@ export function SubjectList() {
     setBusy(false); setChecked([]);
     await reload(); // 資料（ストレージ）も SubjectManager → LearningItemManager.deleteItem が一緒に消す
     if (cur && ids.includes(cur.subjectId)) nav({ s: "G003" });
-    if (done) toast(done === 1 ? "科目を削除したよ" : `${done} 件の科目を削除したよ`);
+    if (done) toast(done === 1 ? "科目を削除しました" : `${done} 件の科目を削除しました`);
   };
   const toggle = (id: string) => setChecked(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id]);
   const allOn = subjects.length > 0 && subjects.every(s => checked.includes(s.subjectId));
   return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
     <div className="row"><h2>科目</h2><span className="sp" /><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>
     {!loaded && <p className="mute loading">読み込み中…</p>}{/* 11/22：ログインした直後、端末のデータを読み終わるまで */}
-    {loaded && !subjects.length && <p className="mute">科目がまだありません。「科目の追加」から作ってみよう。</p>}
-    {subjects.length > 0 && !cur && <p className="mute">左の一覧か、下の「科目の一覧」から科目を選んでください。</p>}
+    {loaded && !subjects.length && <p className="mute">科目がありません。「科目の追加」から登録してください。</p>}
+    {subjects.length > 0 && !cur && <p className="mute">一覧から科目を選択してください。</p>}
     {cur && <div className="box"><h3>{cur.subjectName}</h3><p className="mute">学習項目 {curItems.length} 件</p>
       <div className="row"><button className="btn pri lg" onClick={() => go({ s: "G004", subjectId: cur.subjectId, itemId: curItems[0]?.itemId })}>この科目を開く</button><button className="btn" onClick={edit}>名前の編集</button><button className="btn danger" disabled={busy} onClick={() => del([cur.subjectId])}>削除</button></div></div>}
     {subjects.length > 0 && <div className="box slist">
       <div className="row"><h4>科目の一覧</h4><span className="sp" />
-        <label className="chk"><input type="checkbox" checked={allOn} onChange={() => setChecked(allOn ? [] : subjects.map(s => s.subjectId))} />すべて選ぶ</label>
+        <label className="chk"><input type="checkbox" checked={allOn} onChange={() => setChecked(allOn ? [] : subjects.map(s => s.subjectId))} />すべて選択</label>
         <button className="btn danger" disabled={!checked.length || busy} onClick={() => del(checked)}>{busy ? "削除中…" : `選んだ科目を削除${checked.length ? `（${checked.length} 件）` : ""}`}</button></div>
       {subjects.map(s => { const c = countsOf(s.subjectId, items, tests, materials); return (
         <div key={s.subjectId} className={"srow" + (s.subjectId === cur?.subjectId ? " on" : "")}>

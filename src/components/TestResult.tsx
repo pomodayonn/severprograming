@@ -48,9 +48,9 @@ export function TestResult() {
   const essay = test.testType === TestType.ESSAY, canAnswer = !scored && !!att;
   const useAi = () => { addLocalUsage(1); void refresh(); };
   const expl = async () => {
-    if (q.explanation || busy) return; if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
-    if (!online) return setMsg("インターネットにつながっていません。解説はAIで作るので、つながってから試してください");
-    setBusy(true); setWait("AIが解説を書いています");
+    if (q.explanation || busy) return; if (remaining !== null && remaining < 1) return setMsg("本日のAI利用上限に達しました");
+    if (!online) return setMsg("オフラインです。AI解説の作成には接続が必要です。");
+    setBusy(true); setWait("AI解説を作成中");
     const r = await controller.handleRequest("G010", "explain", { testId: test.testId, questionId: q.questionId }); void refresh();
     setBusy(false);
     if (r.error) return setMsg(r.error);
@@ -71,35 +71,35 @@ export function TestResult() {
     setBusy(false);
     if (r.error) return setMsg(r.error);
     await reload(); // テストが変わるので、上の useEffect が受験も読み直す
-    close(); toast("直したよ");
+    close(); toast("変更を保存しました");
   };
   const aiFix = async () => {
     if (fix !== "question" && fix !== "expl") return;
-    if (remaining !== null && remaining < 1) return setMsg("今日はこれ以上使えません");
-    if (!online) return setMsg("インターネットにつながっていません。AIで直すのは、つながってから試してください");
-    setBusy(true); setWait("AIが直しています");
+    if (remaining !== null && remaining < 1) return setMsg("本日のAI利用上限に達しました");
+    if (!online) return setMsg("オフラインです。AIでの再生成には接続が必要です。");
+    setBusy(true); setWait("AIで再生成中");
     const p = { testId: test.testId, questionId: q.questionId, extra };
     const r = fix === "question" ? await controller.handleRequest("G010", "regenerateQuestion", p) : await controller.handleRequest("G010", "regenerateExplanation", p);
     setBusy(false);
     if (r.error) { void refresh(); return setMsg(r.error); }
     useAi(); await reload();
     if (fix === "question") { const nq = r.data as Question; setF1(nq.questionText); setF2(nq.modelAnswer); } else setF1(r.data as string);
-    setMsg(""); toast("AIで直して保存したよ");
+    setMsg(""); toast("AIで再生成し、保存しました");
   };
   const okCount = scored && att ? att.answers.filter(a => a.correct).length : null;
   return <Shell right={<><div className="box" style={{ marginTop: 0 }}><h3>模範解答</h3><div>{att || list ? q.modelAnswer : "（解答するとここに表示されます）"}</div></div>
-      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "直すのをやめる" : "直す"}</button><button className="btn ai" disabled={busy} onClick={expl}>解説</button></span>
+      <span className="row" style={{ alignSelf: "flex-end" }}><button className="btn line" onClick={() => fix ? close() : open(essay ? "question" : canAnswer ? "answer" : "expl")}>{fix ? "編集を閉じる" : "編集"}</button><button className="btn ai" disabled={busy} onClick={expl}>AI解説を作成</button></span>
       {q.explanation && <div className="pop" style={{ whiteSpace: "pre-wrap" }}>{q.explanation}</div>}
       {fix && <div className="pop">
-        <b>直す内容</b>
+        <b>編集する項目</b>
         <label className="ck"><input type="radio" checked={fix === "question"} disabled={!essay} onChange={() => open("question")} />問題と模範解答</label>
         <label className="ck"><input type="radio" checked={fix === "answer"} disabled={!canAnswer} onChange={() => open("answer")} />自分の解答{att ? `（第${att.attemptNo}回）` : ""}</label>
         <label className="ck"><input type="radio" checked={fix === "expl"} onChange={() => open("expl")} />解説</label>
-        {!essay && <div className="mute">単語テストの問題は、ノートの単語枠で直してください{scored ? "。「意味→用語」は採点があるので、自分の解答は直せません" : ""}</div>}
+        {!essay && <div className="mute">単語テストの出題元はノートの単語枠から編集できます{scored ? "。「意味→用語」は自動採点のため、解答は編集できません" : ""}</div>}
         {fix === "question" && <><div className="mute">問題</div><textarea className="tx fit" rows={3} value={f1} onChange={e => setF1(e.target.value)} /><div className="mute">模範解答</div><textarea className="tx fit" rows={3} value={f2} onChange={e => setF2(e.target.value)} /></>}
         {fix !== "question" && <textarea className="tx fit" rows={4} value={f1} onChange={e => setF1(e.target.value)} placeholder={fix === "expl" ? "解説を入力" : "解答を入力"} />}
-        {fix !== "answer" && <><div className="mute">AIへの追加の指示（空なら最初から作り直す）</div><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} placeholder="例：もっと短く" /></>}
-        <span className="row"><button className="btn pri" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn ai" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで直す"}</button>}</span>
+        {fix !== "answer" && <><div className="mute">AIへの追加指示（任意・空欄なら作り直します）</div><input className="inp" value={extra} onChange={e => setExtra(e.target.value)} placeholder="例：もっと短く" /></>}
+        <span className="row"><button className="btn pri" disabled={busy} onClick={saveFix}>保存</button>{fix !== "answer" && <button className="btn ai" disabled={busy} onClick={aiFix}>{busy ? "作成中…" : "AIで再生成"}</button>}</span>
       </div>}
       <AiWait busy={busy && !!wait} what={wait} />
       {msg && <div className="err">{msg}</div>}</>}
@@ -107,7 +107,7 @@ export function TestResult() {
       <div className="row"><h2 style={{ margin: 0 }}>結果</h2>{okCount !== null && <b>{okCount} / {qs.length} 問正解</b>}{okCount !== null && qs.length > 0 && <span className="score" role="img" aria-label={`正解率 ${Math.round(okCount / qs.length * 100)}%`}><i style={{ width: `${okCount / qs.length * 100}%` }} /></span>}<span className="mute">{KIND[test.testType]}{att ? `　第${att.attemptNo}回　${fmt(att.takenAt)}` : list ? `　最後に解いた日時 ${fmt(test.lastTakenAt)}` : ""}</span>
         {atts.length > 1 && <select className="inp" style={{ width: "auto", display: "inline-block", margin: 0 }} value={att?.attemptId ?? ""} onChange={e => { setAttemptId(e.target.value); close(); }} aria-label="受験を選ぶ">{atts.map(a => <option key={a.attemptId} value={a.attemptId}>第{a.attemptNo}回（{fmt(a.takenAt)}）</option>)}</select>}</div>
       <div className="qtabs" style={{ marginTop: 8 }}>{qs.map((x, i) => { const r = scored && att ? answerOf(att, x.questionId)?.correct : undefined; return <button key={x.questionId} className={"btn sm" + (i === idx ? " fill" : " line") + (r === true ? " okb" : r === false ? " ngb" : "")} onClick={() => { setIdx(i); close(); }} aria-label={`第${i + 1}問${r === true ? "（正解）" : r === false ? "（不正解）" : ""}`}>第{i + 1}問{r === true ? " ○" : r === false ? " ×" : ""}</button>; })}</div>
-      <div className="vbox"><h3>自身の回答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.questionText}</div>
-        {att ? <div style={{ whiteSpace: "pre-wrap" }}>{mine?.studentAnswer || "（未回答）"}　{scored && (mine?.correct ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">まだ解いていません。「解き直し」で解けます。</p>}</div>
+      <div className="vbox"><h3>自分の解答</h3><div className="mute">問題</div><div style={{ marginBottom: 8 }}>{q.questionText}</div>
+        {att ? <div style={{ whiteSpace: "pre-wrap" }}>{mine?.studentAnswer || "（未回答）"}　{scored && (mine?.correct ? <span className="ok">正解</span> : <span className="ng">不正解</span>)}</div> : <p className="mute">受験履歴がありません。「解き直し」から受験できます。</p>}</div>
       <div className="bar2"><button className="btn line" onClick={() => go({ s: "G004", ...base })}>終了</button><button className="btn pri" onClick={() => go({ s: "G011", ...base })}>テスト一覧へ戻る</button></div></>} />;
 }

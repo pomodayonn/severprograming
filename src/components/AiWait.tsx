@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { Mascot } from "./Mascot";
 
-export function AiWait({ busy, what = "AIが考えています" }: { busy: boolean; what?: string }) {
+export function AiWait({ busy, what = "AI処理中" }: { busy: boolean; what?: string }) {
   const [sec, setSec] = useState(0);
   useEffect(() => {
     if (!busy) { setSec(0); return; }
@@ -17,7 +17,7 @@ export function AiWait({ busy, what = "AIが考えています" }: { busy: boole
   if (!busy) return null;
   return (<div className="aiwait" role="status" aria-live="polite"><Mascot size={44} mood={sec >= 8 ? "sleepy" : "happy"} />
     <div><b>{what}…</b> <span className="mute">{sec}秒</span>
-      {sec >= 8 && <div className="mute">サーバーの起動やAIの応答に時間がかかっている可能性があります</div>}
+      {sec >= 8 && <div className="mute">応答に時間がかかっています。サーバーが起動中の場合があります。</div>}
       {sec >= 45 && (
         <div className="mute">
           長い内容は数分かかることがあります。
@@ -42,5 +42,5 @@ export function useOnline(): boolean {
 
 /** オフラインのときだけ、画面の上に帯を出す */
 export function OfflineBar() {
-  return useOnline() ? null : <div className="offline" role="status">オフラインです。ノートの保存は端末にでき、つながったら自動でアカウントに送ります（AIは使えません）</div>;
+  return useOnline() ? null : <div className="offline" role="status">オフラインです。ノートは端末に保存できます。同期とAI機能には接続が必要です。</div>;
 }

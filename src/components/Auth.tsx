@@ -16,14 +16,20 @@ import { Header } from "./Shell";
 
 /** 11/17：初めて来た人にも「何をするサイトか」が分かるように、ログイン・登録の上に説明を出す */
 function About() {
-  return (<div className="about"><p className="lead">講義の資料とノートを1か所にまとめて、<br />AIで整理し、模擬テストで確かめられる学習ノートです</p>
-    <ul><li><i>📝</i>科目・学習項目ごとにノートを作り、資料と並べて書ける</li>
-      <li><i>✦</i>資料やノートをAIが枠ごとに整理して、まとめを提案</li>
-      <li><i>✅</i>単語テスト・記述テストを作って、解き直しもできる</li></ul></div>);
+  return (
+    <div className="about">
+      <p className="lead">授業の資料とノートを、科目ごとにまとめて管理できます。</p>
+      <ul>
+        <li>授業資料を見ながらノートを取る</li>
+        <li>学習項目のつながりを確認する</li>
+        <li>AIでノートを整理し、テストで復習する</li>
+      </ul>
+    </div>
+  );
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (<div className="app"><Header plain /><div className="authwrap"><div className="card"><div className="authlogo"><Mascot size={84} mood="cheer" /></div><About /><div className="ctitle"><mark>{title}</mark></div><div className="cbody">{children}</div></div></div></div>);
+  return (<div className="app"><Header plain /><div className="authwrap"><div className="card"><div className="authlogo"><Mascot size={60} mood="cheer" /></div><h1 className="ctitle">{title}</h1><About /><div className="cbody">{children}</div></div></div></div>);
 }
 
 /** ボタンを Controller に渡し、結果に応じて画面を移るかエラーを出す。送信中は押せなくする */
@@ -53,7 +59,7 @@ export function Login() {
     <label>パスワード<input type="password" value={pass} onChange={e => { setPass(e.target.value); setErr(""); }} onKeyDown={e => e.key === "Enter" && login()} autoComplete="current-password" /></label>
     {err && <div className="err">{err}</div>}
     <div className="row c"><button className="btn pri lg wide" disabled={busy} onClick={login}>{busy ? "ログイン中…" : "ログイン"}</button></div>
-    <div className="row c"><span className="mute">はじめての人は</span><button className="btn line" disabled={busy} onClick={() => send("frastLoginButton")}>新規登録</button></div>
+    <div className="row c"><span className="mute">初めて利用する方</span><button className="btn line" disabled={busy} onClick={() => send("frastLoginButton")}>新規登録</button></div>
     <GoogleButton busy={busy} onClick={() => send("googleLogin")} /></Card>);
 }
 
@@ -65,8 +71,8 @@ export function Register() {
   return (<Card title="新規登録">
     <label>メールアドレス<input type="email" value={mail} onChange={clear(setMail)} autoComplete="email" /></label>
     <label>パスワード<input type="password" value={pass} onChange={clear(setPass)} autoComplete="new-password" /></label>
-    <label>パスワード　再入力<input type="password" value={passConfirm} onChange={clear(setPassConfirm)} onKeyDown={e => e.key === "Enter" && register()} autoComplete="new-password" /></label>
-    <p className="mute hint">パスワードは8〜16文字で、英字と数字を両方入れてください</p>
+    <label>パスワード（確認）<input type="password" value={passConfirm} onChange={clear(setPassConfirm)} onKeyDown={e => e.key === "Enter" && register()} autoComplete="new-password" /></label>
+    <p className="mute hint">8〜16文字の英数字（英字・数字の両方が必要）</p>
     {err && <div className="err">{err}</div>}
     <div className="row c"><button className="btn pri lg wide" disabled={busy} onClick={register}>{busy ? "登録中…" : "登録"}</button></div>
     <GoogleButton busy={busy} onClick={() => send("googleLogin")} />

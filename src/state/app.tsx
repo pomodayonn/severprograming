@@ -205,8 +205,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (aRef.current?.studentId !== sid) return;
       const r = await controller.handleRequest("G004", "resolveNoteConflict", { studentId: sid, itemId: c.itemId, choice: choice === "theirs" ? "theirs" : "mine" });
       if (r.error) { toast(r.error); return; }
-      if (choice === "theirs") { setDrafts(p => { if (!(c.itemId in p)) return p; const n = { ...p }; delete n[c.itemId]; return n; }); toast("別の端末の内容にしたよ"); }
-      else toast("上書きして保存したよ");
+      if (choice === "theirs") { setDrafts(p => { if (!(c.itemId in p)) return p; const n = { ...p }; delete n[c.itemId]; return n; }); toast("クラウドのノートを反映しました"); }
+      else toast("上書き保存処理が完了しました");
       await reload();
     } finally { asking.current.delete(c.noteId); }
   }, [ask, reload]);
@@ -230,9 +230,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (results.includes("unconfirmed")) {
-        toast("端末に保存しました。クラウドへの同期を確認できませんでした");
+        toast("端末に保存しました。クラウドへの同期は未確認です。");
       } else {
-        toast("端末に保存しました（同期処理は正常終了）");
+        toast("端末に保存しました。同期処理も完了しました。");
       }
     } else {
       setDrafts({});
@@ -267,7 +267,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       r = await controller.handleRequest(s, "logoutButton", { clearLocal: true, force: true });
     }
     if (r.error) { toast(r.error); return; }
-    if (v === "clear") toast("この端末のデータを消してログアウトしたよ");
+    if (v === "clear") toast("端末のデータを削除してログアウトしました");
     close();
   }, [guard, ask, close]);
 
@@ -295,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       await reload();
-      toast("最新にしたよ");
+      toast("クラウドから更新しました");
     } finally {
       syncBusy.current = false;
       setRefreshing(false);
@@ -330,9 +330,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         | undefined;
 
       if (result?.syncConfirmed === true) {
-        toast("保存済みデータの同期処理が正常に終了しました");
+        toast("同期処理が完了しました");
       } else {
-        toast("同期を確認できませんでした。端末のデータは保持されています");
+        toast("同期は未確認です。端末のデータは保持されています。");
       }
     } catch {
       if (aRef.current?.studentId === sid) {
@@ -371,7 +371,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {pop && <div className="ov"><div className="dlg" role="dialog"><h3>{pop.title}</h3>
         <input autoFocus className="inp" value={pop.val} onChange={e => setPop({ ...pop, val: e.target.value, err: "" })} onKeyDown={e => { if (e.key === "Enter") submitPop(); }} placeholder="50文字まで" />
         {pop.err && <div className="err">{pop.err}</div>}
-        <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>やめる</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
+        <div className="row"><button className="btn line" onClick={() => { pop.res(null); setPop(null); }}>キャンセル</button><button className="btn pri" onClick={submitPop}>決定</button></div></div></div>}
     </C.Provider>
   );
 }

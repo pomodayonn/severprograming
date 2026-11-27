@@ -29,18 +29,18 @@ export function Header({ plain = false }: { plain?: boolean }) {
             className="pill"
             onClick={retrySync}
             disabled={refreshing || retrying}
-            title="この端末に保存済みのデータをクラウドへ送ります"
+            title="端末に保存した変更をクラウドへ送信します"
           >
-            {retrying ? "送信中…" : "同期を再試行"}
+            {retrying ? "送信中…" : "クラウドへ送信"}
           </button>
 
           <button
             className="pill"
             onClick={refresh}
             disabled={refreshing || retrying}
-            title="ほかの端末で変えた内容を受け取ります"
+            title="端末の変更を送信した後、クラウドの内容を取得します"
           >
-            {refreshing ? "受け取り中…" : "最新にする"}
+            {refreshing ? "更新中…" : "クラウドから更新"}
           </button>
         </>
       )}
@@ -73,7 +73,7 @@ export function Tree({ heading, extra }: { heading: string; extra?: (itemId: str
   const isOpen = (id: string) => found ? true : open[id] ?? id === route.subjectId;
   const shown = found ? subjects.filter(s => found.has(s.subjectId)) : subjects;
   return (<><div className="th row"><span>{heading}</span><span className="sp" />{!atList && <button className="link tolist" onClick={() => go({ s: "G003", subjectId: route.subjectId })} title="科目の追加・名前の変更・削除ができる画面">科目一覧へ</button>}{/* 11/25 */}</div>
-    {subjects.length > 0 && <div className="search"><input className="inp" type="text" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Escape" && setQ("")} placeholder="科目・学習項目を検索" aria-label="科目・学習項目を検索" />{q && <button className="link" onClick={() => setQ("")} aria-label="検索を消す">×</button>}</div>}
+    {subjects.length > 0 && <div className="search"><input className="inp" type="text" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Escape" && setQ("")} placeholder="科目・学習項目を検索" aria-label="科目・学習項目を検索" />{q && <button className="link" onClick={() => setQ("")} aria-label="検索をクリア">×</button>}</div>}
     {shown.map(s => (<div key={s.subjectId}>
       <div className={"ts" + (route.s === "G003" && route.subjectId === s.subjectId ? " on" : "")} onClick={() => { setOpen({ ...open, [s.subjectId]: !isOpen(s.subjectId) }); if (route.s === "G003") go({ s: "G003", subjectId: s.subjectId }); }}>{isOpen(s.subjectId) ? "▼" : "▶"} <Hit text={s.subjectName} q={q} /></div>
       {isOpen(s.subjectId) && (found?.get(s.subjectId) ?? itemsOf(items, s.subjectId)).map(i => { const cur = route.s !== "G003" && route.itemId === i.itemId && route.subjectId === s.subjectId;

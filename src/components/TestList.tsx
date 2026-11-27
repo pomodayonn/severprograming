@@ -38,27 +38,27 @@ export function TestList() {
     if (!targets.length) return;
     const one = targets.length === 1 ? rows.find(r => r.t.testId === targets[0]) : undefined;
     const what = one ? `「${one.i.itemName}-${ymd(one.t.createdAt)}」` : `選んだ ${targets.length} 件のテスト`;
-    if (await ask(`${what}を削除してよいですか。解いた結果や解説も消えて、戻せません`, [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    if (await ask(`${what}を削除しますか？ 受験履歴と解説も削除され、元に戻せません。`, [{ label: "削除する", value: "ok", danger: true }, { label: "キャンセル", value: "no" }]) !== "ok") return;
     setBusy(true);
     const r = await controller.handleRequest("G011", "deleteTest", { testIds: targets });
     setBusy(false);
     if (r.error) return toast(r.error);
     setChecked([]); if (sel && targets.includes(sel)) setSel(null);
-    await reload(); toast(targets.length === 1 ? "テストを削除したよ" : `${targets.length} 件のテストを削除したよ`);
+    await reload(); toast(targets.length === 1 ? "テストを削除しました" : `${targets.length} 件のテストを削除しました`);
   };
   return <Shell center={<>
     <div className="ltop"><div className="folders">{subjects.map(s => <div key={s.subjectId} className={"folder" + (s.subjectId === sid ? " on" : "")} onClick={() => changeSubject(s.subjectId)}><i />{s.subjectName}</div>)}</div>
     {rows.length > 0 && <div className="row tlhead">
-      <label className="chk"><input type="checkbox" checked={allOn} onChange={() => setChecked(allOn ? [] : rows.map(r => r.t.testId))} />すべて選ぶ</label>
+      <label className="chk"><input type="checkbox" checked={allOn} onChange={() => setChecked(allOn ? [] : rows.map(r => r.t.testId))} />すべて選択</label>
       <span className="mute">{rows.length} 件</span><span className="sp" />
-      <label className="mute" htmlFor="tsort">並べかえ</label>
+      <label className="mute" htmlFor="tsort">並び順</label>
       <select id="tsort" className="inp sel" value={sort} onChange={e => { const v = e.target.value as TestSort; setSort(v); saveSort(v); }}>{TEST_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
     </div>}</div>
     <div className="vbox" style={{ minHeight: 220 }}>{rows.length === 0 && <p className="mute">テストがまだありません。</p>}
       {rows.map(({ t, i }) => <div key={t.testId} className={"trow" + (sel === t.testId ? " on" : "")} onClick={() => setSel(t.testId)}>
         <input type="checkbox" checked={checked.includes(t.testId)} onClick={e => e.stopPropagation()} onChange={() => toggle(t.testId)} aria-label={`${i.itemName}-${ymd(t.createdAt)} を選ぶ`} />
         <div className="tname"><span>{i.itemName}-{ymd(t.createdAt)}</span>{(() => { const info = `${KIND[t.testType]}・${t.questions.length}問・作成 ${fmt(t.createdAt)}・最後に解いた ${fmt(t.lastTakenAt)}`; return <small className="mute" title={info}>{info}</small>; })()}</div>{(() => { const sc = lastScore(t); return sc && <span className={"tscore" + (sc.ok === sc.total ? " full" : "")} title={`第${sc.attemptNo}回の結果`}>前回 {sc.ok}/{sc.total}</span>; })()}</div>)}</div>
-    <div className="bar2 stick"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(selected), testId: sel!, mode: "list" })}>結果表示</button>
+    <div className="bar2 stick"><span className="row"><button className="btn pri" disabled={!sel} onClick={() => nav({ s: "G010", ...base(selected), testId: sel!, mode: "list" })}>結果を見る</button>
       <button className="btn" disabled={!sel} onClick={() => nav({ s: "G009", ...base(selected), testId: sel!, mode: "retry" })}>解き直し</button>
       <button className="btn danger" disabled={!targets.length || busy} onClick={del}>{busy ? "削除中…" : checked.length > 1 ? `削除（${checked.length} 件）` : "削除"}</button></span>
       <span className="sp" /><button className="btn line" onClick={() => nav({ s: "G004", subjectId: route.subjectId ?? sid, itemId: route.itemId })}>戻る</button></div></>} />;

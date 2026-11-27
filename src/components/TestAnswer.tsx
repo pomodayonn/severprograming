@@ -44,7 +44,7 @@ export function TestAnswer() {
   const base = { subjectId: route.subjectId, itemId: route.itemId };
   const done = async () => {
     const un = ans.filter(a => !a.trim()).length;
-    if (un && await ask("答えていない問題があります。確定しますか", [{ label: "確定", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
+    if (un && await ask("未解答の問題があります。このまま提出しますか？", [{ label: "提出する", value: "ok", primary: true }, { label: "戻る", value: "no" }]) !== "ok") return;
     // TestManager が新しい受験として保存し、「意味→用語」なら採点する（解き直しも保存する）
     setBusy(true); const r = await controller.handleRequest("G009", "submit", { testId: test.testId, answers: ans }); setBusy(false);
     if (r.error) return toast(r.error);
@@ -65,17 +65,17 @@ export function TestAnswer() {
   const next = () => { if (last) void done(); else setIdx(idx + 1); };
   const prev = () => { if (idx > 0) setIdx(idx - 1); };
   keys.current = { next, prev, choose: (n: number) => { if (!kb && choices[n]) set(choices[n]); }, essay };
-  return <Shell right={<><div className="col">{qs.map((q, i) => <div key={q.questionId} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答"}</button></>}
+  return <Shell right={<><div className="col">{qs.map((q, i) => <div key={q.questionId} className={"qn" + (i === idx ? " on" : "")} onClick={() => setIdx(i)}><i />第{i + 1}問{ans[i].trim() ? "　✓" : ""}</div>)}</div><span className="sp" /><button className="btn pri lg" disabled={busy} onClick={done}>{busy ? "保存中…" : "解答を提出"}</button></>}
     center={<>
-      <div className="mute">{KIND[test.testType]}{retry ? "（解き直し：解答は新しい回として保存されます）" : ""}　問 {idx + 1} / {qs.length}</div>
+      <div className="mute">{KIND[test.testType]}{retry ? "（解き直し・新しい受験履歴に保存）" : ""}　問 {idx + 1} / {qs.length}</div>
       <div className="vbox" style={{ marginTop: 6 }}><h3>第{idx + 1}問</h3><div style={{ fontSize: 17 }}>{qs[idx].questionText}</div>
-        {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択{i + 1}<br /><small>{c}</small></button>)}</div>}
+        {!kb && choices.length > 0 && <div className="choices">{choices.map((c, i) => <button key={i} className={"choice" + (ans[idx] === c ? " on" : "")} onClick={() => set(c)}>選択肢{i + 1}<br /><small>{c}</small></button>)}</div>}
         {(kb || essay) && <textarea ref={box} className="tx" style={{ minHeight: essay ? 110 : 60, marginTop: 10 }} value={ans[idx]} onChange={e => set(e.target.value)} placeholder="答えを入力" />}
         <div className="qnav"><button className="btn line" disabled={idx === 0} onClick={prev}>← 前の問題</button>
           <span className="sp" />
-          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答する") : "次の問題へ →"}</button></div>
+          <button className={"btn lg " + (last ? "pri" : ans[idx]?.trim() ? "pri" : "")} disabled={busy} onClick={next}>{last ? (busy ? "保存中…" : "解答を提出") : "次の問題へ →"}</button></div>
         {/* 11/23：説明が3行に折り返していたので、ボタンの下に1行で出す。選択肢の数に合わせて「1〜3」などにする */}
-        <div className="mute keyhint">{essay || kb ? (essay ? "Ctrl＋Enter" : "Enter") : `${choices.length > 1 ? `1〜${choices.length}` : "1"} キーで選んで Enter`}で{last ? "解答" : "次の問題へ"}</div></div>
+        <div className="mute keyhint">{essay || kb ? (essay ? "Ctrl＋Enter" : "Enter") : `${choices.length > 1 ? `1〜${choices.length}` : "1"} キーで選んで Enter`}で{last ? "提出" : "次の問題へ"}</div></div>
       <div className="bar2"><span className="row"><button className="btn line" onClick={quit}>中断する</button></span>
-        {!essay && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択肢にもどす" : "キーボード"}</button>}</div></>} />;
+        {!essay && <button className="btn line" onClick={() => setKb(!kb)}>{kb ? "選択式に切り替え" : "入力式に切り替え"}</button>}</div></>} />;
 }

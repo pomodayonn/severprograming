@@ -38,7 +38,7 @@ const RTABS = [["graph", "関連図"], ["toc", "目次"]] as const;
 
 function SideMaterial({ id }: { id: string | null }) {
   const { materials } = useApp(); const m = materials.find(x => x.materialId === id); const v = useMaterialContent("G004", m?.materialId);
-  return <div className="vbox">{m ? <Viewer type={m.fileType} v={v} /> : <p className="mute">資料を選ぶと、ここに表示します。</p>}</div>;
+  return <div className="vbox">{m ? <Viewer type={m.fileType} v={v} /> : <p className="mute">表示する資料を選択してください。</p>}</div>;
 }
 export function Study() {
   const { materials, subjects, items, prerequisites, notes, tests, reload, route, nav, go, drafts, setDraft, ask, askName, save, account } = useApp();
@@ -81,7 +81,7 @@ export function Study() {
   const step = (back: boolean) => {
     if (!item || !parts || !h) return;
     const cur = hist.current[item.itemId] ?? h, r = back ? undo(cur, parts) : redo(cur, parts);
-    if (!r) return toast(back ? "これより前には戻せません" : "やり直す変更はありません");
+    if (!r) return toast(back ? "元に戻せる変更がありません" : "やり直す変更はありません");
     hist.current[item.itemId] = r.h; setDraft(item.itemId, r.value); setTick(t => t + 1);
   };
   undoKey.current = step;
@@ -103,12 +103,12 @@ export function Study() {
     await reload();
   };
   const del = async () => {
-    if (!item || await ask("この学習項目のノート・資料・テストも削除されます", [{ label: "削除する", value: "ok", danger: true }, { label: "やめる", value: "no" }]) !== "ok") return;
+    if (!item || await ask("学習項目を削除しますか？ ノート・資料・テストも削除され、元に戻せません。", [{ label: "削除する", value: "ok", danger: true }, { label: "キャンセル", value: "no" }]) !== "ok") return;
     const r = await controller.handleRequest("G004", "deleteItem", { itemId: item.itemId });
     if (r.error) return toast(r.error);
     setDraft(item.itemId, null); // 資料（ストレージ）は LearningItemManager.deleteItem が一緒に消す
     await reload();
-    nav({ s: "G004", subjectId: subject.subjectId }); toast("学習項目を削除したよ");
+    nav({ s: "G004", subjectId: subject.subjectId }); toast("学習項目を削除しました");
   };
   // 11/26：つながり（前に学ぶ・次に学ぶ）の窓の「確定」。うまくいかなかったらエラーの文を返し、窓は開いたまま
     const saveLinks = async (
@@ -133,7 +133,7 @@ export function Study() {
 
     await reload();
     setLinking(false);
-    toast("つながりを端末に保存したよ");
+    toast("学習項目のつながりを端末に保存しました");
   };
   const canLink = !!item && its.length >= 2;
   // 資料の追加：1つずつ Controller（G004:uploadMaterial）で保存し、画像・PDF なら続けて文字起こし（G004:transcribe）
@@ -142,7 +142,7 @@ export function Study() {
     // 11/25 夕：同じ名前の資料がもうあるときは、追加する前に聞く（同じ画像を何回も入れてしまうのを防ぐ）
     const names = new Set(mats.map(m => m.fileName));
     for (const f of Array.from(files)) {
-      if (names.has(f.name) && await ask(`同じ名前の資料「${f.name}」がもうあります。もう1つ追加しますか？`, [{ label: "追加する", value: "ok" }, { label: "やめる", value: "no" }]) !== "ok") continue;
+      if (names.has(f.name) && await ask(`同名の資料「${f.name}」があります。別の資料として追加しますか？`, [{ label: "追加する", value: "ok" }, { label: "キャンセル", value: "no" }]) !== "ok") continue;
       names.add(f.name);
       const u = await controller.handleRequest("G004", "uploadMaterial", { itemId: item.itemId }, { file: f });
       if (u.error) { setMsg(u.error); continue; } // 形式・大きさ・保存容量のエラー
@@ -151,7 +151,7 @@ export function Study() {
         setProg(0);
         const t = await controller.handleRequest("G004", "transcribe", { materialId: m.materialId }, { listener: { onProgress: setProg } });
         if (t.error) setMsg(t.error);
-        else { const { failedPages } = t.data as TranscribeResult; if (failedPages.length) setMsg(`読み取れなかったページがあります（${failedPages.join("、")}）。「修正」で自分で直せます`); }
+        else { const { failedPages } = t.data as TranscribeResult; if (failedPages.length) setMsg(`読み取れなかったページ：${failedPages.join("、")}。「修正」から文字起こしを編集できます。`); }
         setProg(null);
       }
       await reload(); // 1つ終わるごとに一覧に出す
@@ -166,9 +166,9 @@ export function Study() {
     const result = await save(item.itemId);
 
     if (result === "sync-ok") {
-      toast("端末に保存しました（同期処理は正常終了）");
+      toast("端末に保存しました。同期処理も完了しました。");
     } else if (result === "unconfirmed") {
-      toast("端末に保存しました。クラウドへの同期を確認できませんでした");
+      toast("端末に保存しました。クラウドへの同期は未確認です。");
     }
   };
   saveKey.current = () => { void doSave(); };
@@ -177,7 +177,7 @@ export function Study() {
   const jump = (id: string) => document.querySelector(`[data-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const matSelect = <select className="inp" style={{ margin: 0 }} value={ref ?? ""} onChange={e => setRef(e.target.value || null)}><option value="">資料を選ぶ…</option>{mats.map(m => <option key={m.materialId} value={m.materialId}>{m.fileName}</option>)}</select>;
   const canvas = parts ? <NoteCanvas parts={parts} onChange={setParts} onAdd={addPart} title={item ? `${subject?.subjectName ?? ""}　${item.itemName}` : "ノート"} /> : null;
-  const extra = (id: string) => id === item?.itemId ? (<><div className="ind">ノート</div><div className="ind">ストレージ</div>
+  const extra = (id: string) => id === item?.itemId ? (<><div className="ind">ノート</div><div className="ind">資料</div>
     {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
     <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
   return (<div className="app"><Header />
@@ -194,7 +194,7 @@ export function Study() {
             <button className="btn sm wide" disabled={!canLink} onClick={() => setLinking(true)} title="この項目の前に学ぶ項目・次に学ぶ項目を選ぶ（関連図の線になります）">つながりの設定</button></div>
           <div className="sec"><div className="sh">資料</div>
             <label className={"btn wide" + (item ? "" : " disabled")} aria-disabled={!item} style={item ? undefined : { opacity: .45, cursor: "not-allowed" }}>＋ 資料の追加<input hidden type="file" multiple accept="image/*,application/pdf,text/plain,.txt" disabled={!item} onChange={e => { upload(e.target.files); e.target.value = ""; }} /></label>
-            <span className="mute">画像・PDF・テキスト（1件20MBまで）。画像とPDFは文字起こしもします</span></div>
+            <span className="mute">画像・PDF・テキスト（1件20MBまで）。画像・PDFは文字起こしに対応。</span></div>
         </>
       </aside>
       <main className="ct">{item && parts ? (<>
@@ -205,10 +205,10 @@ export function Study() {
         <div className="bar2 stick"><span className="row"><button className="btn pri lg" onClick={doSave} title="保存（Ctrl＋S）">保存</button><button className="btn undo" disabled={!h?.past.length} onClick={() => step(true)} title="元に戻す（Ctrl＋Z）" aria-label="元に戻す">↶</button><button className="btn undo" disabled={!h?.future.length} onClick={() => step(false)} title="やり直す（Ctrl＋Y）" aria-label="やり直す">↷</button></span>
           <span style={{ position: "relative" }}><button className="btn" onClick={() => mats.length === 0 ? toast("資料がまだありません") : mats.length === 1 ? openMat(mats[0].materialId) : setMenu(!menu)}>資料</button>
             {menu && <div className="pop" style={{ position: "absolute", bottom: "110%", left: 0, minWidth: 180, zIndex: 5 }}>{mats.map(m => <div key={m.materialId} className="ind mat" style={{ margin: "3px 0" }} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}</div>}</span>
-          <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>AIでまとめる</button>
+          <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>AIでノートを整理</button>
           <button className="btn" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: item.itemId })}>テスト一覧</button>
-          <button className="btn" onClick={() => go({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId })}>模擬テスト</button></div>
-      </>) : <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ってみよう。</p>}</main>
+          <button className="btn" onClick={() => go({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId })}>テスト作成</button></div>
+      </>) : <p className="mute">学習項目がありません。「学習項目を追加」から登録してください。</p>}</main>
       <aside className="rt">
         <Tabs tabs={RTABS} value={rtab} onChange={setR} />
         {/* 11/26：関連図の上に「つなぐ」ボタンと、線の色の見方を置いた */}

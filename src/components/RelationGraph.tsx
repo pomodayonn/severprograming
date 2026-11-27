@@ -40,7 +40,7 @@ function layout(items: LearningItem[], prerequisites: readonly Prerequisite[]) {
 interface Props { items: LearningItem[]; prerequisites: readonly Prerequisite[]; selId?: string; onOpen: (id: string) => void }
 function Graph({ items, prerequisites, selId, onOpen }: Props) {
   const g = useMemo(() => layout(items, prerequisites), [items, prerequisites]);
-  if (!items.length) return <p className="mute">学習項目がまだありません。左の「学習項目を追加」から作ろう。</p>;
+  if (!items.length) return <p className="mute">学習項目がありません。「学習項目を追加」から登録してください。</p>;
   const at = (id: string) => g.pos.get(id)!;
   const has = !!selId && g.pos.has(selId);
   /** 線の種類：開いている項目に入る線（前に学ぶ項目から）・出る線（次に学ぶ項目へ）・それ以外 */
