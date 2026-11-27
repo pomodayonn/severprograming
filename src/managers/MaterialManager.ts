@@ -22,9 +22,17 @@ import { AppError, newId } from "./common";
 /** 画面に出す文を持ったエラー */
 export class MaterialError extends AppError {}
 
-/** 端末に保存する。失敗したら（ほとんどは容量不足）画面に出す文のエラーにする */
-async function saveOrFail(save: () => Promise<void>): Promise<void> {
-  try { await save(); } catch { throw new MaterialError("保存容量が足りません"); }
+/** 端末への資料保存に失敗した場合の案内 */
+async function saveOrFail(
+  save: () => Promise<void>
+): Promise<void> {
+  try {
+    await save();
+  } catch {
+    throw new MaterialError(
+      "資料を端末に保存できませんでした。学習項目や端末の保存容量を確認してください"
+    );
+  }
 }
 
 /** 文字起こしの結果。transcript は文字起こし（.txt）の資料、failedPages は読み取れなかったページの番号 */
@@ -55,8 +63,15 @@ export class MaterialManager {
     if (file.size > MAX_FILE) throw new MaterialError("ファイルが大きすぎます（1件20MBまで）");
     const material = new Material({ materialId: newId(), itemId, fileName: file.name, fileType, fileSize: file.size, sourceMaterialId: null, addedAt: now() });
     const content = fileType === "text" ? await file.text() : file;
-    await saveOrFail(() => this.materialDAO.insert(material, content));
-    return material;
+        await saveOrFail(
+      () => this.materialDAO.insert(material, content)
+    );
+
+    return (
+      await this.materialDAO.findById(
+        material.materialId
+      )
+    ) ?? material;
   }
 
   /**

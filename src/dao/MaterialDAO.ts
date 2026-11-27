@@ -8,7 +8,7 @@
 // 資料は大きいので Neon には送らない（この端末だけ）
 import { Material } from "../beans/Material";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put } from "./idb";
+import { get,getAllBy,put,putMaterialWithContent,deleteMaterialWithContent,} from "./idb";
 
 export class MaterialDAO {
   /** その学習項目（ストレージ）の資料を、追加した順に返す */
@@ -24,11 +24,23 @@ export class MaterialDAO {
   async findContent(materialId: string): Promise<Blob | string | null> {
     return (await get<Blob | string>("materialContents", materialId)) ?? null;
   }
-  /** 資料とファイルの中身を保存する */
-  async insert(material: Material, content: Blob | string): Promise<void> {
-    const size = typeof content === "string" ? new Blob([content]).size : content.size;
-    await put("materials", new Material({ ...material, fileSize: material.fileSize || size, addedAt: material.addedAt || now() }));
-    await put("materialContents", content, material.materialId);
+  /** 資料情報とファイル本体を同時に保存する */
+  async insert(
+    material: Material,
+    content: Blob | string
+  ): Promise<void> {
+    const size = typeof content === "string"
+      ? new Blob([content]).size
+      : content.size;
+
+    await putMaterialWithContent(
+      new Material({
+        ...material,
+        fileSize: material.fileSize || size,
+        addedAt: material.addedAt || now(),
+      }),
+      content
+    );
   }
   /** 文字起こしの文章を書き換える（G006 の「確定」） */
   async updateText(materialId: string, text: string): Promise<void> {
@@ -36,9 +48,9 @@ export class MaterialDAO {
     await put("materialContents", text, materialId);
     await put("materials", { ...m, fileSize: new Blob([text]).size });
   }
-  /** 資料を消す */
+  /** 資料情報とファイル本体を同時に削除する */
   async delete(materialId: string): Promise<void> {
-    await del("materials", materialId); await del("materialContents", materialId);
+    await deleteMaterialWithContent(materialId);
   }
   /** 学習項目を消したときに、ストレージを中の資料ごと消す */
   async deleteStorage(itemId: string): Promise<void> {

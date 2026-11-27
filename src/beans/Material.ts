@@ -9,8 +9,10 @@
 import type { DateTime } from "./DateTime";
 
 export class Material {
-  /** 資料ID */
+   /** 資料ID */
   materialId: string = "";
+  /** 資料の所有者である学生ID（端末内のデータ管理に使用） */
+  studentId: string = "";
   /** 学習項目ID */
   itemId: string = "";
   /** ファイル名 */

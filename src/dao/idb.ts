@@ -6,7 +6,7 @@
 //   materials（資料の情報）・materialContents（資料の中身）：端末だけ。同期しない
 //   deletions：Neon にまだ伝えていない削除（SyncManager.pushChanges で送る）
 //   meta：前回同期した日時・前回受け取った日時（11/23）など
-
+import type { Material } from "../beans/Material";
 // 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
 const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
@@ -79,37 +79,183 @@ export async function putMany(store: StoreName, values: unknown[]): Promise<void
   const db = await openDb(); const tx = db.transaction(store, "readwrite"); const os = tx.objectStore(store);
   values.forEach(v => os.put(structuredClone(v))); return done(tx);
 }
-/** 消す */
-export async function del(store: StoreName, key: IDBValidKey | IDBKeyRange): Promise<void> {
-  const db = await openDb(); const tx = db.transaction(store, "readwrite");
-  tx.objectStore(store).delete(key); return done(tx);
+/** 指定されたキーのデータを削除する */
+export async function del(
+  store: StoreName,
+  key: IDBValidKey | IDBKeyRange
+): Promise<void> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    store,
+    "readwrite"
+  );
+
+  tx.objectStore(store).delete(key);
+
+  await done(tx);
+}
+/**
+ * 資料情報とファイル本体を同時に保存する。
+ * 所有者は端末に保存されている学習項目から取得する。
+ */
+export async function putMaterialWithContent(
+  material: Material,
+  content: Blob | string
+): Promise<void> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    ["learningItems", "materials", "materialContents"],
+    "readwrite"
+  );
+
+  let missingOwner = false;
+
+  const req = tx.objectStore("learningItems")
+    .get(material.itemId);
+
+  req.onsuccess = () => {
+    const item = req.result as
+      { studentId: string } | undefined;
+
+    if (!item?.studentId) {
+      missingOwner = true;
+      tx.abort();
+      return;
+    }
+
+    tx.objectStore("materials").put(
+      structuredClone({
+        ...material,
+        studentId: item.studentId,
+      })
+    );
+
+    tx.objectStore("materialContents").put(
+      structuredClone(content),
+      material.materialId
+    );
+  };
+
+  try {
+    await done(tx);
+  } catch (e) {
+    if (missingOwner) {
+      throw new Error(
+        "資料の学習項目または所有者が見つかりません"
+      );
+    }
+
+    throw e;
+  }
+}
+
+/** 資料情報とファイル本体を同時に削除する */
+export async function deleteMaterialWithContent(
+  materialId: string
+): Promise<void> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    ["materials", "materialContents"],
+    "readwrite"
+  );
+
+  tx.objectStore("materials").delete(materialId);
+
+  tx.objectStore("materialContents").delete(
+    materialId
+  );
+
+  await done(tx);
 }
 
 /**
  * この端末にある、その学生のデータを全部消す（ログアウトのときに「この端末のデータも消す」を選んだとき。11/21）
  * ・科目・学習項目・前提項目・ノート・テスト・まだ送っていない削除の記録・前回同期した日時
- * ・資料と中身（資料には学生IDの欄がないので、その学生の学習項目から探す）
+ * ・資料と中身（学生IDで所有者を判定する。
+ *   旧形式の資料は学習項目から所有者を確認する）
  * ほかの学生のデータは消さない。Neon（アカウント）のデータも消さない（次にログインすれば受け取れる）
  */
-export async function clearStudentData(studentId: string): Promise<void> {
-  // 資料は学習項目IDでまとまっているので、学習項目を消す前に、その学生の学習項目IDを集めておく
-  const itemIds = (await getAllBy<{ itemId: string }>("learningItems", "studentId", studentId)).map(i => i.itemId);
-  for (const itemId of itemIds) {
-    for (const m of await getAllBy<{ materialId: string }>("materials", "itemId", itemId)) {
-      await del("materials", m.materialId);
-      await del("materialContents", m.materialId);
-    }
-  }
-  // 学生IDの索引がある入れ物は、その学生の分をまとめて消す（キーの種類は入れ物ごとに違うので getAllKeys で取る）
+export async function clearStudentData(
+  studentId: string
+): Promise<void> {
   const db = await openDb();
-  for (const store of ["subjects", "learningItems", "prerequisites", "notes", "tests", "deletions"] as const) {
-    const keys = await wrap(db.transaction(store).objectStore(store).index("studentId").getAllKeys(studentId));
-    for (const key of keys) await del(store, key);
+
+  const stores = [
+    "subjects",
+    "learningItems",
+    "prerequisites",
+    "notes",
+    "tests",
+    "deletions",
+  ] as const;
+
+  const tx = db.transaction(
+    [
+      ...stores,
+      "materials",
+      "materialContents",
+      "meta",
+    ],
+    "readwrite"
+  );
+
+  // 学習項目を消す前に、その学生の項目IDを取得する。
+  const itemReq = tx.objectStore("learningItems")
+    .index("studentId")
+    .getAllKeys(studentId);
+
+  itemReq.onsuccess = () => {
+    const itemIds = new Set(itemReq.result);
+
+    const materials = tx.objectStore("materials");
+
+    const contents = tx.objectStore(
+      "materialContents"
+    );
+
+    const req = materials.getAll();
+
+    req.onsuccess = () => {
+      for (const m of req.result as Material[]) {
+        // 新しい資料は学生IDで判定する。
+        // 旧形式は親の学習項目から所有者を判定する。
+        const owned =
+          m.studentId === studentId ||
+          (!m.studentId && itemIds.has(m.itemId));
+
+        if (!owned) continue;
+
+        materials.delete(m.materialId);
+        contents.delete(m.materialId);
+      }
+    };
+  };
+
+  // その学生の同期データを削除する。
+  for (const store of stores) {
+    const os = tx.objectStore(store);
+
+    const req = os.index("studentId")
+      .getAllKeys(studentId);
+
+    req.onsuccess = () => {
+      for (const key of req.result) {
+        os.delete(key);
+      }
+    };
   }
-  await del("meta", `lastSyncedAt:${studentId}`);
-  await del("meta", `lastPulledAt:${studentId}`); // 11/23：次にログインしたとき、必ず受け取り直すように
-  await del("meta", `noteBases:${studentId}`);    // 11/24：ノートの食い違いを見分けるための記録
-  await del("meta", `noteConflicts:${studentId}`);
+
+  const meta = tx.objectStore("meta");
+
+  meta.delete(`lastSyncedAt:${studentId}`);
+  meta.delete(`lastPulledAt:${studentId}`);
+  meta.delete(`noteBases:${studentId}`);
+  meta.delete(`noteConflicts:${studentId}`);
+
+  await done(tx);
 }
 
 /** replaceStudentData で入れ替える入れ物（学生IDの索引があり、Neon と同期するもの） */
@@ -122,21 +268,73 @@ export type SyncedStore = "subjects" | "learningItems" | "prerequisites" | "note
  * （Java の JDBC で setAutoCommit(false) → 最後に commit、失敗したら rollback するのと同じ考え方）
  * @param meta 同じトランザクションで meta に書く値（キー → 値）。前回同期した日時など
  */
-export async function replaceStudentData(studentId: string, data: Record<SyncedStore, unknown[]>, meta: Record<string, unknown> = {}): Promise<void> {
+export async function replaceStudentData(
+  studentId: string,
+  data: Record<SyncedStore, unknown[]>,
+  meta: Record<string, unknown> = {}
+): Promise<void> {
   const stores = Object.keys(data) as SyncedStore[];
-  const db = await openDb(); const tx = db.transaction([...stores, "meta"], "readwrite");
+
+  const db = await openDb();
+
+  const tx = db.transaction(
+    [...stores, "materials", "meta"],
+    "readwrite"
+  );
+
   for (const store of stores) {
     const os = tx.objectStore(store);
-    const req = os.index("studentId").getAllKeys(studentId);
-    // 消し終わってから入れる（先に入れると、同じキーの新しい行まで消してしまうため、getAllKeys の結果を待つ）
+
+    const req = os.index("studentId")
+      .getAllKeys(studentId);
+
     req.onsuccess = () => {
-      for (const key of req.result) os.delete(key);
-      for (const v of data[store]) os.put(structuredClone(v));
+      if (store === "learningItems") {
+        // 親の学習項目が消える前に、
+        // 旧形式の資料へ所有者情報を補完する。
+        const oldItemIds = new Set(req.result);
+
+        const materials = tx.objectStore(
+          "materials"
+        );
+
+        const materialReq = materials.getAll();
+
+        materialReq.onsuccess = () => {
+          for (
+            const m of materialReq.result as Material[]
+          ) {
+            if (
+              !m.studentId &&
+              oldItemIds.has(m.itemId)
+            ) {
+              materials.put({
+                ...m,
+                studentId,
+              });
+            }
+          }
+        };
+      }
+
+      // その学生の同期データを入れ替える。
+      for (const key of req.result) {
+        os.delete(key);
+      }
+
+      for (const v of data[store]) {
+        os.put(structuredClone(v));
+      }
     };
   }
+
   const ms = tx.objectStore("meta");
-  for (const [k, v] of Object.entries(meta)) ms.put(v, k);
-  return done(tx);
+
+  for (const [k, v] of Object.entries(meta)) {
+    ms.put(v, k);
+  }
+
+  await done(tx);
 }
 
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */
