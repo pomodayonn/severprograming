@@ -41,8 +41,23 @@ describe("split：分ける", () => {
   });
 });
 
-describe("calls：AIの利用回数（1万文字ごとに1回）", () => {
-  it("0文字でも1回", () => expect(calls(0)).toBe(1));
-  it("1万文字は1回、1万1文字は2回", () => { expect(calls(SEND_LIMIT)).toBe(1); expect(calls(SEND_LIMIT + 1)).toBe(2); });
-  it("split で分けた数と同じ", () => expect(split("あ".repeat(25000))).toHaveLength(calls(25000)));
+describe("calls：実際の文章分割数による利用回数", () => {
+  it("空文字列でも1回", () => {
+    expect(calls("")).toBe(1);
+  });
+
+  it("1万文字は1回、1万1文字は2回", () => {
+    expect(calls("あ".repeat(SEND_LIMIT)))
+      .toBe(1);
+
+    expect(calls("あ".repeat(SEND_LIMIT + 1)))
+      .toBe(2);
+  });
+
+  it("splitで分けた数と同じ", () => {
+    const text = "あ".repeat(25000);
+
+    expect(calls(text))
+      .toBe(split(text).length);
+  });
 });

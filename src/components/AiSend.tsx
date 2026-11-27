@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Redirect, useApp } from "../state/app";
 import type { FrameType } from "../types";
-import { FT, calls, chunkText, parseReplace, replaceText } from "../lib/logic";
+import { FT, calls, chunkText, lengthOf, parseReplace, replaceText } from "../lib/logic";
 import { itemsOf, partsOf } from "../lib/select";
 import { addLocalUsage, useAiRemaining } from "../services/ai";
 import { controller } from "../controller/Controller";
@@ -60,7 +60,7 @@ export function AiSend() {
   /** 1万文字を超えるときは分けて送る＝利用回数を余分に消費する。確認して、送ってよければ回数を返す */
   const confirmCalls = async (): Promise<number | null> => {
     if (!sel.length || !text.trim()) { setMsg("送る内容を選んでください"); return null; }
-    const n = calls(text.length);
+    const n = calls(text);
     if (remaining !== null && n > remaining) { setMsg(n > 1 ? "残りの利用回数が足りないため、分けて送れません。送る内容を減らしてください" : "今日はこれ以上使えません"); return null; }
     if (n > 1 && await ask(`1万文字を超えているため、分けて送ると利用回数を余分に消費します（この内容では${n}回分）`, [{ label: "このまま送信", value: "ok", primary: true }, { label: "キャンセル", value: "no" }]) !== "ok") return null;
     return n;
@@ -103,7 +103,7 @@ export function AiSend() {
       {parts.map(p => <label key={p.id} className="ck"><input type="checkbox" checked={sel.includes(p.id)} onChange={e => choose(e.target.checked ? [...sel, p.id] : sel.filter(x => x !== p.id))} />{p.label}</label>)}
       <p className="mute">選び直すと、「送る内容」の編集はやり直しになります。</p></div>}
     {tab === "send" && <div className="vbox"><textarea className="tx" value={text} onChange={e => setText(e.target.value)} placeholder="ここに送る内容が入ります。送りたくない文字は削除してください" />
-      <div className="mute">{text.length.toLocaleString()}文字（1回あたり1万文字まで）　※個人情報などは送らないでください。送った内容は、どこにも残りません。</div></div>}
+      <div className="mute">{lengthOf(text).toLocaleString()}文字（1回あたり1万文字まで）　※個人情報などは送らないでください。送った内容は、どこにも残りません。</div></div>}
     {tab === "prop" && <div className="vbox">{!props.length && <p className="mute">まだ提案がありません。「送る内容」から送信してください。</p>}
       {props.map((p, i) => { const cur = frames.find(f => f.partId === p.targetPartId); return (<div key={i} className="box" style={{ marginTop: 0, marginBottom: 8 }}>
         <label className="ck"><input type="checkbox" checked={pick.includes(i)} onChange={e => setPick(e.target.checked ? [...pick, i] : pick.filter(x => x !== i))} /><b>{frameName(p)}</b>　{cur ? "（もとの枠の書き換え）" : "（新しい枠）"}</label>

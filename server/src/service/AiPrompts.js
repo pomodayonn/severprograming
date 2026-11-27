@@ -23,8 +23,8 @@ export const FRAME_TYPES = {
 /** 文字数（日本語も絵文字も1文字ずつ） */
 export const lengthOf = (s) => [...s].length;
 
-/** 何回分か（organize・essay-test 用）：ceil(文字数 / 1万)。最低1回 */
-export const countCalls = (text) => Math.max(1, Math.ceil(lengthOf(text) / SEND_LIMIT));
+/** 実際の文章分割数から必要利用回数を求める */
+export const countCalls = (text) => splitText(text).length;
 
 /** 1万文字ごとに分ける。なるべく改行の所で切る（フロントの SendContentManager.split と同じ） */
 export function splitText(text) {

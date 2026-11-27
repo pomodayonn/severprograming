@@ -7,7 +7,7 @@
 // どのボタンも Controller → TestManager → TestDAO → 端末に保存（→ Neon）の順に進む
 import { useState } from "react";
 import { Redirect, useApp } from "../state/app";
-import { clampQuestionCount } from "../lib/logic";
+import { calls, clampQuestionCount, lengthOf } from "../lib/logic";
 import { itemsOf, partsOf } from "../lib/select";
 import { addLocalUsage, useAiRemaining } from "../services/ai";
 import { controller } from "../controller/Controller";
@@ -41,7 +41,16 @@ export function TestCreate() {
     } else {
       if (!send.trim()) return setMsg("先に「内容編集」で、送る内容を決めてください");
       if (!online) return setMsg("インターネットにつながっていません。記述テストはAIで作るので、つながってから試してください");
-      const c = (tmp.sendCalls as number | undefined) ?? 1; if (remaining !== null && c > remaining) return setMsg("今日はこれ以上使えません");
+      const c = calls(send);
+
+    // 分割した文章すべてから出題できることを確認する。
+    if (c > n) {
+      return setMsg("送る内容が多すぎます。問題数を増やすか、送る内容を減らしてください");
+    }
+
+    if (remaining !== null && c > remaining) {
+      return setMsg(`AIの利用回数が足りません（必要：${c}回）`);
+    }
       setBusy(true);
       const r = await controller.handleRequest("G008", "createEssayTest", { studentId: account?.studentId ?? "", itemId: item.itemId, text: send, count: n });
       setBusy(false); void refresh();
@@ -59,7 +68,7 @@ export function TestCreate() {
         {scope === "pick" && <div className="pop">{frames.map(p => <label key={p.partId} className="ck"><input type="checkbox" checked={picks.includes(p.partId)} onChange={x => setPicks(x.target.checked ? [...picks, p.partId] : picks.filter(id => id !== p.partId))} />{p.frameType === "word" ? `単語枠　${p.words[0]?.term ?? ""}` : `${p.text.slice(0, 14)}`}</label>)}{!frames.length && <span className="mute">枠がありません</span>}</div>}</div>
         <div><b>テストの種類</b>{KINDS.map(t => <label key={t} className="ck"><input type="radio" checked={kind === t} onChange={() => setKind(t)} />{KIND[t]}</label>)}
           <b>問題数（5〜20問）</b><input className="inp" type="number" min={5} max={20} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 100 }} />
-          {essay && <div className="mute">送る内容：{send ? `${send.length.toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
+          {essay && <div className="mute">送る内容：{send ? `${lengthOf(send).toLocaleString()}文字を決定済み` : "まだ決めていません"}<br />今日の残り利用回数：{limit} 回中 {remaining ?? "…"} 回</div>}</div></div>
       <AiWait busy={busy && essay} what="AIが問題を作っています" />
       {msg && <div className="err">{msg}</div>}</div>
     <div className="bar2"><span className="row"><button className={"btn lg " + (essay ? "ai" : "pri")} disabled={busy || (essay && !online)} onClick={make}>{busy ? "作成中…" : "作成"}</button>

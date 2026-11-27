@@ -132,23 +132,55 @@ export class ApiController {
     });
   }
 
-  /** POST /api/essay-test：記述テストを作る（G008） */
+    /** POST /api/essay-test：記述テストを作る（G008） */
   makeEssayTest(req, res) {
     return this.useAi(req, res, (body) => {
       const { text, count } = body;
-      if (!isText(text)) throw new BadRequest("text が空です");
-      if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) throw new BadRequest(`count は 1〜${MAX_COUNT} の整数`);
+
+      if (!isText(text)) {
+        throw new BadRequest("text が空です");
+      }
+
+      if (
+        !Number.isInteger(count) ||
+        count < 1 ||
+        count > MAX_COUNT
+      ) {
+        throw new BadRequest(
+          `count は 1〜${MAX_COUNT} の整数`
+        );
+      }
+
+      const chunks = splitText(text);
+
+      // 送信されない文章が発生する設定は、
+      // 利用回数を予約する前に拒否する。
+      if (chunks.length > count) {
+        throw new BadRequest(
+          "問題数を増やすか、送る内容を減らしてください"
+        );
+      }
+
+      const counts = shareCount(
+        count,
+        chunks.length
+      );
+
       return {
-        calls: countCalls(text),
+        calls: chunks.length,
+
         run: async () => {
-          // 1万文字を超えたら分けて送り、問題数も分けた数に配る
-          const chunks = splitText(text);
-          const counts = shareCount(count, chunks.length);
           const questions = [];
+
           for (let i = 0; i < chunks.length; i++) {
-            if (counts[i] === 0) continue;
-            questions.push(...(await this.aiService.send(buildEssay(chunks[i], counts[i]), (r) => readEssay(r, counts[i]))));
+            questions.push(
+              ...(await this.aiService.send(
+                buildEssay(chunks[i], counts[i]),
+                r => readEssay(r, counts[i])
+              ))
+            );
           }
+
           return { questions };
         },
       };

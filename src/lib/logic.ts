@@ -37,7 +37,43 @@ export function nameError(name: string, label: string): string | null {
 }
 /** 問題数を5〜20問にそろえる（数でなければ10問） */
 export const clampQuestionCount = (n: number) => Math.min(20, Math.max(5, Math.round(n) || 10));
-export const calls = (chars: number) => Math.max(1, Math.ceil(chars / SEND_LIMIT));
+/** Unicodeコードポイント単位で文字数を数える */
+export const lengthOf = (text: string): number =>
+  [...text].length;
+
+/** AIへ送る文章を1万文字以内に分割する */
+export function splitAiText(text: string): string[] {
+  const chars = [...text];
+  const out: string[] = [];
+
+  let start = 0;
+
+  while (start < chars.length) {
+    let end = Math.min(
+      start + SEND_LIMIT,
+      chars.length
+    );
+
+    // 後ろ2割に改行があれば、その直後で分割する。
+    if (end < chars.length) {
+      const nl = chars.slice(start, end)
+        .lastIndexOf("\n");
+
+      if (nl > SEND_LIMIT * 0.8) {
+        end = start + nl + 1;
+      }
+    }
+
+    out.push(chars.slice(start, end).join(""));
+    start = end;
+  }
+
+  return out.length ? out : [""];
+}
+
+/** 実際の分割数をAIの必要利用回数とする */
+export const calls = (text: string): number =>
+  splitAiText(text).length;
 export const chunkText = (t: string, size = 1200) => { const out: string[] = []; for (let i = 0; i < t.length; i += size) out.push(t.slice(i, i + size)); return out.length ? out : [""]; };
 export function txtName(base: string, existing: string[]) { let n = `${base}.txt`, k = 2; while (existing.includes(n)) n = `${base}(${k++}).txt`; return n; }
 /** 「元の文字→直した文字」の指示を読む（「->」でもよい）。形が違えば null */
