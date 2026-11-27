@@ -122,6 +122,9 @@ export type RequestParams = {
 } & {
   // 「最新にする」もヘッダーのボタンなので、どの画面からでも（11/23）
   [S in Screen as `${S}:refreshButton`]: NoParams;
+} & {
+  // 保存済みデータの同期を再試行する。
+  [S in Screen as `${S}:retrySyncButton`]: NoParams;
 };
 type RequestKey = keyof RequestParams;
 /** 画面 S で使えるイベントID */
@@ -321,6 +324,15 @@ export class Controller {
       if (eventId === "refreshButton") {
         await this.accountManager.refresh();
         return {};
+      }
+      // 保存済みの端末データを再送信する。
+      // クラウドからの受け取りや端末データの置換は行わない。
+      if (eventId === "retrySyncButton") {
+        const syncConfirmed = await this.syncManager.sendAll();
+
+        return {
+          data: { syncConfirmed },
+        };
       }
       if (eventId === "logoutButton") {
         const { clearLocal = false, force = false } = (params ?? {}) as LogoutParams;

@@ -13,13 +13,46 @@ import { RelationGraph } from "./RelationGraph";
 import { OfflineBar } from "./AiWait";
 
 export function Header({ plain = false }: { plain?: boolean }) {
-  const { account, logout, canRefresh, refreshing, refresh, go, route } = useApp();
+  const {
+    account, logout, canRefresh,
+    refreshing, refresh,
+    retrying, retrySync,
+    go, route,
+  } = useApp();
   // 11/25：ログインしているときは、左上のロゴを押すと科目一覧（G003）に戻る。保存していないノートがあれば先に聞く（go）
   const logo = <><span className="ic"><Mascot size={30} /></span><b>るんです<span className="pd">。</span></b></>;
   return (<><header className="hd">{!plain && account ? <button className="home" onClick={() => go({ s: "G003", subjectId: route.subjectId })} title="科目一覧へ戻る" aria-label="るんです。ホーム（科目一覧）">{logo}</button> : logo}<span className="sp" />
     {!plain && account && <><span className="who">{account.mail}</span>
-      {canRefresh && <button className="pill" onClick={refresh} disabled={refreshing} title="ほかの端末で変えた内容を受け取ります">{refreshing ? "受け取り中…" : "最新にする"}</button>}{/* 11/23 */}
-      <button className="pill" onClick={logout}>ログアウト</button></>}</header><OfflineBar /></>);
+      {canRefresh && (
+        <>
+          <button
+            className="pill"
+            onClick={retrySync}
+            disabled={refreshing || retrying}
+            title="この端末に保存済みのデータをクラウドへ送ります"
+          >
+            {retrying ? "送信中…" : "同期を再試行"}
+          </button>
+
+          <button
+            className="pill"
+            onClick={refresh}
+            disabled={refreshing || retrying}
+            title="ほかの端末で変えた内容を受け取ります"
+          >
+            {refreshing ? "受け取り中…" : "最新にする"}
+          </button>
+        </>
+      )}
+
+      <button
+        className="pill"
+        onClick={logout}
+        disabled={refreshing || retrying}
+      >
+        ログアウト
+      </button>
+    </>}</header><OfflineBar /></>);
   // ↑ ヘッダーの下に、オフラインのときだけ帯を出す（OfflineBar）。ヘッダーと帯を1つにまとめて返すため、下で包んでいる
 }
 /** 名前の中の、検索の言葉に合う所に印（mark）を付ける */

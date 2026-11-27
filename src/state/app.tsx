@@ -50,6 +50,8 @@ interface Ctx {
   go: (r: Route) => Promise<void>; logout: () => Promise<void>;
   /** 11/23：ヘッダーの「最新にする」。canRefresh＝同期する設定があるか、refreshing＝受け取っている最中か */
   canRefresh: boolean; refreshing: boolean; refresh: () => Promise<void>;
+  retrying: boolean;
+  retrySync: () => Promise<void>;
 }
 const C = createContext<Ctx | null>(null);
 export const useApp = () => { const c = useContext(C); if (!c) throw new Error("AppProvider がありません"); return c; };
@@ -84,6 +86,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const aRef = useRef(account); aRef.current = account;
   const rRef = useRef(route); rRef.current = route; // ログアウトのとき、いまの画面IDを Controller に渡す
   const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  // 最新化と同期再試行の重複実行を防ぐ。
+  const syncBusy = useRef(false);
   const canRefresh = controller.syncManager.enabled; // .env に Neon の設定がないとき（端末だけで動かすとき）はボタンを出さない
 
   /** 科目・テスト・資料を Manager から読み直す（Controller → G003:loadSubjects）。追加・保存などのあとに呼ぶ */
@@ -269,22 +275,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * ヘッダーの「最新にする」（11/23）。ふだんはページを開き直しても30分は受け取り直さないので、
    * 別の端末で変えた分をすぐ見たいときに押す。保存していないノートがあれば、先に確認する（guard）
    */
-  const refresh = useCallback(async () => {
-    if (refreshing || !(await guard())) return;
+    const refresh = useCallback(async () => {
+    if (syncBusy.current) return;
+
+    syncBusy.current = true;
     setRefreshing(true);
+
     try {
-      const r = await controller.handleRequest(rRef.current.s, "refreshButton");
-      if (r.error) { toast(r.error); return; }
-      await reload(); toast("最新にしたよ");
-    } finally { setRefreshing(false); }
-  }, [refreshing, guard, reload]);
+      if (!(await guard())) return;
+
+      const r = await controller.handleRequest(
+        rRef.current.s,
+        "refreshButton"
+      );
+
+      if (r.error) {
+        toast(r.error);
+        return;
+      }
+
+      await reload();
+      toast("最新にしたよ");
+    } finally {
+      syncBusy.current = false;
+      setRefreshing(false);
+    }
+  }, [guard, reload]);
+
+    /** 端末に保存済みのデータについて同期を再試行する */
+  const retrySync = useCallback(async () => {
+    const sid = aRef.current?.studentId;
+
+    if (!sid || syncBusy.current) return;
+
+    syncBusy.current = true;
+    setRetrying(true);
+
+    try {
+      const r = await controller.handleRequest(
+        rRef.current.s,
+        "retrySyncButton"
+      );
+
+      // 同期中にアカウントが変わった場合は通知しない。
+      if (aRef.current?.studentId !== sid) return;
+
+      if (r.error) {
+        toast(r.error);
+        return;
+      }
+
+      const result = r.data as
+        | { syncConfirmed: boolean }
+        | undefined;
+
+      if (result?.syncConfirmed === true) {
+        toast("保存済みデータの同期処理が正常に終了しました");
+      } else {
+        toast("同期を確認できませんでした。端末のデータは保持されています");
+      }
+    } catch {
+      if (aRef.current?.studentId === sid) {
+        toast("同期を再試行できませんでした");
+      }
+    } finally {
+      syncBusy.current = false;
+      setRetrying(false);
+    }
+  }, []);
 
   // 関数はすべて同じものを使い回すので、memo した部品は subjects・materials などが変わったときだけ描き直る
-  const value = useMemo<Ctx>(() => ({
-    account, ready, ...db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp,
-    enter: open, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh,
-  }), [account, ready, db, loaded, reload, route, nav, drafts, setDraft, tmp, setTmp, open, ask, askName, guard, save, go, logout, canRefresh, refreshing, refresh]);
-
+    const value = useMemo<Ctx>(() => ({
+    account, ready, ...db, loaded, reload,
+    route, nav, drafts, setDraft, tmp, setTmp,
+    enter: open, ask, askName, guard, save,
+    go, logout, canRefresh, refreshing, refresh,
+    retrying, retrySync,
+  }), [
+    account, ready, db, loaded, reload,
+    route, nav, drafts, setDraft, tmp, setTmp,
+    open, ask, askName, guard, save,
+    go, logout, canRefresh, refreshing, refresh,
+    retrying, retrySync,
+  ]);
   const submitPop = () => {
     if (!pop) return;
     const err = nameError(pop.val, "名前"); // 11/23：Manager の checkName と同じルール（絵文字も1文字と数える）
