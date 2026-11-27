@@ -60,14 +60,63 @@ export class SyncManager {
    */
   async pullAll(): Promise<void> {
     if (!this.enabled) return;
-    const student = await this.authClient.getSession(); if (!student) return;
+        const student = await this.authClient.getSession();
+
+    if (!student?.studentId) {
+      throw new SyncError(
+        "ログイン状態を確認できないため最新化できません"
+      );
+    }
+
+    const sid = student.studentId;
+
     await this.pushChanges();
+
+    const current = await this.authClient.getSession();
+
+    if (current?.studentId !== sid) {
+      throw new SyncError(
+        "同期中にログイン状態が変更されたため最新化を中止しました"
+      );
+    }
     const [subjects, items, prereqs, notes, parts, words, tests, questions, attempts, answers] = await Promise.all(
       ["subject", "learning_item", "prerequisite", "note", "note_part", "word", "test", "question", "attempt", "answer"].map(t => this.select(t)));
     // ---- Neon の形（スネークケース・別々のテーブル）から、端末の形（beans・入れ子）に戻す ----
-    const wordsBy = group(words, "part_id"), partsBy = group(parts, "note_id");
-    const qBy = group(questions, "test_id"), aBy = group(attempts, "test_id"), ansBy = group(answers, "attempt_id");
-    const sid = student.studentId;
+        // 受信した全テーブルの所有者を確認する。
+    // 不正なデータを端末用の形式へ変換する前に拒否する。
+    const received = {
+      subject: subjects,
+      learning_item: items,
+      prerequisite: prereqs,
+      note: notes,
+      note_part: parts,
+      word: words,
+      test: tests,
+      question: questions,
+      attempt: attempts,
+      answer: answers,
+    };
+
+    for (const [table, rows] of Object.entries(received)) {
+      if (!Array.isArray(rows)) {
+        throw new SyncError(
+          `受信データの形式が不正です（${table}）`
+        );
+      }
+
+      if (rows.some(row => row?.student_id !== sid)) {
+        throw new SyncError(
+          `受信データの所有者が一致しないため最新化を中止しました（${table}）`
+        );
+      }
+    }
+
+    const wordsBy = group(words, "part_id");
+    const partsBy = group(parts, "note_id");
+
+    const qBy = group(questions, "test_id");
+    const aBy = group(attempts, "test_id");
+    const ansBy = group(answers, "attempt_id");
     const sub = subjects.map(r => new Subject({ subjectId: s(r.subject_id), studentId: sid, subjectName: s(r.subject_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const its = items.map(r => new LearningItem({ itemId: s(r.item_id), studentId: sid, subjectId: s(r.subject_id), itemName: s(r.item_name), createdAt: s(r.created_at), updatedAt: s(r.updated_at) }));
     const pres = prereqs.map(r => new Prerequisite({ studentId: sid, itemId: s(r.item_id), prereqItemId: s(r.prereq_item_id), updatedAt: s(r.updated_at) }));
@@ -108,6 +157,15 @@ export class SyncManager {
         answers: (ansBy[s(a.attempt_id)] ?? []).map(x => new Answer({ answerId: s(x.answer_id), studentId: sid, attemptId: s(x.attempt_id), questionId: s(x.question_id), studentAnswer: s(x.student_answer), correct: x.correct === null || x.correct === undefined ? null : !!x.correct, answeredAt: s(x.answered_at), updatedAt: s(x.updated_at) })),
       })).sort((a, b) => a.attemptNo - b.attemptNo),
     }));
+        // 受信中にログアウトやアカウント変更が
+    // 発生していないか、置換直前に再確認する。
+    const latest = await this.authClient.getSession();
+
+    if (latest?.studentId !== sid) {
+      throw new SyncError(
+        "同期中にログイン状態が変更されたため最新化を中止しました"
+      );
+    }
     // ---- 端末のこの学生のデータを、受け取った内容に置き換える（11/23：1つのトランザクションで） ----
     const t = now();
     await replaceStudentData(sid, { subjects: sub, learningItems: its, prerequisites: pres, notes: nts, tests: tss },

@@ -64,6 +64,7 @@ const localNote = new Note({
 });
 
 const remoteNote = {
+  student_id: studentId,
   note_id: noteId,
   item_id: itemId,
   updated_at: remoteVersion,
@@ -151,6 +152,7 @@ function setup(
 
         case "/subject":
           rows = [{
+            student_id: studentId,
             subject_id: "subject-1",
             subject_name: "テスト科目",
           }];
@@ -158,6 +160,7 @@ function setup(
 
         case "/learning_item":
           rows = [{
+            student_id: studentId,
             item_id: itemId,
             subject_id: "subject-1",
             item_name: "テスト項目",
@@ -308,5 +311,91 @@ describe("SYNC-08：削除を伴う競合のデータ保護", () => {
           [lastPulledKey]: expect.any(String),
         })
       );
+  });
+});
+describe("DB-02a：受信データの所有者確認", () => {
+  it.each([
+    [
+      "/subject",
+      { student_id: "other-student" },
+    ],
+    [
+      "/word",
+      { student_id: "other-student" },
+    ],
+    [
+      "/note",
+      { note_id: "unknown-owner" },
+    ],
+  ])(
+    "%s に不正な所有者のデータがあれば置換しない",
+    async (path, row) => {
+      const { sync, fetchMock } = setup(true, false);
+
+      const original =
+        fetchMock.getMockImplementation()!;
+
+      fetchMock.mockImplementation(
+        async (url, init) => {
+          if (new URL(url).pathname === path) {
+            return new Response(
+              JSON.stringify([row]),
+              { status: 200 }
+            );
+          }
+
+          return original(url, init);
+        }
+      );
+
+      await expect(sync.pullAll())
+        .rejects.toThrow("所有者が一致しない");
+
+      expect(replaceStudentData)
+        .not.toHaveBeenCalled();
+
+      expect(put).not.toHaveBeenCalled();
+      expect(del).not.toHaveBeenCalled();
+    }
+  );
+
+  it("送信後にアカウントが変わった場合は受信しない", async () => {
+    const { sync, auth, fetchMock } =
+      setup(true, false);
+
+    auth.getSession
+      .mockResolvedValueOnce(student)
+      .mockResolvedValue(
+        new Student({
+          studentId: "other-student",
+        })
+      );
+
+    await expect(sync.pullAll())
+      .rejects.toThrow("ログイン状態が変更");
+
+    expect(fetchMock)
+      .not.toHaveBeenCalled();
+
+    expect(replaceStudentData)
+      .not.toHaveBeenCalled();
+  });
+
+  it("受信後にログアウトしていた場合は置換しない", async () => {
+    const { sync, auth } = setup(true, false);
+
+    auth.getSession
+      .mockResolvedValueOnce(student)
+      .mockResolvedValueOnce(student)
+      .mockResolvedValue(null);
+
+    await expect(sync.pullAll())
+      .rejects.toThrow("ログイン状態が変更");
+
+    expect(replaceStudentData)
+      .not.toHaveBeenCalled();
+
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
   });
 });
