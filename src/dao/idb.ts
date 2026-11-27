@@ -10,6 +10,7 @@ import type { Material } from "../beans/Material";
 import type { LearningItem } from "../beans/LearningItem";
 import type { Prerequisite } from "../beans/Prerequisite";
 import type { Link } from "../lib/logic";
+import type { Test } from "../beans/Test";
 // 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
 const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
@@ -488,4 +489,58 @@ export async function editPrerequisites(
       "前提関係の保存に失敗しました"
     );
   }
+}
+/**
+ * テストの読み込みと更新を
+ * 同一トランザクションで行う。
+ */
+export async function editStoredTest<T>(
+  testId: string,
+  edit: (row: Test) => {
+    test: Test;
+    result: T;
+  }
+): Promise<T> {
+  const db = await openDb();
+
+  const tx = db.transaction(
+    "tests",
+    "readwrite"
+  );
+
+  const store = tx.objectStore("tests");
+
+  let failure: unknown;
+  let result!: T;
+
+  const req = store.get(testId);
+
+  req.onsuccess = () => {
+    try {
+      const row = req.result as Test | undefined;
+
+      if (!row) {
+        throw new Error("テストが見つかりません");
+      }
+
+      const updated = edit(row);
+
+      store.put(structuredClone(updated.test));
+
+      result = updated.result;
+    } catch (e) {
+      failure = e;
+      tx.abort();
+    }
+  };
+
+  try {
+    await done(tx);
+  } catch (e) {
+    throw failure ?? e ?? new Error(
+      "テストの保存に失敗しました"
+    );
+  }
+
+  return result;
 }

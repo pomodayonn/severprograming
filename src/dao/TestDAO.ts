@@ -13,7 +13,14 @@ import { Question } from "../beans/Question";
 import { Attempt } from "../beans/Attempt";
 import { Answer } from "../beans/Answer";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put, recordDeletion } from "./idb";
+import {
+  del,
+  get,
+  getAllBy,
+  put,
+  recordDeletion,
+  editStoredTest,
+} from "./idb";
 
 const toTest = (r: Test): Test => new Test({
   ...r,
@@ -40,15 +47,50 @@ export class TestDAO {
       attempts: [],
     }));
   }
-  /** 1回分の受験を、解答ごと保存する（初回も解き直しも） */
-  async insertAttempt(attempt: Attempt): Promise<void> {
-    await this.change(attempt.testId, (test, t) => {
-      test.attempts = [...test.attempts.filter(a => a.attemptId !== attempt.attemptId), new Attempt({
-        ...attempt, studentId: test.studentId, updatedAt: t,
-        answers: attempt.answers.map(x => new Answer({ ...x, studentId: test.studentId, attemptId: attempt.attemptId, updatedAt: t })),
-      })];
+   /**
+   * 受験番号を確定し、受験履歴と最終受験日時を
+   * 同時に保存する。
+   */
+  async insertAttempt(
+    testId: string,
+    build: (test: Test, t: string) => Attempt
+  ): Promise<Attempt> {
+    return this.change(testId, (test, t) => {
+      const attempt = build(test, t);
+
+      const nextNo = Math.max(
+        0,
+        ...test.attempts.map(a => a.attemptNo)
+      ) + 1;
+
+      const saved = new Attempt({
+        ...attempt,
+        testId,
+        studentId: test.studentId,
+        attemptNo: nextNo,
+        updatedAt: t,
+
+        answers: attempt.answers.map(x =>
+          new Answer({
+            ...x,
+            studentId: test.studentId,
+            attemptId: attempt.attemptId,
+            updatedAt: t,
+          })
+        ),
+      });
+
+      test.attempts = [
+        ...test.attempts,
+        saved,
+      ];
+
+      test.lastTakenAt = saved.takenAt;
+
+      return saved;
     });
   }
+
   /** そのテストの受験をすべて読み込む（1回目から順に） */
   async findAttempts(testId: string): Promise<Attempt[]> {
     return (await this.findById(testId))?.attempts ?? [];
@@ -110,10 +152,23 @@ export class TestDAO {
     for (const t of await getAllBy<Test>("tests", "itemId", itemId)) await del("tests", t.testId);
   }
 
-  /** テストを読み込んで書き換え、更新日時を新しくして保存する */
-  private async change(testId: string, f: (test: Test, t: string) => void): Promise<void> {
-    const test = await this.findById(testId); if (!test) throw new Error("テストが見つかりません");
-    const t = now(); f(test, t); test.updatedAt = t;
-    await put("tests", test);
+  /** テストの読み込み・変更・保存を一括処理する */
+  private async change<T>(
+    testId: string,
+    f: (test: Test, t: string) => T
+  ): Promise<T> {
+    return editStoredTest(testId, row => {
+      const test = toTest(row);
+      const t = now();
+
+      const result = f(test, t);
+
+      test.updatedAt = t;
+
+      return {
+        test,
+        result,
+      };
+    });
   }
 }

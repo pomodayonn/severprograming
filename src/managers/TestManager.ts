@@ -136,23 +136,47 @@ export class TestManager {
     await this.sync();
   }
 
-  /**
-   * 解答を受け取り、意味→用語のテストなら採点する。
-   * 初回も解き直しも、解くたびに新しい Attempt（受験）として保存し、最終受験日時も更新する
+   /**
+   * 解答を採点し、新しい受験として保存する。
+   * 受験番号と最終受験日時は保存時に確定する。
    */
-  async submitAnswers(testId: string, answers: string[]): Promise<Attempt> {
-    const test = await this.getTest(testId), t = now();
+  async submitAnswers(
+    testId: string,
+    answers: string[]
+  ): Promise<Attempt> {
     const attemptId = newId();
-    const attempt = new Attempt({
-      attemptId, testId, studentId: test.studentId, attemptNo: test.attempts.length + 1, takenAt: t,
-      answers: inOrder(test).map((q, i) => new Answer({ // answers は問題番号の順に並んでいる
-        answerId: newId(), attemptId, questionId: q.questionId, studentId: test.studentId, studentAnswer: answers[i] ?? "", answeredAt: t,
-        correct: test.testType === TestType.MEANING_TO_TERM ? this.gradeMeaningToTerm(answers[i] ?? "", q.modelAnswer) : null,
-      })),
-    });
-    await this.testDAO.insertAttempt(attempt);
-    await this.testDAO.updateLastTaken(testId, t);
+
+    const attempt = await this.testDAO.insertAttempt(
+      testId,
+      (test, t) => new Attempt({
+        attemptId,
+        testId,
+        studentId: test.studentId,
+        takenAt: t,
+
+        answers: inOrder(test).map((q, i) =>
+          new Answer({
+            answerId: newId(),
+            attemptId,
+            questionId: q.questionId,
+            studentId: test.studentId,
+            studentAnswer: answers[i] ?? "",
+            answeredAt: t,
+
+            correct:
+              test.testType === TestType.MEANING_TO_TERM
+                ? this.gradeMeaningToTerm(
+                    answers[i] ?? "",
+                    q.modelAnswer
+                  )
+                : null,
+          })
+        ),
+      })
+    );
+
     await this.sync();
+
     return attempt;
   }
 

@@ -16,7 +16,11 @@ import { Test } from "../../src/beans/Test";
 import { Question } from "../../src/beans/Question";
 import { TestType } from "../../src/enums/TestType";
 
-import { get, put } from "../../src/dao/idb";
+import {
+  get,
+  put,
+  editStoredTest,
+} from "../../src/dao/idb";
 
 import {
   regenerateQuestion as aiRegenerate,
@@ -28,6 +32,7 @@ vi.mock("../../src/dao/idb", () => ({
   del: vi.fn(),
   getAllBy: vi.fn(),
   recordDeletion: vi.fn(),
+  editStoredTest: vi.fn(),
 }));
 
 vi.mock("../../src/services/ai", () => ({
@@ -98,6 +103,23 @@ beforeEach(() => {
       if (store === "tests") {
         stored = structuredClone(value as Test);
       }
+    }
+  );
+
+    // テスト更新用トランザクションのモック
+  vi.mocked(editStoredTest).mockImplementation(
+    async (id, edit) => {
+      const row = await get<Test>("tests", id);
+
+      if (!row) {
+        throw new Error("テストが見つかりません");
+      }
+
+      const updated = edit(row);
+
+      await put("tests", updated.test);
+
+      return updated.result;
     }
   );
 });
