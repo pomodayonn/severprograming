@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.qa-ai.json",
+  "include": [
+    "src",
+    "tests/**/*.ts"
+  ]
+}
