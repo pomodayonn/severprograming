@@ -17,6 +17,8 @@ import {
 } from "../../src/managers/SyncManager";
 
 import { Note } from "../../src/beans/Note";
+import { Subject } from "../../src/beans/Subject";
+import { LearningItem } from "../../src/beans/LearningItem";
 import { NotePart } from "../../src/beans/NotePart";
 import { Student } from "../../src/beans/Student";
 import { PartType } from "../../src/enums/PartType";
@@ -105,7 +107,13 @@ beforeEach(() => {
   );
 
   vi.mocked(getAll).mockImplementation(
-    async store => store === "notes" ? [note] : []
+    async store => {
+      if (store === "notes") return [note];
+      // 同期済みの親は再送せず、参照検証にだけ使用する。
+      if (store === "subjects") return [new Subject({ subjectId: "subject-1", studentId, updatedAt: previousSync })];
+      if (store === "learningItems") return [new LearningItem({ itemId: "item-1", subjectId: "subject-1", studentId, updatedAt: previousSync })];
+      return [];
+    }
   );
 
   vi.mocked(getAllBy).mockResolvedValue([]);

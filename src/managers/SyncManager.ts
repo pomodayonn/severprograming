@@ -261,6 +261,39 @@ function validateReceivedGraph(
   }
 }
 
+/** SYNC-14b: 今回送るルート行と、その親を端末の保存済みデータで検証する。
+ * 親は今回の送信対象でなくてもよいが、同じ学生のものでなければならない。
+ */
+function validateOutgoingRoots(
+  sid: string, allSubjects: Subject[], allItems: LearningItem[],
+  items: LearningItem[], prereqs: Prerequisite[], notes: Note[], tests: Test[]
+): void {
+  const subjectIds = new Set(allSubjects.filter(x => x.studentId === sid).map(x => x.subjectId));
+  const itemById = new Map(allItems.filter(x => x.studentId === sid).map(x => [x.itemId, x]));
+  const validId = (id: string) => typeof id === "string" && id.trim().length > 0;
+  const fail = (relation: string): never => {
+    throw new SyncError(`送信データの参照先を確認できません（${relation}）`);
+  };
+  const checkSubject = (item: LearningItem) => {
+    if (!validId(item.subjectId) || !subjectIds.has(item.subjectId)) fail("learning_item → subject");
+  };
+  const requireItem = (id: string, relation: string): LearningItem => {
+    const item = validId(id) ? itemById.get(id) : undefined;
+    if (!item) return fail(relation);
+    checkSubject(item);
+    return item;
+  };
+  for (const item of items) checkSubject(item);
+  for (const link of prereqs) {
+    const item = requireItem(link.itemId, "prerequisite → item_id");
+    const parent = requireItem(link.prereqItemId, "prerequisite → prereq_item_id");
+    if (item.itemId === parent.itemId) fail("prerequisite の自己参照");
+    if (item.subjectId !== parent.subjectId) fail("prerequisite の科目不一致");
+  }
+  for (const note of notes) requireItem(note.itemId, "note → learning_item");
+  for (const test of tests) requireItem(test.itemId, "test → learning_item");
+}
+
 /** SYNC-14a: 保存済みの入れ子データを送信前に検証する。
  * 送信時に親IDや所有者を付け直す処理で不整合を隠さない。
  */
@@ -729,6 +762,15 @@ export class SyncManager {
     const changedTests = newer(await getAll<Test>("tests"));
     validateOutgoingChildren(sid, changedNotes, changedTests);
 
+    // 親を差分抽出する前に全件取得し、未変更の親も参照検証に使う。
+    // 送信するデータをすべてHTTP通信前に取得し、検証済みの配列を使う。
+    const allSubjects = await getAll<Subject>("subjects");
+    const allItems = await getAll<LearningItem>("learningItems");
+    const subjects = newer(allSubjects);
+    const items = newer(allItems);
+    const prereqs = newer(await getAll<Prerequisite>("prerequisites"));
+    validateOutgoingRoots(sid, allSubjects, allItems, items, prereqs, changedNotes, changedTests);
+
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
     for (const d of dels) {
       const filter = d.table === "prerequisite"
@@ -738,11 +780,8 @@ export class SyncManager {
       await del("deletions", [d.table, d.key]);
     }
     // 2) 親から順に送る（外部キーがあるので、科目 → 学習項目 → 前提項目・ノート・テスト の順）
-    const subjects = newer(await getAll<Subject>("subjects"));
     await this.upsert(sid,"subject", subjects.map(x => ({ subject_id: x.subjectId, subject_name: x.subjectName, created_at: x.createdAt })));
-    const items = newer(await getAll<LearningItem>("learningItems"));
     await this.upsert(sid,"learning_item", items.map(x => ({ item_id: x.itemId, subject_id: x.subjectId, item_name: x.itemName, created_at: x.createdAt })));
-    const prereqs = newer(await getAll<Prerequisite>("prerequisites"));
     await this.upsert(sid,"prerequisite", prereqs.map(x => ({ item_id: x.itemId, prereq_item_id: x.prereqItemId })), "item_id,prereq_item_id");
 
     // ノート：変わったノートは、部品と単語を丸ごと送り直す（消した部品は Neon からも消す）

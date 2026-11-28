@@ -18,6 +18,8 @@ import {
 
 import { Student } from "../../src/beans/Student";
 import { Subject } from "../../src/beans/Subject";
+import { LearningItem } from "../../src/beans/LearningItem";
+import { Prerequisite } from "../../src/beans/Prerequisite";
 import { Note } from "../../src/beans/Note";
 import { NotePart } from "../../src/beans/NotePart";
 import { Word } from "../../src/beans/Word";
@@ -467,6 +469,7 @@ describe("SYNC-14a：送信前の子データ検証", () => {
     const f = fixture();
     vi.mocked(getAll).mockImplementation(async store => {
       if (store === "subjects") return [subject];
+      if (store === "learningItems") return [new LearningItem({ itemId: "i1", studentId, subjectId: subject.subjectId, updatedAt: previousSync })];
       if (store === "notes") return [f.note];
       if (store === "tests") return [f.test];
       return [];
@@ -533,6 +536,7 @@ describe("SYNC-14a：送信前の子データ検証", () => {
       : []);
     vi.mocked(getAll).mockImplementation(async store => {
       if (store === "subjects") return [subject];
+      if (store === "learningItems") return [new LearningItem({ itemId: "i1", studentId, subjectId: subject.subjectId, updatedAt: previousSync })];
       if (store === "notes") return [f.note];
       if (store === "tests") {
         if (pending) return [];
@@ -564,6 +568,77 @@ describe("SYNC-14a：送信前の子データ検証", () => {
     await sync.pushChanges();
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(new URL(fetchMock.mock.calls[0][0]).pathname).toBe("/subject");
+    expect(meta.get(lastSyncKey)).not.toBe(previousSync);
+  });
+});
+
+// SYNC-14b: 端末内の合成データを検証する。実DB・外部サービスは使用しない。
+describe("SYNC-14b：送信前のルート参照検証", () => {
+  function rootSetup() {
+    const { sync, fetchMock } = setup();
+    const parent = new Subject({ ...subject, updatedAt: previousSync });
+    const other = new Subject({ subjectId: "s2", studentId, updatedAt: previousSync });
+    const item = new LearningItem({ itemId: "i1", studentId, subjectId: parent.subjectId, updatedAt: previousSync });
+    const prior = new LearningItem({ itemId: "i2", studentId, subjectId: parent.subjectId, updatedAt: previousSync });
+    const link = new Prerequisite({ itemId: "i1", prereqItemId: "i2", studentId, updatedAt });
+    const note = new Note({ noteId: "n1", itemId: "i1", studentId, updatedAt, lastSavedAt: updatedAt });
+    const test = new Test({ testId: "t1", itemId: "i1", studentId, updatedAt, createdAt: updatedAt, questions: [new Question({ questionId: "q1", testId: "t1", studentId, number: 1 })] });
+    const f = { parent, other, item, prior, link, note, test };
+    vi.mocked(getAll).mockImplementation(async store => {
+      if (store === "subjects") return [parent, other];
+      if (store === "learningItems") return [item, prior];
+      if (store === "prerequisites") return [link];
+      if (store === "notes") return [note];
+      if (store === "tests") return [test];
+      return [];
+    });
+    fetchMock.mockImplementation(async (url, init) => {
+      if (new URL(url).pathname === "/note" && init?.method === "POST") return new Response(JSON.stringify([{ updated_at: updatedAt }]), { status: 200 });
+      if (init?.method === "POST" || init?.method === "DELETE") return new Response(null, { status: 204 });
+      throw new Error("想定外の通信");
+    });
+    return { sync, fetchMock, f };
+  }
+  type Roots = ReturnType<typeof rootSetup>["f"];
+  const invalid: [string, string, (f: Roots) => void][] = [
+    ["変更項目の科目欠落", "learning_item → subject", f => { f.item.updatedAt = updatedAt; f.item.subjectId = "missing"; }],
+    ["変更項目の科目が別所有者", "learning_item → subject", f => { f.item.updatedAt = updatedAt; f.parent.studentId = "other-student"; }],
+    ["ノートの親欠落", "note → learning_item", f => { f.note.itemId = "missing"; }],
+    ["ノートの親が別所有者", "note → learning_item", f => { f.link.updatedAt = previousSync; f.item.studentId = "other-student"; }],
+    ["未変更の親項目の科目欠落", "learning_item → subject", f => { f.item.subjectId = "missing"; }],
+    ["テストの親欠落", "test → learning_item", f => { f.test.itemId = "missing"; }],
+    ["テストの親が別所有者", "test → learning_item", f => { f.prior.studentId = "other-student"; f.link.updatedAt = previousSync; f.test.itemId = "i2"; }],
+    ["前提関係の始点欠落", "prerequisite → item_id", f => { f.link.itemId = "missing"; }],
+    ["前提関係の終点欠落", "prerequisite → prereq_item_id", f => { f.link.prereqItemId = "missing"; }],
+    ["前提関係の終点が別所有者", "prerequisite → prereq_item_id", f => { f.prior.studentId = "other-student"; }],
+    ["前提関係の自己参照", "prerequisite の自己参照", f => { f.link.prereqItemId = "i1"; }],
+    ["前提関係の科目不一致", "prerequisite の科目不一致", f => { f.prior.subjectId = "s2"; }],
+    ["空のノート親ID", "note → learning_item", f => { f.note.itemId = " "; }],
+  ];
+  it.each(invalid)("%s なら削除を含むHTTP通信前に中止する", async (_name, message, change) => {
+    const { sync, fetchMock, f } = rootSetup();
+    vi.mocked(getAllBy).mockResolvedValue([{ table: "subject", key: "deleted-subject", studentId, at: updatedAt }]);
+    change(f);
+    await expect(sync.pushChanges()).rejects.toThrow(message);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+  it("同期済みの親を検証に使い、再送せずに子だけ送る", async () => {
+    const { sync, fetchMock } = rootSetup();
+    await sync.pushChanges();
+    const paths = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => new URL(url).pathname);
+    expect(paths).toEqual(["/prerequisite", "/note", "/test", "/question"]);
+    expect(meta.get(lastSyncKey)).not.toBe(previousSync);
+  });
+  it("変更された親と子を順に送信する", async () => {
+    const { sync, fetchMock, f } = rootSetup();
+    f.parent.updatedAt = updatedAt;
+    f.item.updatedAt = updatedAt;
+    await sync.pushChanges();
+    const paths = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => new URL(url).pathname);
+    expect(paths).toEqual(["/subject", "/learning_item", "/prerequisite", "/note", "/test", "/question"]);
     expect(meta.get(lastSyncKey)).not.toBe(previousSync);
   });
 });
