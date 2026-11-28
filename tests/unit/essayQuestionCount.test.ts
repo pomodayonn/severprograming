@@ -135,6 +135,7 @@ describe("AI-04：バックエンドの生成問題数検証", () => {
     );
 
     const usage = {
+      getRemaining: vi.fn().mockResolvedValue(20),
       reserve: vi.fn().mockResolvedValue({
         useDate: "2026-11-28",
         remaining: 19,

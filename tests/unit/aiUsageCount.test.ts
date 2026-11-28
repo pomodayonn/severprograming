@@ -32,6 +32,7 @@ function setup() {
   };
 
   const usage = {
+    getRemaining: vi.fn().mockResolvedValue(20),
     reserve: vi.fn().mockResolvedValue({
       useDate: "2026-11-27",
       remaining: 17,

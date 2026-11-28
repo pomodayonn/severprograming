@@ -21,7 +21,7 @@ const sec = (start) => `${((Date.now() - start) / 1000).toFixed(1)}秒`;
 
 export class AiService {
   /**
-   * @param {import("./AiProvider.js").AiProvider[]} providers 使えるAI（name で groups から選ぶ）
+   * @param {Array<Pick<import("./AiProvider.js").AiProvider, "name" | "canAccept" | "send">>} providers 使えるAI（name で groups から選ぶ）
    * @param {{ name: string, maxChars: number, providers: string[] }[]} groups 長さごとのグループ（短い順に並べる）
    */
   constructor(providers, groups) {

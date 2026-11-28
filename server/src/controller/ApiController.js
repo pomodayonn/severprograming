@@ -43,9 +43,9 @@ function extraOf(v) {
 
 export class ApiController {
   /**
-   * @param {import("../service/TokenVerifier.js").TokenVerifier} tokenVerifier
-   * @param {import("../managers/AiUsageManager.js").AiUsageManager} aiUsageManager
-   * @param {import("../boundary/AiService.js").AiService} aiService
+   * @param {Pick<import("../service/TokenVerifier.js").TokenVerifier, "verify">} tokenVerifier
+   * @param {Pick<import("../managers/AiUsageManager.js").AiUsageManager, "getRemaining" | "reserve" | "release">} aiUsageManager
+   * @param {Pick<import("../boundary/AiService.js").AiService, "send">} aiService
    */
   constructor(tokenVerifier, aiUsageManager, aiService) {
     this.tokenVerifier = tokenVerifier;
