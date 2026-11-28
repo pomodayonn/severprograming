@@ -492,6 +492,56 @@ function deletionRevision(): string {
     b => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** SYNC-07d-1: 単独のテスト・前提リンクの削除と削除ログ登録を同じtxで行う。 */
+export function deleteSyncedLeaf(storeName: "tests", key: string): Promise<void>;
+export function deleteSyncedLeaf(storeName: "prerequisites", key: [string, string]): Promise<void>;
+export async function deleteSyncedLeaf(
+  storeName: "tests" | "prerequisites", key: string | [string, string]
+): Promise<void> {
+  const ids = typeof key === "string" ? [key] : key;
+  if ((storeName === "tests" ? typeof key !== "string" : !Array.isArray(key) || key.length !== 2) ||
+      !ids.every(id => typeof id === "string" && id.length > 0 && !/[^A-Za-z0-9_-]/.test(id))) {
+    throw new Error("削除対象のキーが不正です");
+  }
+  const table = storeName === "tests" ? "test" : "prerequisite";
+  const logKey = ids.join("|");
+  const db = await openDb();
+  const tx = db.transaction([storeName, "deletions"], "readwrite");
+  const store = tx.objectStore(storeName);
+  const logs = tx.objectStore("deletions");
+  let failure: unknown;
+  // リクエストエラー時もabortの完了まで待ち、ロールバック後に失敗を返す。
+  const committed = new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("削除の保存に失敗しました"));
+  });
+  const abort = (error: unknown) => { failure = error; tx.abort(); };
+  const rowReq = store.get(key);
+  rowReq.onsuccess = () => {
+    const row = rowReq.result as { studentId?: string } | undefined;
+    if (!row) return; // 存在しなければ従来どおり何も変更しない。
+    if (typeof row.studentId !== "string" || !row.studentId.trim()) {
+      abort(new Error("削除対象の所有者を確認できません"));
+      return;
+    }
+    const owner = row.studentId;
+    const logReq = logs.get([table, logKey]);
+    logReq.onsuccess = () => {
+      try {
+        const previous = logReq.result as Deletion | undefined;
+        if (previous && previous.studentId !== owner) {
+          throw new Error("削除ログの所有者が一致しません");
+        }
+        const log: Deletion = { table, key: logKey, studentId: owner,
+          at: new Date().toISOString(), revision: deletionRevision() };
+        store.delete(key);
+        logs.put(log);
+      } catch (error) { abort(error); }
+    };
+  };
+  await committed;
+}
+
 /** SYNC-07a: 送信した版と現在の版が一致する場合だけ削除ログを消費する。 */
 export async function acknowledgeDeletion(sent: Deletion): Promise<boolean> {
   const db = await openDb();

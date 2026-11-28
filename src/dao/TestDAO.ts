@@ -18,7 +18,7 @@ import {
   get,
   getAllBy,
   put,
-  recordDeletion,
+  deleteSyncedLeaf,
   editStoredTest,
 } from "./idb";
 
@@ -143,9 +143,7 @@ export class TestDAO {
   }
   /** テストを1つ、問題・受験・解答ごと消す（11/23）。Neon では test を消すと question・attempt・answer も一緒に消える */
   async delete(testId: string): Promise<void> {
-    const t = await get<Test>("tests", testId); if (!t) return;
-    await del("tests", testId);
-    await recordDeletion("test", testId, t.studentId);
+    await deleteSyncedLeaf("tests", testId);
   }
   /** 学習項目を消したときに、テストフォルダを中のテストごと消す（Neon では学習項目と一緒に消える） */
   async deleteTestFolder(itemId: string): Promise<void> {

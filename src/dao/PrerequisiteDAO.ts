@@ -11,11 +11,10 @@ import { Prerequisite } from "../beans/Prerequisite";
 import { now } from "../beans/DateTime";
 import {
   del,
-  get,
   getAll,
   getAllBy,
   put,
-  recordDeletion,
+  deleteSyncedLeaf,
   editPrerequisites,
   type PrerequisiteEdit,
 } from "./idb";
@@ -39,9 +38,7 @@ export class PrerequisiteDAO {
   }
   /** 前提項目を外す */
   async delete(itemId: string, prereqItemId: string): Promise<void> {
-    const p = await get<Prerequisite>("prerequisites", [itemId, prereqItemId]); if (!p) return;
-    await del("prerequisites", [itemId, prereqItemId]);
-    await recordDeletion("prerequisite", `${itemId}|${prereqItemId}`, p.studentId);
+    await deleteSyncedLeaf("prerequisites", [itemId, prereqItemId]);
   }
   /** その学習項目に関係する前提項目（前提にしている・されている）を端末から消す。学習項目を消すときに使う */
   async deleteByItem(itemId: string): Promise<void> {
