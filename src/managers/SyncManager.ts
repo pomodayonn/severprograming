@@ -206,6 +206,33 @@ function validateReceivedGraph(
     "answer → question"
   );
 
+  // SYNC-15a: 親の存在だけでは検出できない参照関係を検証する。
+  const prerequisiteKeys = new Set<string>();
+  for (const row of data.prerequisite) {
+    const itemId = String(row.item_id);
+    const prereqId = String(row.prereq_item_id);
+    if (itemId === prereqId) {
+      fail("prerequisite の自己参照");
+    }
+    // 上の check() で両方の親IDの存在を確認済み。
+    if (items.get(itemId)!.subject_id !== items.get(prereqId)!.subject_id) {
+      fail("prerequisite の科目不一致");
+    }
+    const key = JSON.stringify([itemId, prereqId]);
+    if (prerequisiteKeys.has(key)) {
+      fail("prerequisite の複合主キー重複");
+    }
+    prerequisiteKeys.add(key);
+  }
+
+  for (const row of data.answer) {
+    const attempt = attempts.get(String(row.attempt_id))!;
+    const question = questions.get(String(row.question_id))!;
+    if (attempt.test_id !== question.test_id) {
+      fail("answer のテスト不一致");
+    }
+  }
+
   // テストに設定された問題数と
   // 実際に受信した問題数を比較する。
   const counts = new Map<string, number>();

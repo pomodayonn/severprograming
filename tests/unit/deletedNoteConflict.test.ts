@@ -650,6 +650,44 @@ describe("SYNC-13：受信データの親子関係検証", () => {
     expect(del).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["自己参照", "prerequisite の自己参照"],
+    ["科目不一致", "prerequisite の科目不一致"],
+    ["複合主キー重複", "prerequisite の複合主キー重複"],
+    ["テスト不一致", "answer のテスト不一致"],
+  ])("%s の受信を拒否し端末データを保持する", async (kind, message) => {
+    const { sync, data } = graphSetup();
+    if (kind === "自己参照") {
+      data.prerequisite[0].prereq_item_id = "i1";
+    } else if (kind === "科目不一致") {
+      data.subject.push({ subject_id: "s2" });
+      data.learning_item[1].subject_id = "s2";
+    } else if (kind === "複合主キー重複") {
+      data.prerequisite.push({ ...data.prerequisite[0] });
+    } else {
+      // 親が存在し、各テストの問題数も一致するが、解答だけが別テストを参照する。
+      data.test.push({ test_id: "t2", item_id: "i2", question_count: 1 });
+      data.question.push({ question_id: "q2", test_id: "t2", number: 1 });
+      data.answer[0].question_id = "q2";
+    }
+    await expect(sync.pullAll()).rejects.toThrow(message);
+    expect(replaceStudentData).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("同じ科目の異なる前提リンクと別テスト内の正常な解答を受信できる", async () => {
+    const { sync, data } = graphSetup();
+    data.learning_item.push({ item_id: "i3", subject_id: "s1" });
+    data.prerequisite.push({ item_id: "i1", prereq_item_id: "i3" });
+    data.test.push({ test_id: "t2", item_id: "i2", question_count: 1 });
+    data.question.push({ question_id: "q2", test_id: "t2", number: 1 });
+    data.attempt.push({ attempt_id: "r2", test_id: "t2", attempt_no: 1 });
+    data.answer.push({ answer_id: "a2", attempt_id: "r2", question_id: "q2" });
+    await sync.pullAll();
+    expect(replaceStudentData).toHaveBeenCalledOnce();
+  });
+
   it("問題数が不足していれば最新化しない", async () => {
     const { sync, data } = graphSetup();
 
