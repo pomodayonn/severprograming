@@ -542,6 +542,111 @@ export async function deleteSyncedLeaf(
   await committed;
 }
 
+/** SYNC-07d-2a: 学習項目と関連行・資料本体・削除ログをまとめて削除する。 */
+export async function deleteLearningItemTree(itemId: string): Promise<void> {
+  if (typeof itemId !== "string" || !itemId || /[^A-Za-z0-9_-]/.test(itemId)) {
+    throw new Error("削除対象のキーが不正です");
+  }
+  const db = await openDb();
+  const stores: StoreName[] = ["subjects", "learningItems", "prerequisites", "notes", "tests", "materials", "materialContents", "deletions"];
+  const tx = db.transaction(stores, "readwrite");
+  const os = (name: StoreName) => tx.objectStore(name);
+  let failure: unknown;
+  const committed = new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error("学習項目の削除に失敗しました"));
+  });
+  const abort = (error: unknown) => { failure = error; tx.abort(); };
+  const rootReq = os("learningItems").get(itemId);
+  rootReq.onsuccess = () => {
+    try {
+      const root = rootReq.result as LearningItem | undefined;
+      // 親がない場合は所属が確認できない孤立データを消さない。
+      if (!root) return;
+      const owner = root.studentId;
+      if (typeof owner !== "string" || !owner.trim()) throw new Error("削除対象の所有者を確認できません");
+      const parentReq = os("subjects").get(root.subjectId);
+      const itemsReq = os("learningItems").getAll();
+      const linksReq = os("prerequisites").getAll();
+      const notesReq = os("notes").index("itemId").getAll(itemId);
+      const testsReq = os("tests").index("itemId").getAll(itemId);
+      const materialsReq = os("materials").index("itemId").getAll(itemId);
+      const logReq = os("deletions").get(["learning_item", itemId]);
+      const reads = [parentReq, itemsReq, linksReq, notesReq, testsReq, materialsReq, logReq];
+      let remaining = reads.length;
+      const checked = () => {
+        if (--remaining !== 0) return;
+        try {
+          const requireOwner = (row: { studentId: string } | undefined, relation: string) => {
+            if (!row || row.studentId !== owner) throw new Error("削除対象の所有者が一致しません（" + relation + "）");
+          };
+          requireOwner(parentReq.result as Subject | undefined, "subject");
+          const items = new Map((itemsReq.result as LearningItem[]).map(i => [i.itemId, i]));
+          const links = (linksReq.result as Prerequisite[]).filter(p => p.itemId === itemId || p.prereqItemId === itemId);
+          const notes = notesReq.result as Note[];
+          const tests = testsReq.result as Test[];
+          const materials = materialsReq.result as Material[];
+          const previous = logReq.result as Deletion | undefined;
+          if (previous) requireOwner(previous, "deletions");
+          for (const p of links) {
+            requireOwner(p, "prerequisite");
+            for (const id of [p.itemId, p.prereqItemId]) {
+              const peer = items.get(id);
+              requireOwner(peer, "prerequisite → learning_item");
+              if (peer?.subjectId !== root.subjectId) throw new Error("削除対象の所属科目が一致しません（prerequisite）");
+            }
+          }
+          const requireParent = (actual: string, expected: string, relation: string) => {
+            if (!expected || actual !== expected) throw new Error("削除対象の参照先が一致しません（" + relation + "）");
+          };
+          for (const n of notes) {
+            requireOwner(n, "note");
+            for (const p of n.parts) {
+              requireOwner(p, "note_part"); requireParent(p.noteId, n.noteId, "note_part → note");
+              for (const w of p.words) {
+                requireOwner(w, "word"); requireParent(w.partId, p.partId, "word → note_part");
+              }
+            }
+          }
+          for (const t of tests) {
+            requireOwner(t, "test");
+            const questions = new Set(t.questions.map(q => q.questionId));
+            for (const q of t.questions) {
+              requireOwner(q, "question"); requireParent(q.testId, t.testId, "question → test");
+            }
+            for (const a of t.attempts) {
+              requireOwner(a, "attempt"); requireParent(a.testId, t.testId, "attempt → test");
+              for (const x of a.answers) {
+                requireOwner(x, "answer"); requireParent(x.attemptId, a.attemptId, "answer → attempt");
+                if (!x.questionId || !questions.has(x.questionId)) throw new Error("削除対象の参照先が一致しません（answer → question）");
+              }
+            }
+          }
+          for (const m of materials) {
+            // 所有者欄がない旧形式は、同じtxで確認済みの親からのみ判断する。
+            if (m.studentId !== undefined && m.studentId !== "") requireOwner(m, "material");
+          }
+          // 検証がすべて成功するまで削除・書込リクエストを発行しない。
+          const log: Deletion = { table: "learning_item", key: itemId, studentId: owner,
+            at: new Date().toISOString(), revision: deletionRevision() };
+          for (const p of links) os("prerequisites").delete([p.itemId, p.prereqItemId]);
+          for (const n of notes) os("notes").delete(n.noteId);
+          for (const t of tests) os("tests").delete(t.testId);
+          for (const m of materials) {
+            os("materials").delete(m.materialId);
+            os("materialContents").delete(m.materialId);
+          }
+          os("learningItems").delete(itemId);
+          // クラウドの子孫は既存のCASCADEに任せる。既存の別ログは消さない。
+          os("deletions").put(log);
+        } catch (error) { abort(error); }
+      };
+      for (const req of reads) req.onsuccess = checked;
+    } catch (error) { abort(error); }
+  };
+  await committed;
+}
+
 /** SYNC-07a: 送信した版と現在の版が一致する場合だけ削除ログを消費する。 */
 export async function acknowledgeDeletion(sent: Deletion): Promise<boolean> {
   const db = await openDb();

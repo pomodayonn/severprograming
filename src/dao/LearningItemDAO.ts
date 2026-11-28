@@ -8,7 +8,7 @@
 // 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
 import { LearningItem } from "../beans/LearningItem";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put, recordDeletion } from "./idb";
+import { get, getAllBy, put, deleteLearningItemTree } from "./idb";
 
 export class LearningItemDAO {
   /** その科目の学習項目を、作った順に返す */
@@ -30,10 +30,8 @@ export class LearningItemDAO {
     const i = await get<LearningItem>("learningItems", itemId); if (!i) return;
     await put("learningItems", new LearningItem({ ...i, itemName: name, updatedAt: now() })); // 11/23：ほかの保存と同じく beans で
   }
-  /** 学習項目を消す（ノート・テスト・資料は LearningItemManager.deleteItem が消す） */
+  /** 学習項目・関連行・資料本体・削除記録を同一トランザクションで処理する。 */
   async delete(itemId: string): Promise<void> {
-    const i = await get<LearningItem>("learningItems", itemId); if (!i) return;
-    await del("learningItems", itemId);
-    await recordDeletion("learning_item", itemId, i.studentId);
+    await deleteLearningItemTree(itemId);
   }
 }

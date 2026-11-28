@@ -61,10 +61,7 @@ export class LearningItemManager {
    * sync は SubjectManager から科目ごと消すときに false（最後に1回だけ送る）
    */
   async deleteItem(itemId: string, sync = true): Promise<void> {
-    await this.prerequisiteDAO.deleteByItem(itemId);
-    await this.noteDAO.deleteByItem(itemId);
-    await this.testDAO.deleteTestFolder(itemId);
-    await this.materialDAO.deleteStorage(itemId);
+    // DAOで関連行・資料本体・削除ログをまとめてコミットする。
     await this.itemDAO.delete(itemId);
     if (sync) await this.sync();
   }
