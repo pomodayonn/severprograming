@@ -68,6 +68,8 @@ const note = new Note({
   parts: [
     new NotePart({
       partId: "part-1",
+      studentId,
+      noteId: "note-1",
       partType: PartType.TEXT,
       text: "テスト用の文字",
       style,
@@ -76,6 +78,8 @@ const note = new Note({
     }),
     new NotePart({
       partId: "part-2",
+      studentId,
+      noteId: "note-1",
       partType: PartType.SHAPE,
       shape: "ellipse",
       width: 90,

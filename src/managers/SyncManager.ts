@@ -261,6 +261,51 @@ function validateReceivedGraph(
   }
 }
 
+/** SYNC-14a: 保存済みの入れ子データを送信前に検証する。
+ * 送信時に親IDや所有者を付け直す処理で不整合を隠さない。
+ */
+function validateOutgoingChildren(sid: string, notes: Note[], tests: Test[]): void {
+  const owner = (row: { studentId: string }, table: string): void => {
+    if (row.studentId !== sid) {
+      throw new SyncError(`送信データの所有者が一致しません（${table}）`);
+    }
+  };
+  const parent = (actual: string, expected: string, relation: string): void => {
+    if (typeof expected !== "string" || !expected.trim() || actual !== expected) {
+      throw new SyncError(`送信データの親子関係が一致しません（${relation}）`);
+    }
+  };
+  for (const note of notes) {
+    for (const part of note.parts) {
+      owner(part, "note_part");
+      parent(part.noteId, note.noteId, "note_part → note");
+      for (const word of part.words) {
+        owner(word, "word");
+        parent(word.partId, part.partId, "word → note_part");
+      }
+    }
+  }
+  for (const test of tests) {
+    const questionIds = new Set<string>();
+    for (const question of test.questions) {
+      owner(question, "question");
+      parent(question.testId, test.testId, "question → test");
+      questionIds.add(question.questionId);
+    }
+    for (const attempt of test.attempts) {
+      owner(attempt, "attempt");
+      parent(attempt.testId, test.testId, "attempt → test");
+      for (const answer of attempt.answers) {
+        owner(answer, "answer");
+        parent(answer.attemptId, attempt.attemptId, "answer → attempt");
+        if (typeof answer.questionId !== "string" || !answer.questionId.trim() || !questionIds.has(answer.questionId)) {
+          throw new SyncError("送信データの親子関係が一致しません（answer → question）");
+        }
+      }
+    }
+  }
+}
+
 export class SyncManager {
   /** 前回同期した日時（学生ごとに端末に保存する） */
   lastSyncedAt: string | null = null;
@@ -674,8 +719,17 @@ export class SyncManager {
     const started = now();
     const newer = <T extends { updatedAt: string; studentId: string }>(rows: T[]) => rows.filter(r => r.studentId === sid && (!since || r.updatedAt > since));
 
-    // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
+    // 今回処理する削除ログを先に確定する。ノート・テスト取得後の削除を
+    // 同じ送信で消費して、取得済みの古いデータを再登録しないようにする。
     const dels = (await getAllBy<Deletion>("deletions", "studentId", sid)).sort((a, b) => a.at.localeCompare(b.at));
+
+    // 今回送るノート・テストを先に取得し、同じデータを検証と送信に使う。
+    // 不整合があれば削除ログを含むHTTP通信を始めず、端末データを保持する。
+    const changedNotes = newer(await getAll<Note>("notes"));
+    const changedTests = newer(await getAll<Test>("tests"));
+    validateOutgoingChildren(sid, changedNotes, changedTests);
+
+    // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
     for (const d of dels) {
       const filter = d.table === "prerequisite"
         ? `item_id=eq.${enc(d.key.split("|")[0])}&prereq_item_id=eq.${enc(d.key.split("|")[1])}`
@@ -695,8 +749,6 @@ export class SyncManager {
     // 11/24：別の端末で新しく保存されていたら、送らずに noteConflicts に入れる（UC-018 代替フロー(2)）
     const bases = await this.getBases(sid), found: string[] = [];
     let conflicts = await this.getConflicts(sid);
-
-    const changedNotes = newer(await getAll<Note>("notes"));
 
     // 部品を含むノートを送信する前に、
     // 必要なカラムがクラウド側に存在することを確認する。
@@ -739,7 +791,7 @@ export class SyncManager {
     }
     await this.notify(found); // 11/24：見つかったらすぐ画面に知らせる（残りのテストなどは、このあと続けて送る）
     // テスト：変わったテストは、問題・受験・解答を丸ごと送り直す
-    for (const t of newer(await getAll<Test>("tests"))) {
+    for (const t of changedTests) {
       await this.upsert(sid,"test", [{ test_id: t.testId, item_id: t.itemId, test_type: t.testType, question_count: Math.max(1, t.questions.length), created_at: t.createdAt, last_taken_at: t.lastTakenAt }]);
       await this.upsert(sid,"question", t.questions.map(q => ({ question_id: q.questionId, test_id: t.testId, number: q.number, question_text: q.questionText, model_answer: q.modelAnswer, explanation: q.explanation })));
       await this.upsert(sid,"attempt", t.attempts.map(a => ({ attempt_id: a.attemptId, test_id: t.testId, attempt_no: a.attemptNo, taken_at: a.takenAt })));
