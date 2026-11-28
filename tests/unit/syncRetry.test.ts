@@ -38,6 +38,7 @@ import {
   put,
   del,
   replaceStudentData,
+  acknowledgeDeletion,
   type Deletion,
 } from "../../src/dao/idb";
 
@@ -48,6 +49,7 @@ vi.mock("../../src/dao/idb", () => ({
   put: vi.fn(),
   del: vi.fn(),
   replaceStudentData: vi.fn(),
+  acknowledgeDeletion: vi.fn(),
 }));
 
 const studentId = "student-1";
@@ -98,6 +100,7 @@ beforeEach(() => {
 
   vi.mocked(getAllBy).mockResolvedValue([]);
   vi.mocked(del).mockResolvedValue(undefined);
+  vi.mocked(acknowledgeDeletion).mockResolvedValue(true);
 
   vi.mocked(replaceStudentData)
     .mockResolvedValue(undefined);
@@ -313,6 +316,7 @@ describe("SYNC-10：同期失敗後の再試行", () => {
       .not.toHaveBeenCalled();
 
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
   });
 });
 
@@ -513,6 +517,7 @@ describe("SYNC-14a：送信前の子データ検証", () => {
     await expect(sync.pushChanges()).rejects.toThrow(message);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
@@ -554,11 +559,13 @@ describe("SYNC-14a：送信前の子データ検証", () => {
     await sync.pushChanges();
     expect(callsForTest()).toEqual(["POST"]);
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
 
     // 次回は削除後の端末データを取得し、保留していた削除だけを送る。
     await sync.pushChanges();
     expect(callsForTest()).toEqual(["POST", "DELETE"]);
-    expect(del).toHaveBeenCalledWith("deletions", ["test", "t1"]);
+    expect(acknowledgeDeletion).toHaveBeenCalledWith({ table: "test", key: "t1", studentId, at: updatedAt });
+    expect(del).not.toHaveBeenCalled();
   });
 
   it("別アカウントのノート・テストは今回の送信対象にしない", async () => {
@@ -623,6 +630,7 @@ describe("SYNC-14b：送信前のルート参照検証", () => {
     await expect(sync.pushChanges()).rejects.toThrow(message);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
@@ -669,6 +677,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
     ["削除日時が数値", "削除日時", { ...valid(), at: 123 }],
     ["削除日時が不正", "削除日時", { ...valid(), at: "invalid" }],
     ["削除日時が非正規形式", "削除日時", { ...valid(), at: "2026-11-25" }],
+    ["削除ログの版が不正", "削除ログの版", { ...valid(), revision: "invalid" }],
   ];
   it.each(malformed)("%s が後続ログにあっても全通信を止める", async (_name, message, bad) => {
     const { sync, fetchMock } = setup();
@@ -677,6 +686,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
     await expect(sync.pushChanges()).rejects.toThrow(`削除ログの整合性を確認できません（${message}）`);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
@@ -686,6 +696,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
     await expect(sync.pushChanges()).rejects.toThrow("重複");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
@@ -712,7 +723,8 @@ describe("SYNC-14c：削除ログの事前検証", () => {
       ["DELETE", "/note?note_id=eq.n-1"],
       ["DELETE", "/test?test_id=eq.t_1"],
     ]);
-    expect(vi.mocked(del).mock.calls).toEqual([...logs].reverse().map(d => ["deletions", [d.table, d.key]]));
+    expect(vi.mocked(acknowledgeDeletion).mock.calls).toEqual([...logs].reverse().map(d => [d]));
+    expect(del).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).not.toBe(previousSync);
   });
   it("正常な削除ログでもHTTP失敗時は保持して後続送信を止める", async () => {
@@ -723,6 +735,41 @@ describe("SYNC-14c：削除ログの事前検証", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
     expect(del).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+});
+
+// SYNC-07a: DELETE成功後のローカル消費が競合した場合は後続通信を止める。
+describe("SYNC-07a：削除ログの消費競合", () => {
+  it.each(["changed", "error"] as const)("消費結果が%sなら後続送信・同期日時更新を止める", async mode => {
+    const { sync, fetchMock } = setup();
+    const first: Deletion = { table: "test", key: "t1", studentId, at: previousSync, revision: "a".repeat(32) };
+    const next: Deletion = { table: "test", key: "t2", studentId, at: updatedAt, revision: "b".repeat(32) };
+    vi.mocked(getAllBy).mockResolvedValue([first, next]);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    if (mode === "changed") vi.mocked(acknowledgeDeletion).mockResolvedValueOnce(false);
+    else vi.mocked(acknowledgeDeletion).mockRejectedValueOnce(new Error("保存失敗"));
+    await expect(sync.pushChanges()).rejects.toThrow(mode === "changed" ? "削除ログが変更" : "保存失敗");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
+    expect(acknowledgeDeletion).toHaveBeenCalledOnce();
+    expect(acknowledgeDeletion).toHaveBeenCalledWith(first);
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+  it("削除ログの競合時は最新化の受信・置換も開始しない", async () => {
+    const { sync, fetchMock } = setup();
+    const sent: Deletion = { table: "test", key: "t1", studentId, at: previousSync, revision: "a".repeat(32) };
+    vi.mocked(getAllBy).mockResolvedValue([sent]);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.mocked(acknowledgeDeletion).mockResolvedValueOnce(false);
+    await expect(sync.pullAll()).rejects.toThrow("削除ログが変更");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
+    expect(replaceStudentData).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });

@@ -403,10 +403,38 @@ export async function replaceStudentData(
 }
 
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */
-export interface Deletion { table: string; key: string; studentId: string; at: string }
+export interface Deletion { table: string; key: string; studentId: string; at: string; revision?: string }
+
+// 同一ミリ秒の再登録でも別の削除ログとして区別する。旧ログのrevision欠落は許容する。
+function deletionRevision(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)),
+    b => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** SYNC-07a: 送信した版と現在の版が一致する場合だけ削除ログを消費する。 */
+export async function acknowledgeDeletion(sent: Deletion): Promise<boolean> {
+  const db = await openDb();
+  const tx = db.transaction("deletions", "readwrite");
+  const store = tx.objectStore("deletions");
+  const key = [sent.table, sent.key];
+  let matched = false;
+  const req = store.get(key);
+  req.onsuccess = () => {
+    const current = req.result as Deletion | undefined;
+    if (current && current.table === sent.table && current.key === sent.key &&
+        current.studentId === sent.studentId && current.at === sent.at &&
+        current.revision === sent.revision) {
+      store.delete(key);
+      matched = true;
+    }
+  };
+  // 読み取りと削除を同じトランザクションで行い、コミット後に返す。
+  await done(tx);
+  return matched;
+}
 export async function recordDeletion(table: string, key: string, studentId: string): Promise<void> {
   if (!studentId) return; // 学生IDがない（ログイン前など）ときは同期しない
-  await put("deletions", { table, key, studentId, at: new Date().toISOString() } satisfies Deletion);
+  await put("deletions", { table, key, studentId, at: new Date().toISOString(), revision: deletionRevision() } satisfies Deletion);
 }
 
 /** 前提関係の変更計画を作る関数 */
@@ -464,6 +492,7 @@ export async function editPrerequisites(
             key: `${l.itemId}|${l.prereqItemId}`,
             studentId: changes.studentId,
             at: t,
+            revision: deletionRevision(),
           } satisfies Deletion);
         }
 

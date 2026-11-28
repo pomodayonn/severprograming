@@ -35,7 +35,7 @@ import type { TestType } from "../enums/TestType";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
 import type { LearningItem as Item } from "../beans/LearningItem";
 import type { NoteConflict, NoteConflictListener } from "../interfaces/NoteConflictListener";
-import { del, get, getAll, getAllBy, put, replaceStudentData, type Deletion } from "../dao/idb";
+import { del, get, getAll, getAllBy, put, replaceStudentData, acknowledgeDeletion, type Deletion } from "../dao/idb";
 import { isPullStale } from "../lib/logic";
 import { AppError } from "./common";
 
@@ -281,6 +281,9 @@ function prepareOutgoingDeletions(sid: string, logs: Deletion[]): { log: Deletio
     if (typeof d.key !== "string") return fail("主キー");
     if (typeof d.at !== "string" || !Number.isFinite(Date.parse(d.at)) || new Date(d.at).toISOString() !== d.at) {
       return fail("削除日時");
+    }
+    if (d.revision !== undefined && (typeof d.revision !== "string" || d.revision.length !== 32 || /[^a-f0-9]/.test(d.revision))) {
+      return fail("削除ログの版");
     }
     let filter: string;
     if (d.table === "prerequisite") {
@@ -813,7 +816,10 @@ export class SyncManager {
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
     for (const { log: d, path } of dels) {
       await this.request(sid,"DELETE", path);
-      await del("deletions", [d.table, d.key]);
+      // 通信中に同じキーが再登録されても、新しい削除ログは消さない。
+      if (!(await acknowledgeDeletion(d))) {
+        throw new SyncError("同期中に削除ログが変更されたため同期を中止しました。再送信してください");
+      }
     }
     // 2) 親から順に送る（外部キーがあるので、科目 → 学習項目 → 前提項目・ノート・テスト の順）
     await this.upsert(sid,"subject", subjects.map(x => ({ subject_id: x.subjectId, subject_name: x.subjectName, created_at: x.createdAt })));
