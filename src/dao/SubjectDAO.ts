@@ -8,7 +8,7 @@
 // 保存すると updatedAt（更新日時）が新しくなり、SyncManager がそれを見て Neon（クラウド）に送る
 import { Subject } from "../beans/Subject";
 import { now } from "../beans/DateTime";
-import { del, get, getAllBy, put, recordDeletion } from "./idb";
+import { get, getAllBy, put, deleteSubjectTree } from "./idb";
 
 export class SubjectDAO {
   /** その学生の科目を、作った順に返す */
@@ -26,10 +26,8 @@ export class SubjectDAO {
     const s = await get<Subject>("subjects", subjectId); if (!s) return;
     await put("subjects", new Subject({ ...s, subjectName: name, updatedAt: now() })); // 11/23：ほかの保存と同じく beans で
   }
-  /** 科目を消す（中の学習項目などは、SubjectManager が LearningItemManager.deleteItem で消す） */
+  /** 科目と全学習項目・関連行・資料本体・削除ログを同一txで処理する。 */
   async delete(subjectId: string): Promise<void> {
-    const s = await get<Subject>("subjects", subjectId); if (!s) return;
-    await del("subjects", subjectId);
-    await recordDeletion("subject", subjectId, s.studentId); // Neon では中の学習項目〜解答もまとめて消える
+    await deleteSubjectTree(subjectId);
   }
 }

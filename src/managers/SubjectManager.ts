@@ -44,11 +44,10 @@ export class SubjectManager {
   }
 
   /**
-   * 科目を削除する。中の学習項目ごとに LearningItemManager.deleteItem() を呼ぶので、
-   * ノート・テスト・ストレージ（端末の資料）も一緒に消える
+   * 科目を削除する。DAOで全学習項目・ノート・テスト・資料・削除ログを
+   * まとめてコミットし、成功後に一度だけ同期する。
    */
   async deleteSubject(subjectId: string): Promise<void> {
-    for (const item of await this.itemManager.getItems(subjectId)) await this.itemManager.deleteItem(item.itemId, false);
     await this.subjectDAO.delete(subjectId);
     await this.sync();
   }
