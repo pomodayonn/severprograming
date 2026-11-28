@@ -26,16 +26,14 @@ import type { NeonAuthClient } from "../../src/boundary/NeonAuthClient";
 
 import {
   get,
-  getAll,
-  getAllBy,
+  readPushSnapshot,
   put,
 } from "../../src/dao/idb";
 
 // IndexedDB の代替処理
 vi.mock("../../src/dao/idb", () => ({
   get: vi.fn(),
-  getAll: vi.fn(),
-  getAllBy: vi.fn(),
+  readPushSnapshot: vi.fn(),
   put: vi.fn(),
   del: vi.fn(),
   replaceStudentData: vi.fn(),
@@ -106,17 +104,13 @@ beforeEach(() => {
         : undefined
   );
 
-  vi.mocked(getAll).mockImplementation(
-    async store => {
-      if (store === "notes") return [note];
-      // 同期済みの親は再送せず、参照検証にだけ使用する。
-      if (store === "subjects") return [new Subject({ subjectId: "subject-1", studentId, updatedAt: previousSync })];
-      if (store === "learningItems") return [new LearningItem({ itemId: "item-1", subjectId: "subject-1", studentId, updatedAt: previousSync })];
-      return [];
-    }
-  );
-
-  vi.mocked(getAllBy).mockResolvedValue([]);
+  vi.mocked(readPushSnapshot).mockResolvedValue({
+    notes: [note],
+    // 同期済みの親は再送せず、参照検証にだけ使用する。
+    subjects: [new Subject({ subjectId: "subject-1", studentId, updatedAt: previousSync })],
+    learningItems: [new LearningItem({ itemId: "item-1", subjectId: "subject-1", studentId, updatedAt: previousSync })],
+    prerequisites: [], tests: [], deletions: [],
+  });
   vi.mocked(put).mockResolvedValue(undefined);
 });
 

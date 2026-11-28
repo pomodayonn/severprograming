@@ -11,6 +11,8 @@ import type { LearningItem } from "../beans/LearningItem";
 import type { Prerequisite } from "../beans/Prerequisite";
 import type { Link } from "../lib/logic";
 import type { Test } from "../beans/Test";
+import type { Subject } from "../beans/Subject";
+import type { Note } from "../beans/Note";
 // 前に使っていた "runndesu" という名前のデータベースは、services/db.ts の removeOldData() が消している
 export const DB_NAME = "runndesu-data";
 const DB_VERSION = 2; // 入れ物を足したり直したりしたら1つ上げる
@@ -72,6 +74,37 @@ export async function getAll<T>(store: StoreName): Promise<T[]> {
   const db = await openDb();
   return wrap(db.transaction(store).objectStore(store).getAll()) as Promise<T[]>;
 }
+/** SYNC-07b: 送信に使う6ストアの読み取り結果。 */
+export interface PushSnapshot {
+  subjects: Subject[];
+  learningItems: LearningItem[];
+  prerequisites: Prerequisite[];
+  notes: Note[];
+  tests: Test[];
+  deletions: Deletion[];
+}
+
+/** 同じreadonlyトランザクションで全ストアを読み、完了後に返す。
+ * HTTP通信はトランザクションの外で行う。差分抽出と参照検証は呼出側で行う。
+ */
+export async function readPushSnapshot(studentId: string): Promise<PushSnapshot> {
+  const db = await openDb();
+  const stores: StoreName[] = ["subjects", "learningItems", "prerequisites", "notes", "tests", "deletions"];
+  const tx = db.transaction(stores, "readonly");
+  const read = <T>(store: StoreName): Promise<T[]> => wrap(tx.objectStore(store).getAll());
+  // すべてのリクエストをawait前に登録する。
+  const [subjects, learningItems, prerequisites, notes, tests, deletions] = await Promise.all([
+    read<Subject>("subjects"),
+    read<LearningItem>("learningItems"),
+    read<Prerequisite>("prerequisites"),
+    read<Note>("notes"),
+    read<Test>("tests"),
+    wrap(tx.objectStore("deletions").index("studentId").getAll(studentId)) as Promise<Deletion[]>,
+    done(tx),
+  ]);
+  return { subjects, learningItems, prerequisites, notes, tests, deletions };
+}
+
 /** 保存する（同じキーがあれば上書き）。key は keyPath がない入れ物だけで使う */
 export async function put(store: StoreName, value: unknown, key?: IDBValidKey): Promise<void> {
   const db = await openDb(); const tx = db.transaction(store, "readwrite");

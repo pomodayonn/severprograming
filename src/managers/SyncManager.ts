@@ -35,7 +35,7 @@ import type { TestType } from "../enums/TestType";
 import type { NeonAuthClient } from "../boundary/NeonAuthClient";
 import type { LearningItem as Item } from "../beans/LearningItem";
 import type { NoteConflict, NoteConflictListener } from "../interfaces/NoteConflictListener";
-import { del, get, getAll, getAllBy, put, replaceStudentData, acknowledgeDeletion, type Deletion } from "../dao/idb";
+import { del, get, put, replaceStudentData, acknowledgeDeletion, readPushSnapshot, type Deletion } from "../dao/idb";
 import { isPullStale } from "../lib/logic";
 import { AppError } from "./common";
 
@@ -794,24 +794,19 @@ export class SyncManager {
     const started = now();
     const newer = <T extends { updatedAt: string; studentId: string }>(rows: T[]) => rows.filter(r => r.studentId === sid && (!since || r.updatedAt > since));
 
-    // 今回処理する削除ログを先に確定する。ノート・テスト取得後の削除を
-    // 同じ送信で消費して、取得済みの古いデータを再登録しないようにする。
-    const dels = prepareOutgoingDeletions(sid, await getAllBy<Deletion>("deletions", "studentId", sid));
-
-    // 今回送るノート・テストを先に取得し、同じデータを検証と送信に使う。
-    // 不整合があれば削除ログを含むHTTP通信を始めず、端末データを保持する。
-    const changedNotes = newer(await getAll<Note>("notes"));
-    const changedTests = newer(await getAll<Test>("tests"));
+    // 6ストアを同じreadonlyトランザクションで取得する。
+    // 検証と送信に同じスナップショットを使い、通信中には読み直さない。
+    const snapshot = await readPushSnapshot(sid);
+    const dels = prepareOutgoingDeletions(sid, snapshot.deletions);
+    const changedNotes = newer(snapshot.notes);
+    const changedTests = newer(snapshot.tests);
     validateOutgoingChildren(sid, changedNotes, changedTests);
 
-    // 親を差分抽出する前に全件取得し、未変更の親も参照検証に使う。
-    // 送信するデータをすべてHTTP通信前に取得し、検証済みの配列を使う。
-    const allSubjects = await getAll<Subject>("subjects");
-    const allItems = await getAll<LearningItem>("learningItems");
-    const subjects = newer(allSubjects);
-    const items = newer(allItems);
-    const prereqs = newer(await getAll<Prerequisite>("prerequisites"));
-    validateOutgoingRoots(sid, allSubjects, allItems, items, prereqs, changedNotes, changedTests);
+    // 未変更の親も参照検証に使う。送信は従来どおり変更分だけ。
+    const subjects = newer(snapshot.subjects);
+    const items = newer(snapshot.learningItems);
+    const prereqs = newer(snapshot.prerequisites);
+    validateOutgoingRoots(sid, snapshot.subjects, snapshot.learningItems, items, prereqs, changedNotes, changedTests);
 
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
     for (const { log: d, path } of dels) {

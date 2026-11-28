@@ -33,8 +33,8 @@ import type { NeonAuthClient } from "../../src/boundary/NeonAuthClient";
 
 import {
   get,
-  getAll,
-  getAllBy,
+  readPushSnapshot,
+  type PushSnapshot,
   put,
   del,
   replaceStudentData,
@@ -44,8 +44,7 @@ import {
 
 vi.mock("../../src/dao/idb", () => ({
   get: vi.fn(),
-  getAll: vi.fn(),
-  getAllBy: vi.fn(),
+  readPushSnapshot: vi.fn(),
   put: vi.fn(),
   del: vi.fn(),
   replaceStudentData: vi.fn(),
@@ -71,6 +70,7 @@ const subject = new Subject({
 });
 
 const meta = new Map<string, unknown>();
+let snapshot: PushSnapshot;
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -92,13 +92,8 @@ beforeEach(() => {
     }
   );
 
-  vi.mocked(getAll).mockImplementation(
-    async store => store === "subjects"
-      ? [subject]
-      : []
-  );
-
-  vi.mocked(getAllBy).mockResolvedValue([]);
+  snapshot = { subjects: [subject], learningItems: [], prerequisites: [], notes: [], tests: [], deletions: [] };
+  vi.mocked(readPushSnapshot).mockImplementation(async () => structuredClone(snapshot));
   vi.mocked(del).mockResolvedValue(undefined);
   vi.mocked(acknowledgeDeletion).mockResolvedValue(true);
 
@@ -472,13 +467,9 @@ describe("SYNC-14a：送信前の子データ検証", () => {
   function childSetup() {
     const { sync, fetchMock } = setup();
     const f = fixture();
-    vi.mocked(getAll).mockImplementation(async store => {
-      if (store === "subjects") return [subject];
-      if (store === "learningItems") return [new LearningItem({ itemId: "i1", studentId, subjectId: subject.subjectId, updatedAt: previousSync })];
-      if (store === "notes") return [f.note];
-      if (store === "tests") return [f.test];
-      return [];
-    });
+    snapshot.learningItems = [new LearningItem({ itemId: "i1", studentId, subjectId: subject.subjectId, updatedAt: previousSync })];
+    snapshot.notes = [f.note];
+    snapshot.tests = [f.test];
     fetchMock.mockImplementation(async (url, init) => {
       const path = new URL(url).pathname;
       if (path === "/note" && init?.method === "POST") {
@@ -512,7 +503,7 @@ describe("SYNC-14a：送信前の子データ検証", () => {
   it.each(invalid)("%s の場合は全HTTP通信の前に中止する", async (_name, message, change) => {
     const { sync, fetchMock, f } = childSetup();
     // 先に送る削除ログがあっても、不正なデータの検出時は保持する。
-    vi.mocked(getAllBy).mockResolvedValue([{ table: "subject", key: "deleted-subject", studentId, at: updatedAt }]);
+    snapshot.deletions = [{ table: "subject", key: "deleted-subject", studentId, at: updatedAt }];
     change(f);
     await expect(sync.pushChanges()).rejects.toThrow(message);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -534,23 +525,14 @@ describe("SYNC-14a：送信前の子データ検証", () => {
     expect(meta.get(lastSyncKey)).not.toBe(previousSync);
   });
 
-  it("テスト取得時に追加された削除ログを次の同期まで保持する", async () => {
-    const { sync, fetchMock, f } = childSetup();
-    let pending = false;
-    vi.mocked(getAllBy).mockImplementation(async () => pending
-      ? [{ table: "test", key: "t1", studentId, at: updatedAt }]
-      : []);
-    vi.mocked(getAll).mockImplementation(async store => {
-      if (store === "subjects") return [subject];
-      if (store === "learningItems") return [new LearningItem({ itemId: "i1", studentId, subjectId: subject.subjectId, updatedAt: previousSync })];
-      if (store === "notes") return [f.note];
-      if (store === "tests") {
-        if (pending) return [];
-        // 読み込み結果は削除前の状態だが、読み込み直後に削除ログが作られる。
-        pending = true;
-        return [f.test];
-      }
-      return [];
+  it("スナップショット取得後の削除ログを次の同期まで保持する", async () => {
+    const { sync, fetchMock } = childSetup();
+    vi.mocked(readPushSnapshot).mockImplementationOnce(async () => {
+      const captured = structuredClone(snapshot);
+      // 読み取り完了直後にテスト削除と削除ログ登録が発生した場合。
+      snapshot.tests = [];
+      snapshot.deletions = [{ table: "test", key: "t1", studentId, at: updatedAt }];
+      return captured;
     });
     const callsForTest = () => fetchMock.mock.calls
       .filter(([url]) => new URL(url).pathname === "/test")
@@ -558,12 +540,15 @@ describe("SYNC-14a：送信前の子データ検証", () => {
 
     await sync.pushChanges();
     expect(callsForTest()).toEqual(["POST"]);
+    expect(readPushSnapshot).toHaveBeenCalledOnce();
+    expect(readPushSnapshot).toHaveBeenCalledWith(studentId);
     expect(del).not.toHaveBeenCalled();
     expect(acknowledgeDeletion).not.toHaveBeenCalled();
 
     // 次回は削除後の端末データを取得し、保留していた削除だけを送る。
     await sync.pushChanges();
     expect(callsForTest()).toEqual(["POST", "DELETE"]);
+    expect(readPushSnapshot).toHaveBeenCalledTimes(2);
     expect(acknowledgeDeletion).toHaveBeenCalledWith({ table: "test", key: "t1", studentId, at: updatedAt });
     expect(del).not.toHaveBeenCalled();
   });
@@ -592,13 +577,8 @@ describe("SYNC-14b：送信前のルート参照検証", () => {
     const note = new Note({ noteId: "n1", itemId: "i1", studentId, updatedAt, lastSavedAt: updatedAt });
     const test = new Test({ testId: "t1", itemId: "i1", studentId, updatedAt, createdAt: updatedAt, questions: [new Question({ questionId: "q1", testId: "t1", studentId, number: 1 })] });
     const f = { parent, other, item, prior, link, note, test };
-    vi.mocked(getAll).mockImplementation(async store => {
-      if (store === "subjects") return [parent, other];
-      if (store === "learningItems") return [item, prior];
-      if (store === "prerequisites") return [link];
-      if (store === "notes") return [note];
-      if (store === "tests") return [test];
-      return [];
+    Object.assign(snapshot, {
+      subjects: [parent, other], learningItems: [item, prior], prerequisites: [link], notes: [note], tests: [test],
     });
     fetchMock.mockImplementation(async (url, init) => {
       if (new URL(url).pathname === "/note" && init?.method === "POST") return new Response(JSON.stringify([{ updated_at: updatedAt }]), { status: 200 });
@@ -625,7 +605,7 @@ describe("SYNC-14b：送信前のルート参照検証", () => {
   ];
   it.each(invalid)("%s なら削除を含むHTTP通信前に中止する", async (_name, message, change) => {
     const { sync, fetchMock, f } = rootSetup();
-    vi.mocked(getAllBy).mockResolvedValue([{ table: "subject", key: "deleted-subject", studentId, at: updatedAt }]);
+    snapshot.deletions = [{ table: "subject", key: "deleted-subject", studentId, at: updatedAt }];
     change(f);
     await expect(sync.pushChanges()).rejects.toThrow(message);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -682,7 +662,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
   it.each(malformed)("%s が後続ログにあっても全通信を止める", async (_name, message, bad) => {
     const { sync, fetchMock } = setup();
     // IndexedDBの型宣言と実際の値が一致しないケースを意図的に再現。
-    vi.mocked(getAllBy).mockResolvedValue([valid(), bad] as Deletion[]);
+    snapshot.deletions = [valid(), bad] as Deletion[];
     await expect(sync.pushChanges()).rejects.toThrow(`削除ログの整合性を確認できません（${message}）`);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
@@ -692,7 +672,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
   });
   it("重複した削除ログも通信前に拒否する", async () => {
     const { sync, fetchMock } = setup();
-    vi.mocked(getAllBy).mockResolvedValue([valid(), { ...valid(), at: updatedAt }]);
+    snapshot.deletions = [valid(), { ...valid(), at: updatedAt }];
     await expect(sync.pushChanges()).rejects.toThrow("重複");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
@@ -702,7 +682,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
   });
   it("許可された5テーブルの削除を日時順・完全なキーで送る", async () => {
     const { sync, fetchMock } = setup();
-    vi.mocked(getAll).mockResolvedValue([]);
+    snapshot.subjects = [];
     const logs: Deletion[] = [
       { ...valid(), table: "test", key: "t_1", at: "2026-11-25T00:00:05.000Z" },
       { ...valid(), table: "note", key: "n-1", at: "2026-11-25T00:00:04.000Z" },
@@ -710,7 +690,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
       { ...valid(), table: "learning_item", key: "i1", at: "2026-11-25T00:00:02.000Z" },
       { ...valid(), at: "2026-11-25T00:00:01.000Z" },
     ];
-    vi.mocked(getAllBy).mockResolvedValue(logs);
+    snapshot.deletions = logs;
     fetchMock.mockImplementation(async (_url, init) => {
       if (init?.method !== "DELETE") throw new Error("想定外の通信");
       return new Response(null, { status: 204 });
@@ -729,7 +709,7 @@ describe("SYNC-14c：削除ログの事前検証", () => {
   });
   it("正常な削除ログでもHTTP失敗時は保持して後続送信を止める", async () => {
     const { sync, fetchMock } = setup();
-    vi.mocked(getAllBy).mockResolvedValue([valid(), { ...valid(), table: "test", key: "t2", at: updatedAt }]);
+    snapshot.deletions = [valid(), { ...valid(), table: "test", key: "t2", at: updatedAt }];
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
     await expect(sync.pushChanges()).rejects.toBeInstanceOf(SyncError);
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -747,7 +727,7 @@ describe("SYNC-07a：削除ログの消費競合", () => {
     const { sync, fetchMock } = setup();
     const first: Deletion = { table: "test", key: "t1", studentId, at: previousSync, revision: "a".repeat(32) };
     const next: Deletion = { table: "test", key: "t2", studentId, at: updatedAt, revision: "b".repeat(32) };
-    vi.mocked(getAllBy).mockResolvedValue([first, next]);
+    snapshot.deletions = [first, next];
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     if (mode === "changed") vi.mocked(acknowledgeDeletion).mockResolvedValueOnce(false);
     else vi.mocked(acknowledgeDeletion).mockRejectedValueOnce(new Error("保存失敗"));
@@ -763,7 +743,7 @@ describe("SYNC-07a：削除ログの消費競合", () => {
   it("削除ログの競合時は最新化の受信・置換も開始しない", async () => {
     const { sync, fetchMock } = setup();
     const sent: Deletion = { table: "test", key: "t1", studentId, at: previousSync, revision: "a".repeat(32) };
-    vi.mocked(getAllBy).mockResolvedValue([sent]);
+    snapshot.deletions = [sent];
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.mocked(acknowledgeDeletion).mockResolvedValueOnce(false);
     await expect(sync.pullAll()).rejects.toThrow("削除ログが変更");
@@ -771,6 +751,23 @@ describe("SYNC-07a：削除ログの消費競合", () => {
     expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
     expect(replaceStudentData).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+});
+
+// SYNC-07b: スナップショット読み取りが失敗したら通信や置換に進まない。
+describe("SYNC-07b：送信スナップショットの失敗", () => {
+  it.each(["pushChanges", "pullAll"] as const)("%s で読取失敗時はデータを保持する", async method => {
+    const { sync, fetchMock } = setup();
+    vi.mocked(readPushSnapshot).mockRejectedValueOnce(new Error("読取失敗"));
+    await expect(sync[method]()).rejects.toThrow("読取失敗");
+    expect(readPushSnapshot).toHaveBeenCalledOnce();
+    expect(readPushSnapshot).toHaveBeenCalledWith(studentId);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(acknowledgeDeletion).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(replaceStudentData).not.toHaveBeenCalled();
     expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
 });
