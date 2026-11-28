@@ -359,80 +359,128 @@ export async function clearStudentData(
 /** replaceStudentData で入れ替える入れ物（学生IDの索引があり、Neon と同期するもの） */
 export type SyncedStore = "subjects" | "learningItems" | "prerequisites" | "notes" | "tests";
 
+/** SYNC-07c: 保存済みBeanの値を比較する。日時だけでなく入れ子の内容も比較する。
+ * IndexedDBから取得する配列・プレーンオブジェクト・プリミティブを対象とする。
+ * 想定外のオブジェクト形式は同一扱いせず、安全側に倒す。
+ */
+function sameStoredValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+  } else if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) {
+    return false;
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every(k =>
+    Object.prototype.hasOwnProperty.call(right, k) && sameStoredValue(left[k], right[k]));
+}
+
 /**
  * その学生の同期データを、受け取った内容にまるごと入れ替える（11/23）。
  * 「古い分を消す」「新しい分を入れる」「同期した時刻を書く」を1つのトランザクションでするので、
  * 途中でタブを閉じたりエラーになったりしても、全部入れ替わるか、何も変わらないかのどちらかになる
  * （Java の JDBC で setAutoCommit(false) → 最後に commit、失敗したら rollback するのと同じ考え方）
  * @param meta 同じトランザクションで meta に書く値（キー → 値）。前回同期した日時など
+ * @param expected 最新化開始時の端末データ。指定時は変更・未送信削除がない場合だけ置換する。
+ * @returns 置換が完了した場合はtrue、端末側に変更があれば何も書かずfalse。
  */
 export async function replaceStudentData(
   studentId: string,
   data: Record<SyncedStore, unknown[]>,
-  meta: Record<string, unknown> = {}
-): Promise<void> {
+  meta: Record<string, unknown> = {},
+  expected?: PushSnapshot
+): Promise<boolean> {
   const stores = Object.keys(data) as SyncedStore[];
 
   const db = await openDb();
 
   const tx = db.transaction(
-    [...stores, "materials", "meta"],
+    [...stores, "materials", "meta", ...(expected ? ["deletions"] : [])],
     "readwrite"
   );
 
-  for (const store of stores) {
-    const os = tx.objectStore(store);
+  let applied = false;
+  const apply = () => {
+    for (const store of stores) {
+      const os = tx.objectStore(store);
 
-    const req = os.index("studentId")
-      .getAllKeys(studentId);
+      const req = os.index("studentId")
+        .getAllKeys(studentId);
 
-    req.onsuccess = () => {
-      if (store === "learningItems") {
-        // 親の学習項目が消える前に、
-        // 旧形式の資料へ所有者情報を補完する。
-        const oldItemIds = new Set(req.result);
+      req.onsuccess = () => {
+        if (store === "learningItems") {
+          // 親の学習項目が消える前に、
+          // 旧形式の資料へ所有者情報を補完する。
+          const oldItemIds = new Set(req.result);
 
-        const materials = tx.objectStore(
-          "materials"
-        );
+          const materials = tx.objectStore(
+            "materials"
+          );
 
-        const materialReq = materials.getAll();
+          const materialReq = materials.getAll();
 
-        materialReq.onsuccess = () => {
-          for (
-            const m of materialReq.result as Material[]
-          ) {
-            if (
-              !m.studentId &&
-              oldItemIds.has(m.itemId)
+          materialReq.onsuccess = () => {
+            for (
+              const m of materialReq.result as Material[]
             ) {
-              materials.put({
-                ...m,
-                studentId,
-              });
+              if (
+                !m.studentId &&
+                oldItemIds.has(m.itemId)
+              ) {
+                materials.put({
+                  ...m,
+                  studentId,
+                });
+              }
             }
-          }
-        };
-      }
+          };
+        }
 
-      // その学生の同期データを入れ替える。
-      for (const key of req.result) {
-        os.delete(key);
-      }
+        // その学生の同期データを入れ替える。
+        for (const key of req.result) {
+          os.delete(key);
+        }
 
-      for (const v of data[store]) {
-        os.put(structuredClone(v));
-      }
+        for (const v of data[store]) {
+          os.put(structuredClone(v));
+        }
+      };
+    }
+
+    const ms = tx.objectStore("meta");
+
+    for (const [k, v] of Object.entries(meta)) {
+      ms.put(v, k);
+    }
+    applied = true;
+  };
+
+  if (expected) {
+    // 全照合を終えるまで書き込み要求を発行しない。
+    // 比較と置換を同じreadwrite txに入れて、比較直後の編集との競合も防ぐ。
+    let remaining = stores.length + 1;
+    let matches = true;
+    const checked = (ok: boolean) => {
+      matches = matches && ok;
+      if (--remaining === 0 && matches) apply();
     };
-  }
-
-  const ms = tx.objectStore("meta");
-
-  for (const [k, v] of Object.entries(meta)) {
-    ms.put(v, k);
+    for (const store of stores) {
+      const before = expected[store].filter(row => row.studentId === studentId);
+      const req = tx.objectStore(store).index("studentId").getAll(studentId);
+      req.onsuccess = () => checked(sameStoredValue(before, req.result));
+    }
+    const pending = tx.objectStore("deletions").index("studentId").count(studentId);
+    pending.onsuccess = () => checked(pending.result === 0);
+  } else {
+    apply();
   }
 
   await done(tx);
+  return applied;
 }
 
 /** Neon にまだ伝えていない削除を記録する（SyncManager.pushChanges で送る） */

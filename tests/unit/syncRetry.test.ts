@@ -97,8 +97,7 @@ beforeEach(() => {
   vi.mocked(del).mockResolvedValue(undefined);
   vi.mocked(acknowledgeDeletion).mockResolvedValue(true);
 
-  vi.mocked(replaceStudentData)
-    .mockResolvedValue(undefined);
+  vi.mocked(replaceStudentData).mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -759,9 +758,11 @@ describe("SYNC-07a：削除ログの消費競合", () => {
 describe("SYNC-07b：送信スナップショットの失敗", () => {
   it.each(["pushChanges", "pullAll"] as const)("%s で読取失敗時はデータを保持する", async method => {
     const { sync, fetchMock } = setup();
+    // pullAllでは送信前の保護用読取を成功させ、送信スナップショットの失敗を再現する。
+    if (method === "pullAll") vi.mocked(readPushSnapshot).mockResolvedValueOnce(structuredClone(snapshot));
     vi.mocked(readPushSnapshot).mockRejectedValueOnce(new Error("読取失敗"));
     await expect(sync[method]()).rejects.toThrow("読取失敗");
-    expect(readPushSnapshot).toHaveBeenCalledOnce();
+    expect(readPushSnapshot).toHaveBeenCalledTimes(method === "pullAll" ? 2 : 1);
     expect(readPushSnapshot).toHaveBeenCalledWith(studentId);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(acknowledgeDeletion).not.toHaveBeenCalled();

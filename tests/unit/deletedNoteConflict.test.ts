@@ -29,6 +29,7 @@ import {
   put,
   del,
   replaceStudentData,
+  readPushSnapshot,
 } from "../../src/dao/idb";
 
 vi.mock("../../src/dao/idb", () => ({
@@ -38,6 +39,7 @@ vi.mock("../../src/dao/idb", () => ({
   getAll: vi.fn(),
   getAllBy: vi.fn(),
   replaceStudentData: vi.fn(),
+  readPushSnapshot: vi.fn(),
 }));
 
 const studentId = "student-1";
@@ -81,8 +83,10 @@ beforeEach(() => {
   vi.mocked(put).mockResolvedValue(undefined);
   vi.mocked(del).mockResolvedValue(undefined);
 
-  vi.mocked(replaceStudentData)
-    .mockResolvedValue(undefined);
+  vi.mocked(replaceStudentData).mockResolvedValue(true);
+  vi.mocked(readPushSnapshot).mockResolvedValue({
+    subjects: [], learningItems: [], prerequisites: [], notes: [localNote], tests: [], deletions: [],
+  });
 });
 
 afterEach(() => {
@@ -244,7 +248,8 @@ describe("SYNC-08：削除を伴う競合のデータ保護", () => {
             [noteId]: oldVersion,
           },
           [conflictsKey]: [noteId],
-        })
+        }),
+        expect.objectContaining({ notes: [localNote] })
       );
   });
 
@@ -324,7 +329,8 @@ describe("SYNC-08：削除を伴う競合のデータ保護", () => {
           },
           [conflictsKey]: [],
           [lastPulledKey]: expect.any(String),
-        })
+        }),
+        expect.objectContaining({ notes: [localNote] })
       );
   });
 });
@@ -703,5 +709,26 @@ describe("SYNC-13：受信データの親子関係検証", () => {
 
     expect(put).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+// SYNC-07c: 送信前に取得した端末データを置換時の条件にする。
+describe("SYNC-07c：最新化中の端末データ保護", () => {
+  it("送信より先に端末状態を取得し、置換の競合をエラーとして返す", async () => {
+    const { sync } = setup(true, false);
+    vi.mocked(replaceStudentData).mockResolvedValueOnce(false);
+    await expect(sync.pullAll()).rejects.toThrow("端末のデータを保護");
+    expect(readPushSnapshot).toHaveBeenCalledWith(studentId);
+    expect(vi.mocked(readPushSnapshot).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(sync.pushChanges).mock.invocationCallOrder[0]);
+    expect(replaceStudentData).toHaveBeenCalledWith(studentId, expect.any(Object), expect.any(Object), expect.objectContaining({ notes: [localNote] }));
+    expect(sync.lastSyncedAt).toBeNull();
+  });
+  it("初回の端末状態取得に失敗したら送信も受信も開始しない", async () => {
+    const { sync, fetchMock } = setup(true, false);
+    vi.mocked(readPushSnapshot).mockRejectedValueOnce(new Error("読取失敗"));
+    await expect(sync.pullAll()).rejects.toThrow("読取失敗");
+    expect(sync.pushChanges).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(replaceStudentData).not.toHaveBeenCalled();
   });
 });

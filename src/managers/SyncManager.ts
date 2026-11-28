@@ -408,6 +408,8 @@ export class SyncManager {
     }
 
     const sid = student.studentId;
+    // 送信中の編集も保護するため、先行送信より前の端末データを覚える。
+    const before = await readPushSnapshot(sid);
     await this.pushChanges(student.studentId);
 
     const current = await this.authClient.getSession();
@@ -509,8 +511,11 @@ export class SyncManager {
     }
     // ---- 端末のこの学生のデータを、受け取った内容に置き換える（11/23：1つのトランザクションで） ----
     const t = now();
-    await replaceStudentData(sid, { subjects: sub, learningItems: its, prerequisites: pres, notes: nts, tests: tss },
-      { [`lastSyncedAt:${sid}`]: t, [`lastPulledAt:${sid}`]: t, [`noteBases:${sid}`]: bases, [`noteConflicts:${sid}`]: conflicts });
+    const replaced = await replaceStudentData(sid, { subjects: sub, learningItems: its, prerequisites: pres, notes: nts, tests: tss },
+      { [`lastSyncedAt:${sid}`]: t, [`lastPulledAt:${sid}`]: t, [`noteBases:${sid}`]: bases, [`noteConflicts:${sid}`]: conflicts }, before);
+    if (!replaced) {
+      throw new SyncError("最新化中に端末のデータが変更されたため、端末のデータを保護して最新化を中止しました。再度最新化してください");
+    }
     this.lastSyncedAt = t;
   }
 
