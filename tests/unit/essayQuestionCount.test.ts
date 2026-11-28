@@ -86,113 +86,141 @@ describe("AI-04：バックエンドの生成問題数検証", () => {
   });
 
   it("問題数が不足した場合は次のAIを試す", async () => {
-    const first = {
-      name: "first",
-      canAccept: () => true,
-      send: vi.fn().mockResolvedValue(reply(3)),
-    };
+    const warnLog = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const successLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const first = {
+        name: "first",
+        canAccept: () => true,
+        send: vi.fn().mockResolvedValue(reply(3)),
+      };
 
-    const second = {
-      name: "second",
-      canAccept: () => true,
-      send: vi.fn().mockResolvedValue(reply(5)),
-    };
+      const second = {
+        name: "second",
+        canAccept: () => true,
+        send: vi.fn().mockResolvedValue(reply(5)),
+      };
 
-    const service = new AiService(
-      [first, second],
-      [{
-        name: "test",
-        maxChars: 100000,
-        providers: ["first", "second"],
-      }]
-    );
+      const service = new AiService(
+        [first, second],
+        [{
+          name: "test",
+          maxChars: 100000,
+          providers: ["first", "second"],
+        }]
+      );
 
-    const result = await service.send(
-      "問題を5問作ってください",
-      r => readEssay(r, 5)
-    );
+      const result = await service.send(
+        "問題を5問作ってください",
+        r => readEssay(r, 5)
+      );
 
-    expect(first.send).toHaveBeenCalledOnce();
-    expect(second.send).toHaveBeenCalledOnce();
+      expect(first.send).toHaveBeenCalledOnce();
+      expect(second.send).toHaveBeenCalledOnce();
 
-    expect(result).toEqual(questions(5));
+      expect(result).toEqual(questions(5));
+
+      expect(warnLog).toHaveBeenCalledTimes(1);
+      expect(warnLog).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[AI\] first：.*で失敗。次を試します:$/),
+        expect.stringContaining("問題数が不足")
+      );
+      expect(successLog).toHaveBeenCalledTimes(1);
+      expect(successLog).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[AI\] second：.*で成功$/)
+      );
+    } finally {
+      successLog.mockRestore();
+      warnLog.mockRestore();
+    }
   });
 
   it("すべてのAIで問題数が不足した場合は予約を戻す", async () => {
-    const provider = {
-      name: "test-ai",
-      canAccept: () => true,
-      send: vi.fn().mockResolvedValue(reply(3)),
-    };
+    const warnLog = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const provider = {
+        name: "test-ai",
+        canAccept: () => true,
+        send: vi.fn().mockResolvedValue(reply(3)),
+      };
 
-    const service = new AiService(
-      [provider],
-      [{
-        name: "test",
-        maxChars: 100000,
-        providers: ["test-ai"],
-      }]
-    );
-
-    const usage = {
-      getRemaining: vi.fn().mockResolvedValue(20),
-      reserve: vi.fn().mockResolvedValue({
-        useDate: "2026-11-28",
-        remaining: 19,
-      }),
-      release: vi.fn().mockResolvedValue(undefined),
-    };
-
-    const controller = new ApiController(
-      {
-        verify: vi.fn()
-          .mockResolvedValue("student-1"),
-      },
-      usage,
-      service
-    );
-
-    const res = {
-      status: vi.fn(),
-      json: vi.fn(),
-    };
-
-    res.status.mockReturnValue(res);
-
-    await controller.makeEssayTest(
-      {
-        headers: {
-          authorization: "Bearer mock-token",
-        },
-        body: {
-          text: "テスト用の文章",
-          count: 5,
-        },
-      },
-      res
-    );
-
-    expect(usage.reserve)
-      .toHaveBeenCalledWith("student-1", 1);
-
-    expect(usage.release)
-      .toHaveBeenCalledWith(
-        "student-1",
-        "2026-11-28",
-        1
+      const service = new AiService(
+        [provider],
+        [{
+          name: "test",
+          maxChars: 100000,
+          providers: ["test-ai"],
+        }]
       );
 
-    expect(res.status)
-      .toHaveBeenCalledWith(503);
+      const usage = {
+        getRemaining: vi.fn().mockResolvedValue(20),
+        reserve: vi.fn().mockResolvedValue({
+          useDate: "2026-11-28",
+          remaining: 19,
+        }),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
 
-    expect(res.json)
-      .toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: expect.objectContaining({
-            code: "AI_UNAVAILABLE",
-          }),
-        })
+      const controller = new ApiController(
+        {
+          verify: vi.fn()
+            .mockResolvedValue("student-1"),
+        },
+        usage,
+        service
       );
+
+      const res = {
+        status: vi.fn(),
+        json: vi.fn(),
+      };
+
+      res.status.mockReturnValue(res);
+
+      await controller.makeEssayTest(
+        {
+          headers: {
+            authorization: "Bearer mock-token",
+          },
+          body: {
+            text: "テスト用の文章",
+            count: 5,
+          },
+        },
+        res
+      );
+
+      expect(usage.reserve)
+        .toHaveBeenCalledWith("student-1", 1);
+
+      expect(usage.release)
+        .toHaveBeenCalledWith(
+          "student-1",
+          "2026-11-28",
+          1
+        );
+
+      expect(res.status)
+        .toHaveBeenCalledWith(503);
+
+      expect(res.json)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            error: expect.objectContaining({
+              code: "AI_UNAVAILABLE",
+            }),
+          })
+        );
+
+      expect(warnLog).toHaveBeenCalledTimes(1);
+      expect(warnLog).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[AI\] test-ai：.*で失敗。次を試します:$/),
+        expect.stringContaining("問題数が不足")
+      );
+    } finally {
+      warnLog.mockRestore();
+    }
   });
 });
 

@@ -236,32 +236,43 @@ describe("AI-01・03：APIの利用回数管理", () => {
   });
 
   it("AI処理に失敗した場合は予約した回数を戻す", async () => {
-    const {
-      controller, usage, ai, res, request,
-    } = setup();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const {
+        controller, usage, ai, res, request,
+      } = setup();
 
-    ai.send.mockRejectedValueOnce(
-      new Error("AI通信失敗")
-    );
-
-    await controller.makeEssayTest(
-      request({
-        text: longText,
-        count: 3,
-      }),
-      res
-    );
-
-    expect(usage.reserve)
-      .toHaveBeenCalledWith("student-1", 3);
-
-    expect(usage.release)
-      .toHaveBeenCalledWith(
-        "student-1",
-        "2026-11-27",
-        3
+      ai.send.mockRejectedValueOnce(
+        new Error("AI通信失敗")
       );
 
-    expect(res.status).toHaveBeenCalledWith(500);
+      await controller.makeEssayTest(
+        request({
+          text: longText,
+          count: 3,
+        }),
+        res
+      );
+
+      expect(usage.reserve)
+        .toHaveBeenCalledWith("student-1", 3);
+
+      expect(usage.release)
+        .toHaveBeenCalledWith(
+          "student-1",
+          "2026-11-27",
+          3
+        );
+
+      expect(res.status).toHaveBeenCalledWith(500);
+
+      expect(errorLog).toHaveBeenCalledTimes(1);
+      expect(errorLog).toHaveBeenCalledWith(
+        "[API] 思いがけないエラー:",
+        expect.objectContaining({ message: "AI通信失敗" })
+      );
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 });
