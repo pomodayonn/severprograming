@@ -58,11 +58,11 @@ export function SubjectList() {
   };
   const toggle = (id: string) => setChecked(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id]);
   const allOn = subjects.length > 0 && subjects.every(s => checked.includes(s.subjectId));
-  return <Shell heading="科目を選択" right={<div />} center={<div className="panel">
-    <div className="row"><h2>科目</h2><span className="sp" /><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>
+  return <Shell cls="subjects-page" heading="科目一覧" right={<div />} center={<div className="panel subject-panel">
+    <div className="row subject-heading"><h2>科目一覧</h2><span className="mute">{loaded ? `${subjects.length} 科目` : ""}</span><span className="sp" /><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>
     {!loaded && <p className="mute loading">読み込み中…</p>}{/* 11/22：ログインした直後、端末のデータを読み終わるまで */}
-    {loaded && !subjects.length && <p className="mute">科目がありません。「科目の追加」から登録してください。</p>}
-    {subjects.length > 0 && !cur && <p className="mute">一覧から科目を選択してください。</p>}
+    {loaded && !subjects.length && <div className="empty-study"><h3>科目を追加</h3><p>授業ごとに科目を作ると、ノートや資料をまとめて管理できます。</p><button className="btn pri" onClick={add}>＋ 科目の追加</button></div>}
+    {subjects.length > 0 && !cur && <p className="mute">「開く」で学習画面へ移動できます。科目名を選ぶと名前を変更できます。</p>}
     {cur && <div className="box"><h3>{cur.subjectName}</h3><p className="mute">学習項目 {curItems.length} 件</p>
       <div className="row"><button className="btn pri lg" onClick={() => go({ s: "G004", subjectId: cur.subjectId, itemId: curItems[0]?.itemId })}>この科目を開く</button><button className="btn" onClick={edit}>名前の編集</button><button className="btn danger" disabled={busy} onClick={() => del([cur.subjectId])}>削除</button></div></div>}
     {subjects.length > 0 && <div className="box slist">
@@ -73,7 +73,8 @@ export function SubjectList() {
         <div key={s.subjectId} className={"srow" + (s.subjectId === cur?.subjectId ? " on" : "")}>
           <input type="checkbox" checked={checked.includes(s.subjectId)} onChange={() => toggle(s.subjectId)} aria-label={`${s.subjectName} を選ぶ`} />
           <button className="link sname" onClick={() => nav({ s: "G003", subjectId: s.subjectId })}>{s.subjectName}</button>
-          <small className="mute">学習項目 {c.items}・テスト {c.tests}・資料 {c.materials}</small><span className="sp" />
+          <small className="mute subject-counts">学習項目 {c.items}・テスト {c.tests}・資料 {c.materials}</small><span className="sp" />
+          <button className="btn sm" onClick={() => go({ s: "G004", subjectId: s.subjectId, itemId: itemsOf(items, s.subjectId)[0]?.itemId })} aria-label={`${s.subjectName} を開く`}>開く</button>
           <button className="btn sm danger" disabled={busy} onClick={() => del([s.subjectId])} aria-label={`${s.subjectName} を削除`}>削除</button>
         </div>); })}
     </div>}

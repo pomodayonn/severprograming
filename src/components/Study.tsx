@@ -181,7 +181,7 @@ export function Study() {
     {mats.map(m => <div className="ind mat" key={m.materialId} onClick={() => openMat(m.materialId)}>{m.fileName}</div>)}
     <div className="ind click" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: id })}>テスト（{tests.filter(t => t.itemId === id).length}）</div></>) : null;
   return (<div className="app"><Header />
-    <Cols>
+    <Cols cls="study-page">
       <aside className="lf">
         {/* 11/25 夕：「ノートの部品」タブはなくして、部品を置くボタンはノートの上に移した。左の欄は階層だけ */}
         <>
@@ -208,7 +208,7 @@ export function Study() {
           <button className="btn ai" onClick={() => go({ s: "G007", subjectId: subject.subjectId, itemId: item.itemId, purpose: "summary" })}>AIでノートを整理</button>
           <button className="btn" onClick={() => go({ s: "G011", subjectId: subject.subjectId, itemId: item.itemId })}>テスト一覧</button>
           <button className="btn" onClick={() => go({ s: "G008", subjectId: subject.subjectId, itemId: item.itemId })}>テスト作成</button></div>
-      </>) : <p className="mute">学習項目がありません。「学習項目を追加」から登録してください。</p>}</main>
+      </>) : <div className="empty-study"><h2>{subject.subjectName}</h2><p>学習項目を追加してノートを作成できます。</p><button className="btn pri" onClick={addItem}>＋ 学習項目を追加</button></div>}</main>
       <aside className="rt">
         <Tabs tabs={RTABS} value={rtab} onChange={setR} />
         {/* 11/26：関連図の上に「つなぐ」ボタンと、線の色の見方を置いた */}

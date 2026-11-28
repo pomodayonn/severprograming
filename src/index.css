@@ -328,3 +328,32 @@ body {
   .srow { flex-wrap: wrap; }
   .srow small { white-space: normal; }
 }
+
+/* UI-13: subject overview and empty study */
+/* G003 has no right-pane content. Do not change the saved pane preference. */
+.subjects-page > .rt, .subjects-page > .rzr, .subjects-page > .ptr { display: none; }
+@media (min-width: 901px) {
+  .cols.subjects-page { grid-template-columns: var(--lw,250px) minmax(0,1fr); }
+  .subjects-page > .ct { border-right: 0; }
+}
+.subject-panel { max-width: 1100px; margin-inline: auto; }
+.subject-heading { gap: 12px; margin-bottom: 12px; }
+.subject-heading h2 { font-size: 22px; }
+.subject-panel .mute, .study-page > .lf .mute, .study-page > .rt .mute { font-size: 14px; }
+.subject-panel .slist { padding: 14px 18px; }
+.subject-panel .srow { min-height: 52px; padding: 10px 6px; flex-wrap: wrap; }
+.subject-panel .sname { font-size: 15px; overflow-wrap: anywhere; max-width: 100%; }
+.subject-panel .subject-counts { font-size: 14px; white-space: normal; }
+.subject-panel .srow > .btn { flex: none; }
+.subject-panel .srow > .sp { min-width: 0; }
+.empty-study { max-width: 640px; margin: 28px auto; padding: 24px; border: 1px solid var(--line); background: var(--pn); border-radius: 8px; }
+.empty-study h2, .empty-study h3 { margin: 0 0 8px; font-size: 20px; overflow-wrap: anywhere; }
+.empty-study p { margin: 0 0 16px; font-size: 15px; color: var(--mute); }
+.subject-panel .empty-study { margin-inline: 0; }
+.subjects-page .th, .study-page .th, .study-page .sec .sh { font-size: 14px; }
+.subjects-page .ts, .study-page .ts, .subjects-page .ti, .study-page .ti { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .subject-panel .srow .subject-counts { flex: 1 1 100%; padding-left: 26px; }
+  .subject-panel .slist { padding: 10px; }
+  .empty-study { margin-block: 16px; padding: 16px; }
+}
