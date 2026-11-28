@@ -38,6 +38,7 @@ import {
   put,
   del,
   replaceStudentData,
+  type Deletion,
 } from "../../src/dao/idb";
 
 vi.mock("../../src/dao/idb", () => ({
@@ -640,5 +641,89 @@ describe("SYNC-14b：送信前のルート参照検証", () => {
     const paths = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => new URL(url).pathname);
     expect(paths).toEqual(["/subject", "/learning_item", "/prerequisite", "/note", "/test", "/question"]);
     expect(meta.get(lastSyncKey)).not.toBe(previousSync);
+  });
+});
+
+// SYNC-14c: 削除ログはすべて合成データ。fetchもIndexedDBもモック。
+describe("SYNC-14c：削除ログの事前検証", () => {
+  const valid = (): Deletion => ({ table: "subject", key: "deleted-subject", studentId, at: previousSync });
+  const malformed: [string, string, unknown][] = [
+    ["null", "形式", null],
+    ["別の所有者", "所有者", { ...valid(), studentId: "other-student" }],
+    ["所有者が空", "所有者", { ...valid(), studentId: "" }],
+    ["テーブル名が数値", "テーブル名", { ...valid(), table: 123 }],
+    ["許可されていないテーブル", "テーブル名", { ...valid(), table: "ai_usage" }],
+    ["継承プロパティ", "テーブル名", { ...valid(), table: "__proto__" }],
+    ["constructor", "テーブル名", { ...valid(), table: "constructor" }],
+    ["パスを含むテーブル名", "テーブル名", { ...valid(), table: "subject/other" }],
+    ["空キー", "主キー", { ...valid(), key: "" }],
+    ["空白キー", "主キー", { ...valid(), key: " " }],
+    ["数値キー", "主キー", { ...valid(), key: 123 }],
+    ["フィルタ記号を含むキー", "主キー", { ...valid(), key: "x&y" }],
+    ["改行を含むキー", "主キー", { ...valid(), key: "id\n" }],
+    ["複合キーの区切り欠落", "複合キー", { ...valid(), table: "prerequisite", key: "i1" }],
+    ["複合キーの始点欠落", "複合キー", { ...valid(), table: "prerequisite", key: "|i2" }],
+    ["複合キーの終点欠落", "複合キー", { ...valid(), table: "prerequisite", key: "i1|" }],
+    ["複合キーの要素過多", "複合キー", { ...valid(), table: "prerequisite", key: "i1|i2|i3" }],
+    ["複合キーの不正文字", "複合キー", { ...valid(), table: "prerequisite", key: "i1|i 2" }],
+    ["削除日時が数値", "削除日時", { ...valid(), at: 123 }],
+    ["削除日時が不正", "削除日時", { ...valid(), at: "invalid" }],
+    ["削除日時が非正規形式", "削除日時", { ...valid(), at: "2026-11-25" }],
+  ];
+  it.each(malformed)("%s が後続ログにあっても全通信を止める", async (_name, message, bad) => {
+    const { sync, fetchMock } = setup();
+    // IndexedDBの型宣言と実際の値が一致しないケースを意図的に再現。
+    vi.mocked(getAllBy).mockResolvedValue([valid(), bad] as Deletion[]);
+    await expect(sync.pushChanges()).rejects.toThrow(`削除ログの整合性を確認できません（${message}）`);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+  it("重複した削除ログも通信前に拒否する", async () => {
+    const { sync, fetchMock } = setup();
+    vi.mocked(getAllBy).mockResolvedValue([valid(), { ...valid(), at: updatedAt }]);
+    await expect(sync.pushChanges()).rejects.toThrow("重複");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
+  });
+  it("許可された5テーブルの削除を日時順・完全なキーで送る", async () => {
+    const { sync, fetchMock } = setup();
+    vi.mocked(getAll).mockResolvedValue([]);
+    const logs: Deletion[] = [
+      { ...valid(), table: "test", key: "t_1", at: "2026-11-25T00:00:05.000Z" },
+      { ...valid(), table: "note", key: "n-1", at: "2026-11-25T00:00:04.000Z" },
+      { ...valid(), table: "prerequisite", key: "i1|i2", at: "2026-11-25T00:00:03.000Z" },
+      { ...valid(), table: "learning_item", key: "i1", at: "2026-11-25T00:00:02.000Z" },
+      { ...valid(), at: "2026-11-25T00:00:01.000Z" },
+    ];
+    vi.mocked(getAllBy).mockResolvedValue(logs);
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method !== "DELETE") throw new Error("想定外の通信");
+      return new Response(null, { status: 204 });
+    });
+    await sync.pushChanges();
+    expect(fetchMock.mock.calls.map(([url, init]) => [init?.method, new URL(url).pathname + new URL(url).search])).toEqual([
+      ["DELETE", "/subject?subject_id=eq.deleted-subject"],
+      ["DELETE", "/learning_item?item_id=eq.i1"],
+      ["DELETE", "/prerequisite?item_id=eq.i1&prereq_item_id=eq.i2"],
+      ["DELETE", "/note?note_id=eq.n-1"],
+      ["DELETE", "/test?test_id=eq.t_1"],
+    ]);
+    expect(vi.mocked(del).mock.calls).toEqual([...logs].reverse().map(d => ["deletions", [d.table, d.key]]));
+    expect(meta.get(lastSyncKey)).not.toBe(previousSync);
+  });
+  it("正常な削除ログでもHTTP失敗時は保持して後続送信を止める", async () => {
+    const { sync, fetchMock } = setup();
+    vi.mocked(getAllBy).mockResolvedValue([valid(), { ...valid(), table: "test", key: "t2", at: updatedAt }]);
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await expect(sync.pushChanges()).rejects.toBeInstanceOf(SyncError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
+    expect(del).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+    expect(meta.get(lastSyncKey)).toBe(previousSync);
   });
 });

@@ -261,6 +261,45 @@ function validateReceivedGraph(
   }
 }
 
+/** SYNC-14c: 削除ログ全件を検証し、通信前に対象パスを確定する。
+ * 不正なログは自動修復・削除せず、その回の同期を中止する。
+ */
+function prepareOutgoingDeletions(sid: string, logs: Deletion[]): { log: Deletion; path: string }[] {
+  const fail = (detail: string): never => {
+    throw new SyncError(`削除ログの整合性を確認できません（${detail}）`);
+  };
+  // newId() は英数字。既存のハイフン・アンダースコア付きIDも許容する。
+  // フィルタ構文に使われる文字や空欄を含むIDは安全のため保留する。
+  const validId = (id: string) => id.length > 0 && !/[^A-Za-z0-9_-]/.test(id);
+  const seen = new Set<string>();
+  const prepared = logs.map(d => {
+    if (!d || typeof d !== "object") return fail("形式");
+    if (d.studentId !== sid) return fail("所有者");
+    if (typeof d.table !== "string" || (d.table !== "prerequisite" && !Object.prototype.hasOwnProperty.call(KEY, d.table))) {
+      return fail("テーブル名");
+    }
+    if (typeof d.key !== "string") return fail("主キー");
+    if (typeof d.at !== "string" || !Number.isFinite(Date.parse(d.at)) || new Date(d.at).toISOString() !== d.at) {
+      return fail("削除日時");
+    }
+    let filter: string;
+    if (d.table === "prerequisite") {
+      const ids = d.key.split("|");
+      if (ids.length !== 2 || !ids.every(validId)) return fail("複合キー");
+      filter = `item_id=eq.${enc(ids[0])}&prereq_item_id=eq.${enc(ids[1])}`;
+    } else {
+      if (!validId(d.key)) return fail("主キー");
+      filter = `${KEY[d.table]}=eq.${enc(d.key)}`;
+    }
+    const identity = JSON.stringify([d.table, d.key]);
+    if (seen.has(identity)) return fail("重複");
+    seen.add(identity);
+    return { log: d, path: `/${d.table}?${filter}` };
+  });
+  // 日時の形式を全件確認してから並べ替える。
+  return prepared.sort((a, b) => a.log.at.localeCompare(b.log.at));
+}
+
 /** SYNC-14b: 今回送るルート行と、その親を端末の保存済みデータで検証する。
  * 親は今回の送信対象でなくてもよいが、同じ学生のものでなければならない。
  */
@@ -754,7 +793,7 @@ export class SyncManager {
 
     // 今回処理する削除ログを先に確定する。ノート・テスト取得後の削除を
     // 同じ送信で消費して、取得済みの古いデータを再登録しないようにする。
-    const dels = (await getAllBy<Deletion>("deletions", "studentId", sid)).sort((a, b) => a.at.localeCompare(b.at));
+    const dels = prepareOutgoingDeletions(sid, await getAllBy<Deletion>("deletions", "studentId", sid));
 
     // 今回送るノート・テストを先に取得し、同じデータを検証と送信に使う。
     // 不整合があれば削除ログを含むHTTP通信を始めず、端末データを保持する。
@@ -772,11 +811,8 @@ export class SyncManager {
     validateOutgoingRoots(sid, allSubjects, allItems, items, prereqs, changedNotes, changedTests);
 
     // 1) 削除を先に送る（同じIDで作り直した場合に、あとの追加が消されないように）
-    for (const d of dels) {
-      const filter = d.table === "prerequisite"
-        ? `item_id=eq.${enc(d.key.split("|")[0])}&prereq_item_id=eq.${enc(d.key.split("|")[1])}`
-        : `${KEY[d.table]}=eq.${enc(d.key)}`;
-      await this.request(sid,"DELETE", `/${d.table}?${filter}`);
+    for (const { log: d, path } of dels) {
+      await this.request(sid,"DELETE", path);
       await del("deletions", [d.table, d.key]);
     }
     // 2) 親から順に送る（外部キーがあるので、科目 → 学習項目 → 前提項目・ノート・テスト の順）
